@@ -13,25 +13,39 @@ interface SheetMeta {
   anchor: [number, number];
 }
 
-const sheets = new Map<string, { meta: SheetMeta; frames: Texture[] }>();
+const sheets = new Map<string, { meta: SheetMeta; frames: Texture[]; px: number }>();
 let loading: Promise<void> | null = null;
 
-export function loadFx(): Promise<void> {
+/**
+ * Phones get the half-resolution sheets (public/fx/lo): the full set is ~154MB of
+ * GPU memory, which made mobile browsers drop the WebGL context mid-fight (the
+ * canvas went blank while the sim and sound kept running). Half-res is ~38MB and
+ * the effects are soft glows, so the difference is hard to see at phone size.
+ */
+export function fxWantsLowRes(): boolean {
+  const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  return matchMedia('(pointer: coarse)').matches || (mem !== undefined && mem <= 4);
+}
+
+export function loadFx(lowRes = fxWantsLowRes()): Promise<void> {
   if (loading) return loading;
   loading = (async () => {
     try {
       const base = new URL('fx/', document.baseURI).href;
       const manifest = (await (await fetch(base + 'fx.json')).json()) as Record<string, SheetMeta>;
+      const dir = lowRes ? base + 'lo/' : base;
+      const k = lowRes ? 0.5 : 1;
       await Promise.all(
         Object.entries(manifest).map(async ([name, meta]) => {
-          const tex = (await Assets.load(base + meta.file)) as Texture;
+          const tex = (await Assets.load(dir + meta.file)) as Texture;
+          const px = meta.size * k;
           const frames: Texture[] = [];
           for (let i = 0; i < meta.count; i++) {
             const r = Math.floor(i / meta.cols);
             const c = i % meta.cols;
-            frames.push(new Texture({ source: tex.source, frame: new Rectangle(c * meta.size, r * meta.size, meta.size, meta.size) }));
+            frames.push(new Texture({ source: tex.source, frame: new Rectangle(c * px, r * px, px, px) }));
           }
-          sheets.set(name, { meta, frames });
+          sheets.set(name, { meta, frames, px });
         }),
       );
     } catch {
@@ -83,7 +97,7 @@ export class FxLayer {
     if (!sh) return null;
     const sp = new Sprite(sh.frames[0]);
     sp.anchor.set(sh.meta.anchor[0], sh.meta.anchor[1]);
-    const k = o.size / sh.meta.size;
+    const k = o.size / sh.px;
     sp.scale.set(k, o.flipY ? -k : k);
     sp.rotation = o.rot ?? 0;
     sp.position.set(o.x, o.y);
@@ -100,7 +114,7 @@ export class FxLayer {
     for (let i = this.live.length - 1; i >= 0; i--) {
       const h = this.live[i];
       h.t += dtFrames * this.timeScale * (h.fps / 60) * (h.opts.speed ?? 1);
-      let f = Math.floor(h.t);
+      let f = Math.max(0, Math.floor(h.t));
       if (h.opts.loop) f %= h.frames.length;
       if (h.dead || f >= h.frames.length) {
         h.sprite.destroy();

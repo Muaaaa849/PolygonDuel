@@ -10,7 +10,7 @@ export const bastion: CharacterDef = {
   theme: '鉄壁・カウンター',
   blurb: '遅いが重い。5秒ガードと当て身で“触ったら痛い”を作る。',
   hp: 1150,
-  walk: 4.4,
+  walk: 4.0,
   step: { dist: 2.2, regen: 60 },
   guardMax: 300,
   swing: 'right',

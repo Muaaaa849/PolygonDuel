@@ -29,8 +29,9 @@ function serviceWorker(): Plugin {
     name: 'polygon-duel-sw',
     apply: 'build',
     generateBundle(_opts, bundle) {
+      // precache the manifest + phone-size sheets; full-size sheets are cached on first use
       const fxDir = join(import.meta.dirname, 'public/fx');
-      const fx = readdirSync(fxDir).map((f) => `fx/${f}`);
+      const fx = ['fx/fx.json', ...readdirSync(join(fxDir, 'lo')).map((f) => `fx/lo/${f}`)];
       const files = [...Object.keys(bundle).filter((f) => !f.endsWith('.map')), ...fx];
       const src = readFileSync(join(import.meta.dirname, 'src/sw-template.js'), 'utf8')
         .replace('__CACHE__', `polygon-duel-${BUILD_HASH}-${Date.now().toString(36)}`)

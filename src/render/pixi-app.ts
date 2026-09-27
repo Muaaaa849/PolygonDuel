@@ -16,6 +16,13 @@ export async function initPixi(): Promise<Application> {
     powerPreference: 'high-performance',
   });
   document.getElementById('stage')!.append(app.canvas);
+  // If the GPU drops the WebGL context (memory pressure on phones) the canvas goes blank
+  // while the game keeps running. Pixi restores it; meanwhile say what is happening.
+  const note = document.createElement('div');
+  note.className = 'gl-lost';
+  note.textContent = '描画を復旧しています…';
+  app.canvas.addEventListener('webglcontextlost', () => document.body.append(note));
+  app.canvas.addEventListener('webglcontextrestored', () => note.remove());
   return app;
 }
 

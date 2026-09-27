@@ -10,7 +10,7 @@ export const blaze: CharacterDef = {
   theme: '速攻ラッシュ',
   blurb: '最速の円で触り、チェーン初期化でコンボを伸ばす。体力は最低。',
   hp: 900,
-  walk: 5.6,
+  walk: 5.0,
   step: { dist: 2.4, regen: 50 },
   guardMax: 240,
   swing: 'right',

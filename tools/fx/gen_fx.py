@@ -92,6 +92,13 @@ def rgba(intensity, color=(1, 1, 1), white_core=0.0):
     return np.dstack([np.clip(rgb, 0, 1), a])
 
 
+def save_lo(img, name):
+    """Half-resolution copy for phones (public/fx/lo/): 1/4 of the GPU memory.
+    Frame sizes are even, so an exact 2x box reduce never bleeds across frames."""
+    os.makedirs(os.path.join(OUT, 'lo'), exist_ok=True)
+    img.reduce(2).save(os.path.join(OUT, 'lo', f'{name}.webp'), 'WEBP', quality=75, method=6, alpha_quality=80)
+
+
 def save(name, frames, fps=60, tint=False, anchor=(0.5, 0.5), scale_hint=1.0):
     n = len(frames)
     size = frames[0].shape[0]
@@ -104,6 +111,7 @@ def save(name, frames, fps=60, tint=False, anchor=(0.5, 0.5), scale_hint=1.0):
     img = Image.fromarray((np.clip(sheet, 0, 1) * 255).astype(np.uint8), 'RGBA')
     path = os.path.join(OUT, f'{name}.webp')
     img.save(path, 'WEBP', quality=72, method=6, alpha_quality=80)
+    save_lo(img, name)
     MANIFEST[name] = {
         'file': f'{name}.webp', 'size': size, 'count': n, 'cols': cols, 'fps': fps,
         'tint': tint, 'anchor': list(anchor), 'scale': scale_hint,

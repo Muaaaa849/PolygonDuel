@@ -10,7 +10,7 @@ export const zephyr: CharacterDef = {
   theme: '機動・持久',
   blurb: '最長リーチと最速のステップ回復。触らせずに削る。GBを持たない。',
   hp: 1000,
-  walk: 5.2,
+  walk: 4.7,
   step: { dist: 2.8, regen: 40 },
   guardMax: 240,
   swing: 'left',

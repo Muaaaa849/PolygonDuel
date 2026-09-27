@@ -453,6 +453,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
   let qualityRaised = false;
   let perfN = 0;
   let netInfoTimer = 0;
+  let renderErrorLogged = false;
 
   let devBot: ((s: Sim) => number) | null = null;
   function readLocal(): number {
@@ -493,6 +494,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
     raf = requestAnimationFrame(frame);
     let dt = now - last;
     last = now;
+    if (!(dt > 0)) dt = 0; // rAF timestamps can precede a performance.now() taken just before
     if (dt > 250) dt = 250;
     if (!paused) {
       acc += dt;
@@ -504,9 +506,15 @@ export function battleScreen(cfg: BattleConfig): Screen {
       }
       if (n === 8) acc = 0;
     }
-    view.render(dt / TICK_MS);
-    // render in the same frame as the input/sim update (Pixi's own ticker is stopped in battle)
-    app.render();
+    // render in the same frame as the input/sim update (Pixi's own ticker is stopped in battle).
+    // A render error must never stop the game loop (the sim and HUD keep going either way).
+    try {
+      view.render(dt / TICK_MS);
+      app.render();
+    } catch (err) {
+      if (!renderErrorLogged) console.error('[render]', err);
+      renderErrorLogged = true;
+    }
     hud.update();
     updateButtons();
     meter?.draw();

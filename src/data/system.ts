@@ -2,10 +2,12 @@
 export const SYSTEM = {
   fps: 60,
   /**
-   * 11u×6.2u (was 16×9 in the plan): pieces read ~1.45× larger on screen with every
-   * distance relationship (reach, lunge, step) unchanged.
+   * 16.5u×9.3u. The camera frames an 11u×6.2u window at zoom 1 (pieces stay big on
+   * screen) and follows the fighters around the larger arena.
    */
-  field: { w: 11, h: 6.2 },
+  field: { w: 16.5, h: 9.3 },
+  /** Camera framing at zoom 1 (u). The field is larger than this, so the camera follows the fighters. */
+  view: { w: 11, h: 6.2 },
   bodyRadius: 0.5,
   hurtRadius: 0.5,
 

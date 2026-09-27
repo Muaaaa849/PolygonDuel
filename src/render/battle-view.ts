@@ -21,6 +21,8 @@ import { settings } from '../app/settings';
 const PX = 100; // world pixels per u
 const FW = SYSTEM.field.w * PX;
 const FHt = SYSTEM.field.h * PX;
+const VW = SYSTEM.view.w * PX;
+const VH = SYSTEM.view.h * PX;
 const toPx = (milli: number) => (milli / 1000) * PX;
 const ANG_TO_RAD = (Math.PI * 2) / 1024;
 
@@ -512,40 +514,62 @@ export class BattleView {
     loop('stance', stance, () => this.fx.spawn('guard_t', { x, y, size: 2.3 * PX, loop: true, alpha: 0.55, speed: 0.7, tint: 0xc8dcff, follow: pos }));
   }
 
+  /**
+   * Camera. Zoom 1 frames an SYSTEM.view-sized window (11u×6.2u) so pieces stay big;
+   * the arena is larger, so the camera follows the fighters' midpoint, zooms in up to
+   * 1.4× when they are close and out (down to the whole arena) when they are far,
+   * and hard-guarantees both fighters stay on screen.
+   */
   private updateCamera(dt: number): void {
     const s = this.sim.s;
     const sw = app.screen.width;
     const sh = app.screen.height;
     const top = this.topInset;
+    const vh = Math.max(1, sh - top);
     const margin = 0.35 * PX;
-    const fit = Math.min(sw / (FW + margin * 2), (sh - top - 8) / (FHt + margin * 2));
+    const fit = Math.min(sw / (VW + margin * 2), (vh - 8) / (VH + margin * 2));
+    const minZoom = Math.min(1, Math.min(sw / (FW + margin * 2), vh / (FHt + margin * 2)) / fit);
+    // (phones in landscape are wider than the 11:6.2 frame, so zoom 1 may already show the whole width)
     const [a, b] = s.f;
     const ax = toPx(a.x), ay = toPx(a.y), bx = toPx(b.x), by = toPx(b.y);
+    const dx = Math.abs(ax - bx);
+    const dy = Math.abs(ay - by);
+    // largest zoom that still shows both fighters with some room (pad = u around each)
+    const maxZoomFor = (pad: number) => Math.min(sw / ((dx + pad * 2 * PX) * fit), vh / ((dy + pad * 2 * PX) * fit));
     let zoom = 1;
-    let cx = FW / 2;
-    let cy = FHt / 2;
     if (settings.dynamicCamera) {
       const dist = Math.hypot(ax - bx, ay - by) / PX;
       zoom = 1 + Math.max(0, Math.min(1, (6 - dist) / 4)) * 0.4;
-      // keep both fighters (+margin) in view
-      const needW = (Math.abs(ax - bx) + 3.2 * PX) * fit;
-      const needH = (Math.abs(ay - by) + 3.0 * PX) * fit;
-      zoom = Math.min(zoom, Math.max(1, (sw / needW) * 1), Math.max(1, ((sh - top) / needH) * 1));
-      cx = (ax + bx) / 2;
-      cy = (ay + by) / 2;
     }
-    const k = 1 - Math.pow(0.9, dt);
-    this.cam.zoom += (zoom - this.cam.zoom) * k;
+    zoom = Math.max(minZoom, Math.min(zoom, maxZoomFor(1.6)));
+    if (!Number.isFinite(this.cam.zoom) || !Number.isFinite(this.cam.x) || !Number.isFinite(this.cam.y)) {
+      this.cam = { x: (ax + bx) / 2, y: (ay + by) / 2, zoom };
+    }
+    // zoom out quickly (never lose a fighter), in gently
+    const kz = 1 - Math.pow(zoom < this.cam.zoom ? 0.8 : 0.93, dt);
+    this.cam.zoom += (zoom - this.cam.zoom) * kz;
+    this.cam.zoom = Math.max(minZoom, Math.min(this.cam.zoom, Math.max(minZoom, maxZoomFor(0.9))));
     const scale = fit * this.cam.zoom;
-    // clamp center so the view never leaves the field (+margin)
     const halfW = sw / 2 / scale;
-    const halfH = (sh - top) / 2 / scale;
+    const halfH = vh / 2 / scale;
+    const k = 1 - Math.pow(0.86, dt);
+    this.cam.x += ((ax + bx) / 2 - this.cam.x) * k;
+    this.cam.y += ((ay + by) / 2 - this.cam.y) * k;
+    // both fighters inside the view (0.9u padding), then the view inside the arena (+margin)
+    const pad = 0.9 * PX;
+    const keep = (c: number, lo: number, hi: number, half: number) => {
+      const min = hi + pad - half;
+      const max = lo - pad + half;
+      return min <= max ? Math.max(min, Math.min(max, c)) : (lo + hi) / 2;
+    };
+    this.cam.x = keep(this.cam.x, Math.min(ax, bx), Math.max(ax, bx), halfW);
+    this.cam.y = keep(this.cam.y, Math.min(ay, by), Math.max(ay, by), halfH);
+    // the view may reach past the walls by `edge` so a cornered fighter (and the pips under it) stays visible
+    const edge = 1.1 * PX;
     const clampC = (c: number, half: number, size: number) =>
-      half * 2 >= size + margin * 2 ? size / 2 : Math.max(half - margin, Math.min(size + margin - half, c));
-    cx = clampC(cx, halfW, FW);
-    cy = clampC(cy, halfH, FHt);
-    this.cam.x += (cx - this.cam.x) * k;
-    this.cam.y += (cy - this.cam.y) * k;
+      half * 2 >= size + edge * 2 ? size / 2 : Math.max(half - edge, Math.min(size + edge - half, c));
+    this.cam.x = clampC(this.cam.x, halfW, FW);
+    this.cam.y = clampC(this.cam.y, halfH, FHt);
     // shake
     if (this.shake > 0.3) {
       this.shakeX = (Math.random() - 0.5) * this.shake * 2;
@@ -556,7 +580,7 @@ export class BattleView {
       this.shake = 0;
     }
     this.world.scale.set(scale);
-    this.world.position.set(sw / 2 - this.cam.x * scale + this.shakeX, top + (sh - top) / 2 - this.cam.y * scale + this.shakeY);
+    this.world.position.set(sw / 2 - this.cam.x * scale + this.shakeX, top + vh / 2 - this.cam.y * scale + this.shakeY);
   }
 
   private drawTrail(i: number, dt: number, record: boolean): void {
