@@ -85,7 +85,7 @@ export const SYSTEM = {
   round: {
     seconds: 60,
     winsNeeded: 2,
-    introFirst: 150,
+    introFirst: 180,
     intro: 100,
     koPause: 150,
     maxRounds: 5,

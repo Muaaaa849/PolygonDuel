@@ -1,0 +1,102 @@
+// Keyboard + gamepad input (PC testing and local 2P, plan §12 phase 3).
+import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, quantizeDir } from '../core/input';
+
+export interface KeyMap {
+  up: string[];
+  down: string[];
+  left: string[];
+  right: string[];
+  atk: string[];
+  s1: string[];
+  s2: string[];
+  step: string[];
+}
+
+export const KEYS_SOLO: KeyMap = {
+  up: ['KeyW', 'ArrowUp'],
+  down: ['KeyS', 'ArrowDown'],
+  left: ['KeyA', 'ArrowLeft'],
+  right: ['KeyD', 'ArrowRight'],
+  atk: ['KeyJ', 'KeyZ'],
+  s1: ['KeyK', 'KeyX'],
+  s2: ['KeyL', 'KeyC'],
+  step: ['Space', 'Semicolon', 'ShiftLeft'],
+};
+
+export const KEYS_P1: KeyMap = {
+  up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'],
+  atk: ['KeyF'], s1: ['KeyG'], s2: ['KeyH'], step: ['ShiftLeft', 'Space'],
+};
+
+export const KEYS_P2: KeyMap = {
+  up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'],
+  atk: ['Comma', 'Numpad1'], s1: ['Period', 'Numpad2'], s2: ['Slash', 'Numpad3'], step: ['ShiftRight', 'Numpad0'],
+};
+
+const down = new Set<string>();
+const pressedSince = new Set<string>();
+let installed = false;
+
+function install(): void {
+  if (installed) return;
+  installed = true;
+  window.addEventListener('keydown', (e) => {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if (!down.has(e.code)) pressedSince.add(e.code);
+    down.add(e.code);
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  });
+  window.addEventListener('keyup', (e) => down.delete(e.code));
+  window.addEventListener('blur', () => down.clear());
+}
+
+export class KeyboardInput {
+  used = false;
+  constructor(private map: KeyMap, private pad: number | null = 0) {
+    install();
+  }
+
+  private any(codes: string[]): boolean {
+    return codes.some((c) => down.has(c) || pressedSince.has(c));
+  }
+
+  poll(): number {
+    const m = this.map;
+    let x = (this.any(m.right) ? 1 : 0) - (this.any(m.left) ? 1 : 0);
+    let y = (this.any(m.down) ? 1 : 0) - (this.any(m.up) ? 1 : 0);
+    let w = 0;
+    if (this.any(m.atk)) w |= IN_ATK;
+    if (this.any(m.s1)) w |= IN_S1;
+    if (this.any(m.s2)) w |= IN_S2;
+    if (this.any(m.step)) w |= IN_STEP;
+    // gamepad
+    if (this.pad !== null && navigator.getGamepads) {
+      const gp = navigator.getGamepads()[this.pad];
+      if (gp) {
+        const ax = gp.axes[0] ?? 0;
+        const ay = gp.axes[1] ?? 0;
+        if (Math.hypot(ax, ay) > 0.3) {
+          x = ax;
+          y = ay;
+        }
+        const b = (i: number) => !!gp.buttons[i]?.pressed;
+        if (b(14)) x = -1;
+        if (b(15)) x = 1;
+        if (b(12)) y = -1;
+        if (b(13)) y = 1;
+        if (b(0) || b(7)) w |= IN_ATK;
+        if (b(2) || b(4)) w |= IN_S1;
+        if (b(3) || b(5)) w |= IN_S2;
+        if (b(1) || b(6)) w |= IN_STEP;
+      }
+    }
+    if (x !== 0 || y !== 0) w |= IN_STICK | quantizeDir(x, y);
+    if (w) this.used = true;
+    return w;
+  }
+
+  /** Call once per tick after all keyboards polled. */
+  static endTick(): void {
+    pressedSince.clear();
+  }
+}

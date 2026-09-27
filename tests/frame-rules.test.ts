@@ -16,7 +16,6 @@ const hitThenGuard: Bot = (me) => (me.statHitsTaken > 0 ? 0 : stick(16));
 /** Guards; mashes attack only while in blockstun after `n` blocks → GC. */
 const gcAfterBlocks = (n: number): Bot => (me, _o, _s, t) =>
   me.st === ST_BLOCKSTUN && me.statBlocks >= n ? (t % 2 === 0 ? IN_ATK : 0) : 0;
-const totalDmg = (sc: Scenario, who: number) => sc.hits(who).reduce((a, e) => a + e.a, 0);
 
 describe.each(IDS)('%s — normal chain rules', (id) => {
   const c = getChar(IDS.indexOf(id));
