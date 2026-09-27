@@ -126,6 +126,8 @@ export function createTutorial(onFinish: () => void): TutorialHooks {
     dm.infGuard = lesson === 0 || lesson === 3 ? 1 : 0;
     dm.infCost = 1;
     me.infCost = lesson >= 3 ? 1 : 0;
+    // learning to guard shouldn't end in a gauge break
+    me.infGuard = lesson <= 2 ? 1 : 0;
     cooldown = 80;
   }
 
@@ -164,7 +166,8 @@ export function createTutorial(onFinish: () => void): TutorialHooks {
             cooldown = 110;
             return IN_ATK | IN_STICK | toward();
           }
-          return 0;
+          // stay a square (not guarding) so the GC can land
+          return IN_STICK | ((toward() + (Math.floor(t / 12) % 2 ? 8 : 24)) % 32);
         }
         case 2: {
           if (dm.st === ST_ATTACK) return 0;

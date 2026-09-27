@@ -227,3 +227,23 @@ describe('skill & system rules (plan §6-9 table 2)', () => {
 
 void mash;
 void IN_S1;
+
+describe('GC reach (guard advantage must hold at any N1 range)', () => {
+  it.each(IDS.flatMap((a) => IDS.map((b) => [a, b] as const)))('%s N1 at max range blocked by %s → GC still reaches', (a, b) => {
+    const c = getChar(IDS.indexOf(a));
+    const n1 = c.moves[M_N1];
+    // start at the farthest distance N1 still connects: reach + lunge + hurt radius
+    const dist = (n1.reach + n1.lunge) / 1000 + 0.5 - 0.02;
+    const sc = new Scenario(a, b, dist).run(200, sequence('A', 0), gcAfterBlocks(1));
+    expect(sc.blocks(0).length).toBe(1);
+    expect(sc.blocks(1).length + sc.hits(1).length).toBe(1); // GC connected (attacker blocks it)
+  });
+
+  it("Zephyr lance tip (S1 at max range) is out of GC reach", () => {
+    const s1 = getChar(IDS.indexOf('zephyr')).moves[5];
+    const dist = (s1.reach + s1.lunge) / 1000 + 0.5 - 0.05;
+    const sc = new Scenario('zephyr', 'blaze', dist).run(200, sequence('1', 0), gcAfterBlocks(1));
+    expect(sc.blocks(0).length).toBe(1);
+    expect(sc.blocks(1).length + sc.hits(1).length).toBe(0);
+  });
+});

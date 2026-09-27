@@ -449,11 +449,13 @@ export function battleScreen(cfg: BattleConfig): Screen {
   let last = performance.now();
   let raf = 0;
   let perfAcc = 0;
+  let qualityRaised = false;
   let perfN = 0;
   let netInfoTimer = 0;
 
+  let devBot: ((s: Sim) => number) | null = null;
   function readLocal(): number {
-    const w = localInput();
+    const w = devBot ? devBot(sim) : localInput();
     if (simDelay === 0) return w;
     delayQueue.push(w);
     return delayQueue.length > simDelay ? delayQueue.shift()! : 0;
@@ -502,6 +504,8 @@ export function battleScreen(cfg: BattleConfig): Screen {
       if (n === 8) acc = 0;
     }
     view.render(dt / TICK_MS);
+    // render in the same frame as the input/sim update (Pixi's own ticker is stopped in battle)
+    app.render();
     hud.update();
     updateButtons();
     meter?.draw();
@@ -512,6 +516,10 @@ export function battleScreen(cfg: BattleConfig): Screen {
       if (perfN >= 120) {
         const avg = perfAcc / perfN;
         if (avg > 21 && view.quality !== 'low') view.setQuality(view.quality === 'high' ? 'mid' : 'low');
+        else if (avg < 12.5 && view.quality === 'mid' && !qualityRaised) {
+          qualityRaised = true;
+          view.setQuality('high');
+        }
         perfAcc = perfN = 0;
       }
     }
@@ -551,6 +559,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
     last = performance.now();
   };
   document.addEventListener('visibilitychange', onVis);
+  app.ticker.stop();
   raf = requestAnimationFrame(frame);
 
   if (import.meta.env.DEV) {
@@ -559,6 +568,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
       sim,
       view,
       session: () => session,
+      setBot: (fn: ((s: Sim) => number) | null) => (devBot = fn),
       pause: (v: boolean) => (paused = v),
       step: (n: number, inA = 0, inB = 0) => {
         for (let k = 0; k < n; k++) {
@@ -584,7 +594,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
       if (cfg.online) {
         cfg.online.link.onGame = undefined;
       }
-      app.render();
+      app.ticker.start();
     },
   };
 }

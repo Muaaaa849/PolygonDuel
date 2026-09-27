@@ -109,7 +109,9 @@ export class BattleView {
     this.rgb = new RGBSplitFilter({ red: [0, 0], green: [0, 0], blue: [0, 0] });
     this.rgb.resolution = app.renderer.resolution;
     this.drawField();
-    this.setQuality(settings.quality === 'auto' ? 'high' : settings.quality);
+    // auto: start at mid on touch devices (phones), high elsewhere; adjusted by measured frame time
+    const touch = matchMedia('(pointer: coarse)').matches;
+    this.setQuality(settings.quality === 'auto' ? (touch ? 'mid' : 'high') : settings.quality);
   }
 
   colorOf(i: number): number {
