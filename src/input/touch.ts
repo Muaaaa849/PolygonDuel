@@ -3,8 +3,9 @@
 // Presses are latched until the next tick reads them so a tap never gets lost.
 //
 // Aiming (Brawl Stars style): when a fresh attack / aimed skill is possible, ATK / S1 / S2
-// become little sticks — drag to aim (direction + how far to lunge), release to fire;
-// a plain tap fires on release with auto-aim; dragging back to the center cancels.
+// become little sticks with two rings. Inside the inner ring (tap or hold) the move
+// auto-targets the opponent; drag past it to aim freely (direction + how far to lunge),
+// release to fire; drag far outside the outer ring to cancel.
 // Everywhere else (chains, GC in blockstun, cancels) buttons fire the moment they're pressed.
 import { h, shapeIcon } from '../app/ui';
 import { settings } from '../app/settings';
@@ -24,14 +25,20 @@ export interface AimState {
   y: number;
   /** 0..1 drag distance → reach level. */
   frac: number;
-  /** Dragged back to the center: releasing will not fire. */
+  /** Inside the inner ring: auto-target the opponent (x / y / frac unused). */
+  auto: boolean;
+  /** Dragged far away: releasing will not fire. */
   cancel: boolean;
 }
 
-/** Drag (css px, × button scale) before a press turns into aiming; also the cancel zone. */
-const AIM_DEAD = 18;
-/** Drag distance for the full reach level. */
-const AIM_RANGE = 78;
+/** Inner ring radius (css px × button scale): inside = auto-target. */
+const AIM_INNER = 34;
+/** Drag distance for the full reach level (outer ring). */
+const AIM_RANGE = 92;
+/** Beyond this the aim is cancelled. */
+const AIM_CANCEL = 170;
+/** A hold inside the inner ring shows the auto-target preview after this long (ms), so taps don't flash. */
+const AUTO_PREVIEW_MS = 140;
 const BTN_BITS: Record<BtnId, number> = { atk: IN_ATK, s1: IN_S1, s2: IN_S2, step: IN_STEP };
 
 export interface ButtonLook {
@@ -64,8 +71,8 @@ export class TouchControls {
   private aimStart = { x: 0, y: 0 };
   private aimPad: HTMLElement;
   private aimKnob: HTMLElement;
-  /** Current aim (null when not aiming). Read by the battle view to draw the range. */
-  aim: AimState | null = null;
+  private aimInner: HTMLElement;
+  private aimT0 = 0;
   /** Should a press of this button aim (fire on release)? Decided at touch-down. */
   aimPolicy: (id: BtnId) => boolean = () => false;
   /** Anything touched at all (used to hide keyboard hints). */
@@ -81,7 +88,8 @@ export class TouchControls {
     this.btns = { atk: mk('atk'), s1: mk('s1'), s2: mk('s2'), step: mk('step') };
     this.btnWrap = h('div', { class: 'buttons' }, this.btns.s2, this.btns.step, this.btns.s1, this.btns.atk);
     this.aimKnob = h('div', { class: 'aim-knob' });
-    this.aimPad = h('div', { class: 'aim-pad' }, this.aimKnob);
+    this.aimInner = h('div', { class: 'aim-inner' }, h('span', null, 'AUTO'));
+    this.aimPad = h('div', { class: 'aim-pad' }, this.aimInner, this.aimKnob);
     this.el = h('div', { class: `controls${settings.lefty ? ' lefty' : ''}` }, this.zone, this.stickEl, this.stickHint, this.btnWrap, this.aimPad);
 
     this.el.addEventListener('pointerdown', this.onDown, { passive: false });
@@ -205,49 +213,63 @@ export class TouchControls {
   private beginAim(pid: number, id: BtnId, x: number, y: number): void {
     this.aimPtr = pid;
     this.aimStart = { x, y };
-    this.aim = { id, x: 0, y: 0, frac: 0, cancel: false };
-    this.aiming = false;
+    this.aimT0 = performance.now();
+    this.aimState = { id, x: 0, y: 0, frac: 1, auto: true, cancel: false };
     this.btns[id].classList.add('down');
     const r = this.btns[id].getBoundingClientRect();
     const k = settings.buttonScale;
     this.aimPad.style.left = `${r.left + r.width / 2}px`;
     this.aimPad.style.top = `${r.top + r.height / 2}px`;
     this.aimPad.style.width = this.aimPad.style.height = `${AIM_RANGE * 2 * k}px`;
+    this.aimInner.style.width = this.aimInner.style.height = `${AIM_INNER * 2 * k}px`;
     this.aimKnob.style.transform = 'translate(-50%, -50%)';
     this.aimPad.className = 'aim-pad';
   }
 
-  /** Aim becomes live once the thumb leaves the dead zone. */
-  private aiming = false;
+  /** Raw aim state (always set while aiming); `aim` hides the auto preview during a quick tap. */
+  private aimState: AimState | null = null;
+
+  get aim(): AimState | null {
+    const a = this.aimState;
+    if (!a) return null;
+    if (a.auto && performance.now() - this.aimT0 < AUTO_PREVIEW_MS) return null;
+    return a;
+  }
 
   private moveAim(x: number, y: number): void {
-    if (!this.aim) return;
+    if (!this.aimState) return;
     const k = settings.buttonScale;
     const dx = x - this.aimStart.x;
     const dy = y - this.aimStart.y;
     const len = Math.hypot(dx, dy);
-    if (!this.aiming && len < AIM_DEAD * k) return;
-    this.aiming = true;
-    const cancel = len < AIM_DEAD * k;
-    const frac = Math.max(0, Math.min(1, (len - AIM_DEAD * k) / ((AIM_RANGE - AIM_DEAD) * k)));
-    this.aim = { id: this.aim.id, x: len > 0 ? dx / len : 1, y: len > 0 ? dy / len : 0, frac, cancel };
+    const auto = len < AIM_INNER * k;
+    const cancel = len > AIM_CANCEL * k;
+    const frac = Math.max(0, Math.min(1, (len - AIM_INNER * k) / ((AIM_RANGE - AIM_INNER) * k)));
+    // free aim is exactly where the thumb points (no snapping; the sim gets 256 directions)
+    this.aimState = { id: this.aimState.id, x: len > 0 ? dx / len : 1, y: len > 0 ? dy / len : 0, frac: auto ? 1 : frac, auto, cancel };
     const shown = Math.min(len, AIM_RANGE * k);
     this.aimKnob.style.transform = `translate(calc(-50% + ${(dx / (len || 1)) * shown}px), calc(-50% + ${(dy / (len || 1)) * shown}px))`;
-    this.aimPad.className = `aim-pad on${cancel ? ' cancel' : ''}`;
+    this.aimPad.className = `aim-pad on${auto ? ' auto' : ''}${cancel ? ' cancel' : ''}`;
   }
 
   private endAim(fire: boolean): void {
-    const a = this.aim;
+    const a = this.aimState;
     this.aimPtr = -1;
-    this.aim = null;
+    this.aimState = null;
     this.aimPad.className = 'aim-pad';
     if (!a) return;
     this.btns[a.id].classList.remove('down');
-    if (!fire || (this.aiming && a.cancel)) return;
+    if (!fire || a.cancel) return;
     this.latched |= BTN_BITS[a.id];
-    // a plain tap (never left the dead zone) fires unaimed → auto-target as before
-    if (this.aiming) this.latchedAim = aimBits(quantizeDir(a.x, a.y, AIM_DIRS), Math.round(a.frac * (AIM_LEVELS - 1)));
-    this.aiming = false;
+    // inside the inner ring: unaimed press → the sim auto-targets the opponent
+    if (!a.auto) this.latchedAim = aimBits(quantizeDir(a.x, a.y, AIM_DIRS), Math.round(a.frac * (AIM_LEVELS - 1)));
+  }
+
+  /** Show the two rings once a hold lasts (called every frame by the battle loop). */
+  tickAim(): void {
+    if (this.aimState?.auto && !this.aimPad.classList.contains('on') && performance.now() - this.aimT0 >= AUTO_PREVIEW_MS) {
+      this.aimPad.className = 'aim-pad on auto';
+    }
   }
 
   private releaseBtn(pid: number): void {

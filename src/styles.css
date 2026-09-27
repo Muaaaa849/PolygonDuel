@@ -1676,11 +1676,34 @@ kbd {
   border-color: rgba(255, 150, 160, 0.9);
   box-shadow: none;
 }
+.aim-pad .aim-inner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1.5px dashed rgba(255, 255, 255, 0.35);
+  display: grid;
+  place-items: center;
+}
+.aim-pad .aim-inner span {
+  font: 700 8px/1 var(--display);
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.45);
+  transform: translateY(-120%);
+}
+.aim-pad.auto .aim-inner {
+  border-color: rgba(111, 243, 255, 0.9);
+  background: rgba(111, 243, 255, 0.12);
+}
+.aim-pad.auto .aim-inner span {
+  color: #6ff3ff;
+}
 .aim-pad.cancel::after {
   content: 'キャンセル';
   position: absolute;
   left: 50%;
-  bottom: 12%;
+  bottom: 8%;
   transform: translateX(-50%);
   font-size: 10px;
   color: #ff9aa6;

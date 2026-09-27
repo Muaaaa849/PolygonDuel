@@ -113,7 +113,7 @@ export class BattleView {
   /** Top inset reserved for the DOM HUD (css px). */
   topInset = 58;
   /** Touch aim in progress (drawn as a highlighted range from the fighter). */
-  aim: { who: number; slot: number; x: number; y: number; frac: number; cancel: boolean } | null = null;
+  aim: { who: number; slot: number; x: number; y: number; frac: number; auto: boolean; cancel: boolean } | null = null;
   private t = 0;
   private lastFrame = -1;
 
@@ -961,9 +961,12 @@ export class BattleView {
     if (f.st === ST_KO || f.st === ST_ATTACK) return;
     const m = this.sim.char(a.who).moves[a.slot];
     if (!m) return;
-    // show what the sim will get: 64 directions, 4 reach levels
-    const q = (Math.round((Math.atan2(a.y, a.x) / (Math.PI * 2)) * 64) / 64) * Math.PI * 2;
-    const pct = 40 + Math.round(a.frac * 3) * 20;
+    // show what the sim will get: auto = straight at the opponent with the full lunge;
+    // free aim = the exact direction (256 steps) and reach level. No snapping either way.
+    const q = a.auto
+      ? Math.atan2(o.y - f.y, o.x - f.x)
+      : (Math.round((Math.atan2(a.y, a.x) / (Math.PI * 2)) * 256) / 256) * Math.PI * 2;
+    const pct = a.auto ? 100 : 40 + Math.round(a.frac * 3) * 20;
     const c = Math.cos(q);
     const sn = Math.sin(q);
     const x = toPx(f.x);

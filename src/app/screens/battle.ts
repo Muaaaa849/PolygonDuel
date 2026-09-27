@@ -527,8 +527,9 @@ export function battleScreen(cfg: BattleConfig): Screen {
     // render in the same frame as the input/sim update (Pixi's own ticker is stopped in battle).
     // A render error must never stop the game loop (the sim and HUD keep going either way).
     try {
+      touch.tickAim();
       const a = touch.aim;
-      view.aim = a ? { slot: a.id === 'atk' ? M_N1 : a.id === 's1' ? M_S1 : M_S2, x: a.x, y: a.y, frac: a.frac, cancel: a.cancel, who: cfg.local } : null;
+      view.aim = a ? { slot: a.id === 'atk' ? M_N1 : a.id === 's1' ? M_S1 : M_S2, x: a.x, y: a.y, frac: a.frac, auto: a.auto, cancel: a.cancel, who: cfg.local } : null;
       view.render((dt / TICK_MS) * devTime);
       app.render();
     } catch (err) {
