@@ -35,7 +35,7 @@ npm run build        # dist/ に出力（Service Worker付き）
 
 ### 公開（GitHub Pages）
 
-`.github/workflows/deploy.yml` が push のたびに型チェック・テスト・ビルドを実行し、`main` ブランチでは Pages へ自動公開します。
+`.github/workflows/deploy.yml` が push のたびに型チェック・テスト・ビルドを実行し、デフォルトブランチでは Pages へ自動公開します。
 初回のみリポジトリの **Settings → Pages → Build and deployment → Source を「GitHub Actions」** にしてください。
 
 ## 構成（計画書 第11章）
