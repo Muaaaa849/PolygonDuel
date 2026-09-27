@@ -78,7 +78,7 @@ export class FrameMeter {
   /** Call once per sim tick (skips hitstop frames, like the plan's charts). */
   record(): void {
     const s = this.sim.s;
-    if (s.hitstop > 0 || s.freeze > 0) return;
+    if (!this.sim.advanced) return;
     for (let i = 0; i < 2; i++) {
       this.rows[i].push(this.cat(s.f[i]));
       if (this.rows[i].length > LEN) this.rows[i].shift();

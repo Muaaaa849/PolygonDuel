@@ -125,7 +125,7 @@ describe.each(IDS)('%s — normal chain rules', (id) => {
   it('JA is guaranteed on a just-dodged N1 whiff', () => {
     const attacker = pressWhen(IN_ATK, () => true);
     const dodger: Bot = (me, op, s, t) => {
-      if (me.justWin > 0 || s.freeze > 0) return t % 2 === 0 ? IN_ATK : 0;
+      if (me.justWin > 0 || s.slow > 0) return t % 2 === 0 ? IN_ATK : 0;
       return op.st === ST_ATTACK && op.move === M_N1 && op.sf === n1.S - 1 && me.st !== 4 ? IN_STEP : 0;
     };
     const sc = new Scenario(id, id, 1.6).run(120, attacker, dodger);
@@ -139,7 +139,7 @@ describe.each(IDS)('%s — normal chain rules', (id) => {
     const gc = c.moves[M_GC];
     let stepped = false;
     const a: Bot = (me, op, s, t) => {
-      if (me.justWin > 0 || s.freeze > 0) return t % 2 === 0 ? IN_ATK : 0;
+      if (me.justWin > 0 || s.slow > 0) return t % 2 === 0 ? IN_ATK : 0;
       if (!stepped && op.st === ST_ATTACK && op.move === M_GC && op.sf === gc.S - 1) {
         stepped = true;
         return IN_STEP;

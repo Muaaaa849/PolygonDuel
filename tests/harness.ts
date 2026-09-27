@@ -18,7 +18,7 @@ export interface Logged extends SimEvent {
 export class Scenario {
   sim: Sim;
   log: Logged[] = [];
-  /** Logical frame counter — excludes hitstop / freeze frames. */
+  /** Logical frame counter — excludes hitstop / slow-motion skip frames. */
   lf = 0;
   t = 0;
   /** Logical frame each fighter last became free (st FREE after not being free). */
@@ -42,12 +42,11 @@ export class Scenario {
 
   tick(botA: Bot, botB: Bot): void {
     const s = this.sim.s;
-    const advancing = s.hitstop === 0 && s.freeze === 0;
     const wasFree = [s.f[0].st === ST_FREE, s.f[1].st === ST_FREE];
     const ia = botA(s.f[0], s.f[1], s, this.t);
     const ib = botB(s.f[1], s.f[0], s, this.t);
     this.sim.step(ia, ib);
-    if (advancing) this.lf++;
+    if (this.sim.advanced) this.lf++;
     this.t++;
     for (const e of this.sim.events) this.log.push({ ...e, lf: this.lf });
     for (let i = 0; i < 2; i++) if (!wasFree[i] && s.f[i].st === ST_FREE) this.freeAt[i].push(this.lf);

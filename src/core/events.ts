@@ -20,12 +20,16 @@ export const EV_MATCH_END = 17;
 export const EV_WAKE = 18;
 export const EV_WHIFF = 19;
 export const EV_GUARD = 20;
+/** Knocked into the arena edge: a = damage, b = side (0 left, 1 right, 2 top, 3 bottom), x/y = impact point. */
+export const EV_WALL = 21;
+/** JA teleport: x/y = destination, a/b = origin x/y. */
+export const EV_BLINK = 22;
 
 export const EV_NAMES: Record<number, string> = {
   [EV_MOVE]: 'move', [EV_HIT]: 'hit', [EV_BLOCK]: 'block', [EV_CRUSH]: 'crush', [EV_GUARD_BREAK]: 'guardBreak',
   [EV_GB_OPEN]: 'gbOpen', [EV_JUST]: 'just', [EV_RIPOSTE]: 'riposte', [EV_KNOCKDOWN]: 'knockdown', [EV_STEP]: 'step',
   [EV_HEAL]: 'heal', [EV_KO]: 'ko', [EV_ROUND]: 'round', [EV_FIGHT]: 'fight', [EV_TIMEUP]: 'timeup',
-  [EV_ROUND_END]: 'roundEnd', [EV_MATCH_END]: 'matchEnd', [EV_WAKE]: 'wake', [EV_WHIFF]: 'whiff', [EV_GUARD]: 'guard',
+  [EV_ROUND_END]: 'roundEnd', [EV_MATCH_END]: 'matchEnd', [EV_WAKE]: 'wake', [EV_WHIFF]: 'whiff', [EV_GUARD]: 'guard', [EV_WALL]: 'wall', [EV_BLINK]: 'blink',
 };
 
 // HIT flags

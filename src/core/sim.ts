@@ -19,7 +19,7 @@ import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, aimAngle, aimLevel, aimLungePc
 import {
   type SimEvent,
   EV_MOVE, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN, EV_STEP,
-  EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_WAKE, EV_GUARD,
+  EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_WAKE, EV_GUARD, EV_WALL, EV_BLINK,
   HF_COUNTER, HF_JA, HF_OTG, HF_KNOCKDOWN, HF_FORCED_DOWN,
 } from './events';
 
@@ -41,6 +41,7 @@ const COST_HURT = Math.round(SYSTEM.cost.gainOnHurt * COST_UNIT);
 const COST_HURT_CAP = Math.round(SYSTEM.cost.maxHurtGainPerCombo * COST_UNIT);
 const ROLL_DIST = u(SYSTEM.down.rollDist);
 const LAUNCH = u(SYSTEM.down.launch);
+const BLINK_DIST = u(SYSTEM.just.blinkDist);
 const STEP_W = [16, 15, 14, 12, 11, 9, 8, 7, 5, 3]; // ease-out profile, sums to 100
 
 /** Per-character step distance for each move frame (1-based). */
@@ -97,6 +98,7 @@ export class Sim {
     s.timer = R.seconds * SYSTEM.fps;
     s.hitstop = 0;
     s.freeze = 0;
+    s.slow = 0;
     s.roundWinner = -1;
     if (first) {
       s.round = 1;
@@ -140,10 +142,14 @@ export class Sim {
 
   // ───────────────────────────── main step ─────────────────────────────
 
+  /** Did the fighters advance on the last step? (false during hitstop / slow-motion skip frames) */
+  advanced = false;
+
   step(inA: number, inB: number): void {
     const s = this.s;
     s.frame++;
     this.events.length = 0;
+    this.advanced = false;
 
     if (s.phase === PH_MATCH_OVER) return;
 
@@ -171,7 +177,16 @@ export class Sim {
       s.freeze--;
       return;
     }
+    if (s.slow > 0) {
+      // just-dodge slow motion: fighters advance every slowDiv-th frame;
+      // the dodger pressing ATK ends it at once (the JA starts this very frame)
+      s.slow--;
+      const dz = s.f[s.slowWho];
+      if (dz.bufAtk > 0 && dz.justWin > 0) s.slow = 0;
+      else if (s.slow % SYSTEM.just.slowDiv !== 0) return;
+    }
 
+    this.advanced = true;
     this.updateFighter(0, ins0);
     this.updateFighter(1, ins1);
     this.resolveBodies();
@@ -310,9 +325,40 @@ export class Sim {
     if (f.kbDist <= 0) return;
     let d = idiv(f.kbDist, 4) + 12;
     if (d > f.kbDist) d = f.kbDist;
+    const left = f.kbDist;
     f.kbDist -= d;
     f.x += offX(f.kbAngle, d);
     f.y += offY(f.kbAngle, d);
+    // knocked into the arena edge by a hit → wall impact
+    const lo = BODY_R;
+    const hx = FIELD_W - BODY_R;
+    const hy = FIELD_H - BODY_R;
+    const side = f.x < lo ? 0 : f.x > hx ? 1 : f.y < lo ? 2 : f.y > hy ? 3 : -1;
+    if (side >= 0) this.wallImpact(f, side, left);
+  }
+
+  private wallImpact(f: FighterState, side: number, speed: number): void {
+    const s = this.s;
+    const hurt = f.st === ST_HITSTUN || f.st === ST_DOWN || f.st === ST_STUN;
+    f.x = clamp(f.x, BODY_R, FIELD_W - BODY_R);
+    f.y = clamp(f.y, BODY_R, FIELD_H - BODY_R);
+    if (!hurt || f.wallHits >= SYSTEM.wall.perCombo) return;
+    f.kbDist = 0;
+    f.wallHits++;
+    const W = SYSTEM.wall;
+    // faster impacts (more knockback left) hurt more
+    const bonus = idiv(W.bonus * Math.min(speed, LAUNCH), LAUNCH);
+    const sc = SYSTEM.scaling;
+    const dmg = idiv((W.dmg + bonus) * sc[Math.min(f.comboHits, sc.length - 1)], 100);
+    const who = s.f[0] === f ? 0 : 1;
+    const a = s.f[1 - who];
+    f.hp = s.trainingRefill ? Math.max(1, f.hp - dmg) : Math.max(0, f.hp - dmg);
+    f.comboDmg += dmg;
+    a.statDmg += dmg;
+    s.hitstop = Math.max(s.hitstop, W.hitstop);
+    const px = side === 0 ? 0 : side === 1 ? FIELD_W : f.x;
+    const py = side === 2 ? 0 : side === 3 ? FIELD_H : f.y;
+    this.emit(EV_WALL, who, dmg, side, px, py);
   }
 
   private wakeRoll(f: FighterState): void {
@@ -415,6 +461,15 @@ export class Sim {
     if (mi === M_JA) {
       f.justWin = 0;
       f.jaChain = 1;
+      // blink: reappear right in front of the opponent (on our side) so the JA always connects
+      const o = this.s.f[1 - i];
+      const back = atan2A(f.y - o.y, f.x - o.x);
+      const ox = f.x;
+      const oy = f.y;
+      f.x = clamp(o.x + offX(back, BLINK_DIST), BODY_R, FIELD_W - BODY_R);
+      f.y = clamp(o.y + offY(back, BLINK_DIST), BODY_R, FIELD_H - BODY_R);
+      f.kbDist = 0;
+      this.emit(EV_BLINK, i, ox, oy, f.x, f.y);
     } else if (m.kind === KIND_SKILL || m.kind === KIND_GC || (m.kind === KIND_NORMAL && !chained)) {
       f.jaChain = 0;
     }
@@ -654,7 +709,8 @@ export class Sim {
         a.moveHit = MH_SPENT;
         d.justWin = SYSTEM.just.window;
         d.statJust++;
-        s.freeze = Math.max(s.freeze, SYSTEM.just.freeze);
+        s.slow = SYSTEM.just.slow;
+        s.slowWho = 1 - i;
         this.emit(EV_JUST, 1 - i, 0, 0, d.x, d.y);
         return;
       }
@@ -861,6 +917,7 @@ export class Sim {
         }
         d.comboHits = 0;
         d.hurtGain = 0;
+        d.wallHits = 0;
         d.comboFrames = 0;
         d.comboDmg = 0;
         a.comboGain = 0;

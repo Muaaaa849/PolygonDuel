@@ -562,6 +562,60 @@ def contact_sheet():
     print('preview →', out)
 
 
+def blink(size=320, n=14):
+    """JA teleport arrival: a collapsing diamond, a vertical light slit, and shards flung out."""
+    x, y, r, th = grid(size)
+    frames = []
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(t)
+        dia = np.abs(x) + np.abs(y)  # diamond distance
+        rad = 0.95 * (1 - e) + 0.08
+        inten = gauss(dia - rad, 0.025 + 0.02 * t) * (1 - t * 0.7) * 1.6
+        # vertical slit that opens then fades
+        slit_w = 0.02 + 0.05 * math.sin(min(1, t * 2.2) * math.pi)
+        inten += gauss(x, slit_w) * gauss(y, 0.9) * (1 - t) ** 0.8 * 2.4
+        inten += gauss(y, 0.012) * gauss(x, 0.45 * (1 - t) + 0.05) * (1 - t) ** 1.5 * 1.5
+        # shards outward after the collapse
+        if t > 0.25:
+            tt = (t - 0.25) / 0.75
+            for i in range(9):
+                a = i * 0.698 + 0.4
+                d = 0.15 + 0.8 * ease_out(tt) * (0.7 + 0.3 * ((i * 53) % 10) / 10)
+                cx, cy = math.cos(a) * d, math.sin(a) * d
+                u = (x - cx) * math.cos(a) + (y - cy) * math.sin(a)
+                v = -(x - cx) * math.sin(a) + (y - cy) * math.cos(a)
+                inten += gauss(u, 0.06) * gauss(v, 0.012) * (1 - tt) * 1.8
+        frames.append(rgba(glowify(inten, 4, 0.7), (1, 1, 1), white_core=0.8))
+    save('blink_t', frames, tint=True)
+
+
+def wall_hit(size=384, n=14):
+    """Arena-edge impact, facing +x (away from the wall): half-ring burst, cracks and debris."""
+    x, y, r, th = grid(size)
+    frames = []
+    half = smooth(-0.35, 0.05, x)  # only the side facing away from the wall
+    cracks = np.zeros_like(r)
+    for i in range(7):
+        a = -1.25 + i * 0.42
+        u = x * math.cos(a) + y * math.sin(a)
+        v = -x * math.sin(a) + y * math.cos(a)
+        cracks += gauss(v + 0.02 * np.sin(u * 40), 0.01) * (u > 0) * np.exp(-u * 1.6)
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(t)
+        ring = gauss(r - (0.08 + 0.8 * e), 0.03 + 0.04 * t) * (1 - t) ** 1.2 * 1.8
+        inten = (ring + gauss(r, 0.18 + 0.2 * e) * (1 - t) ** 2 * 2.2) * half
+        inten += cracks * smooth(0.0, 0.15, t) * (1 - t) ** 0.8 * 2.0
+        for i in range(12):
+            a = -1.3 + i * 0.236
+            d = 0.1 + 0.85 * e * (0.5 + 0.5 * ((i * 71) % 10) / 10)
+            cx, cy = math.cos(a) * d, math.sin(a) * d
+            inten += gauss(np.sqrt((x - cx) ** 2 + (y - cy) ** 2), 0.018) * (1 - t) * 1.6
+        frames.append(rgba(glowify(inten, 4, 0.6), (1, 1, 1), white_core=0.85))
+    save('wall_t', frames, tint=True)
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     slash()
@@ -583,6 +637,8 @@ if __name__ == '__main__':
     danger()
     stun()
     charge()
+    blink()
+    wall_hit()
     with open(os.path.join(OUT, 'fx.json'), 'w') as f:
         json.dump(MANIFEST, f, indent=1)
     total = sum(os.path.getsize(os.path.join(OUT, m['file'])) for m in MANIFEST.values())

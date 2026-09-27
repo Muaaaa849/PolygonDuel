@@ -85,10 +85,31 @@ export const sfx = {
     tone(220, 0.4, 'sawtooth', 0.15, 55);
     for (let i = 0; i < 5; i++) tone(1800 + Math.random() * 1600, 0.08, 'triangle', 0.08, undefined, 0.03 * i);
   },
+  /** Just dodge: a bright glint, then time "winds down" (pitch-falling hum under the slow motion). */
   just() {
     tone(880, 0.35, 'sine', 0.25, 1760);
     tone(1320, 0.4, 'triangle', 0.12, 2640, 0.04);
     noise(0.4, 6000, 4, 0.08, 'bandpass', 12000);
+    tone(220, 0.7, 'sawtooth', 0.07, 55, 0.05);
+    tone(110, 0.75, 'sine', 0.3, 38, 0.05);
+    noise(0.7, 2400, 1.2, 0.1, 'bandpass', 180, 0.05);
+  },
+  /** Arena-edge impact: heavy thump + a springy metallic "bwoing" that rides the edge's sine wobble. */
+  wall(dmg: number) {
+    const k = Math.min(1, dmg / 60);
+    tone(95, 0.35, 'sine', 0.6, 32);
+    noise(0.28, 900, 0.6, 0.55, 'lowpass', 120);
+    noise(0.12, 4200, 1.5, 0.25, 'bandpass', 1800);
+    // springy wobble: vibrato-like beating of two close tones sliding down
+    tone(420 + 120 * k, 0.55, 'triangle', 0.14, 180, 0.02);
+    tone(436 + 120 * k, 0.55, 'triangle', 0.12, 176, 0.02);
+    for (let i = 0; i < 4; i++) tone(1600 + i * 420, 0.1, 'square', 0.035, 900, 0.02 + i * 0.035);
+  },
+  /** JA teleport: a zipped-up swish that snaps into place. */
+  blink() {
+    noise(0.12, 1200, 1.5, 0.22, 'bandpass', 9000);
+    tone(600, 0.1, 'sine', 0.12, 2400);
+    tone(2400, 0.08, 'triangle', 0.1, 1200, 0.09);
   },
   riposte() {
     tone(660, 0.05, 'square', 0.15);

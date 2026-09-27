@@ -11,10 +11,10 @@ import { hashState } from '../src/core/state';
 const idle: Bot = (_m, _o, _s, t) => stick(t % 20 < 10 ? 8 : 24); // shuffles in place, never guards
 
 describe('aimed presses', () => {
-  it('encodes 64 directions and 4 reach levels', () => {
-    for (const [d, l] of [[0, 0], [17, 3], [63, 1]]) {
+  it('encodes 256 directions and 4 reach levels', () => {
+    for (const [d, l] of [[0, 0], [17, 3], [255, 1]]) {
       const w = aimBits(d, l) | IN_ATK;
-      expect(aimAngle(w)).toBe(d * 16);
+      expect(aimAngle(w)).toBe(d * 4);
       expect(aimLevel(w)).toBe(l);
     }
     expect(aimAngle(IN_ATK)).toBe(-1);
@@ -22,11 +22,11 @@ describe('aimed presses', () => {
 
   it('an aimed attack faces exactly the aimed direction and does not home', () => {
     const sc = new Scenario('blaze', 'bastion', 3);
-    // opponent is to the right (angle 0); aim straight up (dir 48 = 768)
+    // opponent is to the right (angle 0); aim straight up (dir 192 = 768)
     const facings: number[] = [];
     sc.run(18, (me, _o, _s, t) => {
       if (me.st === ST_ATTACK) facings.push(me.facing);
-      return t === 0 ? IN_ATK | aimBits(48, 3) : 0;
+      return t === 0 ? IN_ATK | aimBits(192, 3) : 0;
     }, () => 0);
     expect(facings.length).toBeGreaterThan(8);
     expect(new Set(facings)).toEqual(new Set([768]));
@@ -74,8 +74,8 @@ describe('aimed presses', () => {
       const sim = new Sim(charIndex('zephyr'), charIndex('blaze'));
       sim.skipIntro();
       for (let t = 0; t < 600; t++) {
-        const a = t % 37 === 0 ? IN_ATK | aimBits(t % 64, t % 4) : stick(t % 32);
-        const b = t % 53 === 0 ? IN_S1 | aimBits((t * 7) % 64, 2) : stick((t * 3) % 32);
+        const a = t % 37 === 0 ? IN_ATK | aimBits(t % 256, t % 4) : stick(t % 32);
+        const b = t % 53 === 0 ? IN_S1 | aimBits((t * 7) % 256, 2) : stick((t * 3) % 32);
         sim.step(a, b);
       }
       return hashState(sim.s);

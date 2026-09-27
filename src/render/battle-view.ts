@@ -1,5 +1,5 @@
 // Battle scene: field, fighters (shape morph, arrow → bar, guard wobble), effects, camera.
-import { Container, Graphics, Text } from 'pixi.js';
+import { Application, ColorMatrixFilter, Container, Graphics, Text } from 'pixi.js';
 import { AdvancedBloomFilter, RGBSplitFilter, ShockwaveFilter } from 'pixi-filters';
 import type { Sim } from '../core/sim';
 import { SH, M_STRIKE, COST_UNIT } from '../core/compile';
@@ -10,7 +10,7 @@ import {
 } from '../core/state';
 import {
   type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN,
-  EV_STEP, EV_HEAL, EV_KO, EV_MOVE, HF_COUNTER, HF_JA, HF_OTG,
+  EV_STEP, EV_HEAL, EV_KO, EV_MOVE, EV_WALL, EV_BLINK, HF_COUNTER, HF_JA, HF_OTG,
 } from '../core/events';
 import { Morph, SHAPE_RADII, toPoints } from './shapes';
 import { Vfx } from './vfx';
@@ -31,6 +31,8 @@ export interface ViewOptions {
   local: 0 | 1 | -1;
   tags: [string, string];
   showHitboxes?: boolean;
+  /** Pixi application to draw into (default: the main one). The move-sheet demo uses its own. */
+  host?: Application;
 }
 
 export type Quality = 'high' | 'mid' | 'low';
@@ -80,6 +82,14 @@ export class BattleView {
   private field = new Container();
   private fieldG = new Graphics();
   private fieldFx = new Graphics();
+  /** Arena edge, redrawn every frame so wall impacts can ripple along it. */
+  private borderG = new Graphics();
+  private wallWaves: { p0: number; t: number; amp: number; color: number }[] = [];
+  private streaks: { x0: number; y0: number; x1: number; y1: number; life: number; color: number }[] = [];
+  /** Just-dodge slow motion: monochrome world, impact frames. */
+  private mono = new ColorMatrixFilter();
+  private monoAmt = 0;
+  private impactFrames = 0;
   private bodies = new Graphics();
   private glow = new Graphics();
   private overlay = new Graphics();
@@ -107,7 +117,10 @@ export class BattleView {
   private t = 0;
   private lastFrame = -1;
 
+  private host: Application;
+
   constructor(private sim: Sim, private opts: ViewOptions) {
+    this.host = opts.host ?? app;
     this.showHitboxes = !!opts.showHitboxes;
     const cA = sim.char(0).def;
     const cB = sim.char(1).def;
@@ -116,13 +129,14 @@ export class BattleView {
     this.fighters = [new FighterView(0, colA, opts.tags[0]), new FighterView(1, colB, opts.tags[1])];
     this.glow.blendMode = 'add';
     this.fieldFx.blendMode = 'add';
-    this.field.addChild(this.fieldG, this.fieldFx);
+    this.field.addChild(this.fieldG, this.borderG, this.fieldFx);
+    this.mono.desaturate();
     this.fx.root.sortableChildren = false;
     this.world.addChild(this.field, this.glow, this.bodies, this.fx.root, this.overlay, this.vfx.root, this.labels);
     for (const f of this.fighters) this.labels.addChild(f.label);
     this.root.addChild(this.world, this.flashG);
     this.rgb = new RGBSplitFilter({ red: [0, 0], green: [0, 0], blue: [0, 0] });
-    this.rgb.resolution = app.renderer.resolution;
+    this.rgb.resolution = this.host.renderer.resolution;
     this.drawField();
     // auto: start at mid on touch devices (phones), high elsewhere; adjusted by measured frame time
     const touch = matchMedia('(pointer: coarse)').matches;
@@ -146,7 +160,7 @@ export class BattleView {
         quality: q === 'high' ? 5 : 3,
       });
       // render filters at device resolution on high so edges stay crisp
-      this.bloom.resolution = q === 'high' ? app.renderer.resolution : 1;
+      this.bloom.resolution = q === 'high' ? this.host.renderer.resolution : 1;
       this.bloom.antialias = 'on';
     }
     this.applyFilters();
@@ -156,12 +170,13 @@ export class BattleView {
     const f = [];
     if (this.bloom) f.push(this.bloom);
     if (this.chroma > 0.05 && !settings.reduceFlash) f.push(this.rgb);
+    if (this.monoAmt > 0.01) f.push(this.mono);
     this.world.filters = f.length ? f : null;
     this.field.filters = this.waves.length ? this.waves : null;
   }
 
   mount(): void {
-    app.stage.addChild(this.root);
+    this.host.stage.addChild(this.root);
   }
 
   destroy(): void {
@@ -183,9 +198,7 @@ export class BattleView {
     g.stroke({ width: 1.5, color: 0x6f8cff, alpha: 0.09 });
     g.moveTo(FW / 2, 0).lineTo(FW / 2, FHt).stroke({ width: 2, color: 0x6f8cff, alpha: 0.14 });
     g.circle(FW / 2, FHt / 2, 1.5 * PX).stroke({ width: 2, color: 0x6f8cff, alpha: 0.12 });
-    // neon border
-    g.rect(0, 0, FW, FHt).stroke({ width: 10, color: 0x6ff3ff, alpha: 0.08 });
-    g.rect(0, 0, FW, FHt).stroke({ width: 3, color: 0x6ff3ff, alpha: 0.55 });
+    // (the neon border itself is drawn per frame in drawBorder)
     // corner brackets
     const c = 60;
     for (const [x, y, sx, sy] of [[0, 0, 1, 1], [FW, 0, -1, 1], [0, FHt, 1, -1], [FW, FHt, -1, -1]]) {
@@ -271,14 +284,54 @@ export class BattleView {
         def.flash = 2;
         break;
       case EV_JUST: {
-        this.vfx.ring(x, y, 0x6ff3ff, 20, 260, 24, 8);
-        this.vfx.ring(x, y, 0xffffff, 10, 160, 18, 4);
-        this.vfx.glitter(x, y, 0x6ff3ff, 30, 12, 40, 5);
-        this.vfx.text('JUST!', x, y - 100, 0x6ff3ff, 46, 60, -0.5);
-        this.fx.spawn('just', { x, y, size: 4.2 * PX });
-        this.chroma = 1;
-        this.wave(x, y, 1.4);
-        this.flashScreen(0x6ff3ff, 0.2);
+        // time nearly stops: impact frame + heavy chromatic split, a big ripple from the
+        // dodger, then the world goes monochrome in slow motion until ATK (→ blink JA)
+        const f = s.f[e.who];
+        const fx0 = toPx(f.x);
+        const fy0 = toPx(f.y);
+        this.vfx.ring(fx0, fy0, 0x6ff3ff, 20, 420, 40, 10);
+        this.vfx.ring(fx0, fy0, 0xffffff, 10, 240, 30, 5);
+        this.vfx.glitter(fx0, fy0, 0x6ff3ff, 40, 14, 60, 5);
+        this.vfx.text('JUST!', fx0, fy0 - 110, 0x6ff3ff, 54, 70, -0.4);
+        this.vfx.text('ATTACK ▶', fx0, fy0 + 120, 0xffffff, 26, 70, -0.2);
+        this.fx.spawn('just', { x: fx0, y: fy0, size: 5.2 * PX });
+        this.fx.spawn('ripple_t', { x: fx0, y: fy0, size: 9 * PX, tint: 0x6ff3ff, alpha: 0.8, speed: 0.6 });
+        this.impactFrames = settings.reduceFlash ? 0 : 3;
+        this.chroma = settings.reduceFlash ? 0.5 : 2.4;
+        this.addShake(10);
+        this.bigWave(fx0, fy0);
+        break;
+      }
+      case EV_WALL: {
+        // knocked into the arena edge: the edge ripples out from the impact point
+        const vc = this.fighters[e.who].color;
+        const ac = this.fighters[1 - e.who].color;
+        const rot = [0, Math.PI, Math.PI / 2, -Math.PI / 2][e.b] ?? 0;
+        this.wallWaves.push({ p0: this.perimeterAt(x, y), t: 0, amp: 16 + Math.min(22, e.a * 0.35), color: ac });
+        if (this.wallWaves.length > 4) this.wallWaves.shift();
+        this.fx.spawn('wall_t', { x, y, size: 3.8 * PX, rot, tint: ac, alpha: 0.9 });
+        this.fx.spawn('hit_heavy_t', { x, y, size: 2.4 * PX, rot, tint: 0xffffff, alpha: 0.6 });
+        this.vfx.spark(x, y, ac, 16, 34, 44, 6, Math.PI * 0.9, rot);
+        this.vfx.spark(x, y, 0xffffff, 8, 26, 30, 4, Math.PI * 0.7, rot);
+        this.vfx.text(`WALL +${e.a}`, x + Math.cos(rot) * 110, y + Math.sin(rot) * 110 - 60, ac, 32, 50, -0.6);
+        this.fighters[e.who].flash = 4;
+        void vc;
+        this.addShake(20);
+        this.wave(x, y, 1.3);
+        this.flashScreen(ac, 0.22);
+        break;
+      }
+      case EV_BLINK: {
+        // JA teleport: afterimage + light streak from where we were, flash where we land
+        const fv = this.fighters[e.who];
+        const ox = toPx(e.a);
+        const oy = toPx(e.b);
+        fv.ghosts.push({ x: ox, y: oy, rot: fv.morph.r ? s.f[e.who].facing * ANG_TO_RAD : 0, radii: Float32Array.from(fv.morph.r), life: 18 });
+        this.streaks.push({ x0: ox, y0: oy, x1: x, y1: y, life: 14, color: fv.color });
+        this.fx.spawn('blink_t', { x: ox, y: oy, size: 2.4 * PX, tint: 0xffffff, alpha: 0.7, speed: 1.3 });
+        this.fx.spawn('blink_t', { x, y, size: 3.2 * PX, tint: fv.color });
+        for (let k = 1; k < 6; k++) this.vfx.glitter(ox + ((x - ox) * k) / 6, oy + ((y - oy) * k) / 6, 0x6ff3ff, 3, 4, 18, 3);
+        this.chroma = Math.max(this.chroma, 0.8);
         break;
       }
       case EV_RIPOSTE: {
@@ -349,6 +402,70 @@ export class BattleView {
     this.screenFlashColor = color;
   }
 
+  /** The just-dodge ripple: slower, wider, stronger than a hit's shockwave. */
+  private bigWave(x: number, y: number): void {
+    if (this.quality === 'low') return;
+    if (this.waves.length >= 3) this.waves.shift();
+    const w = new ShockwaveFilter({ center: { x: 0, y: 0 }, amplitude: 34, wavelength: 170, speed: 520, brightness: 1.25, radius: 1100 });
+    (w as unknown as { _wx: number; _wy: number })._wx = x;
+    (w as unknown as { _wx: number; _wy: number })._wy = y;
+    this.waves.push(w);
+    this.applyFilters();
+  }
+
+  /** Perimeter coordinate (px, clockwise from the top-left corner) of a point on the arena edge. */
+  private perimeterAt(x: number, y: number): number {
+    const dl = x;
+    const dr = FW - x;
+    const dt = y;
+    const db = FHt - y;
+    const m = Math.min(dl, dr, dt, db);
+    if (m === dt) return Math.max(0, Math.min(FW, x));
+    if (m === dr) return FW + Math.max(0, Math.min(FHt, y));
+    if (m === db) return FW + FHt + (FW - Math.max(0, Math.min(FW, x)));
+    return 2 * FW + FHt + (FHt - Math.max(0, Math.min(FHt, y)));
+  }
+
+  /** Neon arena edge; wall impacts send a damped sine wave running along it. */
+  private drawBorder(dt: number): void {
+    const g = this.borderG;
+    g.clear();
+    const P = 2 * (FW + FHt);
+    for (let i = this.wallWaves.length - 1; i >= 0; i--) {
+      this.wallWaves[i].t += dt;
+      if (this.wallWaves[i].t > 70) this.wallWaves.splice(i, 1);
+    }
+    if (!this.wallWaves.length) {
+      g.rect(0, 0, FW, FHt).stroke({ width: 10, color: 0x6ff3ff, alpha: 0.08 });
+      g.rect(0, 0, FW, FHt).stroke({ width: 3, color: 0x6ff3ff, alpha: 0.55 });
+      return;
+    }
+    const step = 10;
+    const pts: number[] = [];
+    let energy = 0;
+    for (let p = 0; p < P; p += step) {
+      // base point + outward normal
+      let bx: number, by: number, nx: number, ny: number;
+      if (p < FW) [bx, by, nx, ny] = [p, 0, 0, -1];
+      else if (p < FW + FHt) [bx, by, nx, ny] = [FW, p - FW, 1, 0];
+      else if (p < 2 * FW + FHt) [bx, by, nx, ny] = [FW - (p - FW - FHt), FHt, 0, 1];
+      else [bx, by, nx, ny] = [0, FHt - (p - 2 * FW - FHt), -1, 0];
+      let off = 0;
+      for (const w of this.wallWaves) {
+        let d = Math.abs(p - w.p0);
+        d = Math.min(d, P - d);
+        // wave travelling outward from the impact, damped in time and distance
+        off += w.amp * Math.exp(-w.t / 20) * Math.cos((d / 110) * Math.PI - w.t * 0.38) * Math.exp(-d / 420);
+      }
+      energy = Math.max(energy, Math.abs(off));
+      pts.push(bx + nx * off, by + ny * off);
+    }
+    const hot = Math.min(1, energy / 30);
+    const col = this.wallWaves[this.wallWaves.length - 1].color;
+    g.poly(pts, true).stroke({ width: 14, color: col, alpha: 0.08 + 0.2 * hot, join: 'round' });
+    g.poly(pts, true).stroke({ width: 3 + 2 * hot, color: mix(0x6ff3ff, 0xffffff, hot * 0.6), alpha: 0.55 + 0.4 * hot, join: 'round' });
+  }
+
   private wave(x: number, y: number, power: number): void {
     if (this.quality === 'low' || this.waves.length >= 3) return;
     const w = new ShockwaveFilter({ center: { x: 0, y: 0 }, amplitude: 18 * power, wavelength: 90, speed: 700, brightness: 1.15, radius: 380 * power });
@@ -384,9 +501,13 @@ export class BattleView {
     const s = this.sim.s;
     const newFrame = s.frame !== this.lastFrame;
     this.lastFrame = s.frame;
-    const frozen = s.hitstop > 0 || s.freeze > 0;
+    const slowing = s.slow > 0;
+    const frozen = s.hitstop > 0 || s.freeze > 0 || (slowing && !this.sim.advanced);
+    // slow motion: effects run at a fraction of real time
+    const fxDt = slowing ? dtFrames * 0.3 : dtFrames;
 
     this.updateCamera(dtFrames);
+    this.drawBorder(dtFrames);
 
     const glow = this.glow;
     const g = this.bodies;
@@ -402,13 +523,32 @@ export class BattleView {
     for (let i = 0; i < 2; i++) this.stateFx(i, newFrame && !frozen);
     this.drawAim();
 
-    this.vfx.update(dtFrames);
-    this.fx.update(dtFrames);
+    this.vfx.update(fxDt);
+    this.fx.update(fxDt);
+    // blink streaks
+    for (let i = this.streaks.length - 1; i >= 0; i--) {
+      const st = this.streaks[i];
+      st.life -= fxDt;
+      if (st.life <= 0) {
+        this.streaks.splice(i, 1);
+        continue;
+      }
+      const k = st.life / 14;
+      glow.moveTo(st.x0, st.y0).lineTo(st.x1, st.y1).stroke({ width: 40 * k, color: st.color, alpha: 0.35 * k, cap: 'round' });
+      glow.moveTo(st.x0, st.y0).lineTo(st.x1, st.y1).stroke({ width: 8 * k, color: 0xffffff, alpha: 0.9 * k, cap: 'round' });
+    }
+    // monochrome while time is slowed
+    const monoTarget = slowing && !settings.reduceFlash ? 1 : slowing ? 0.6 : 0;
+    const prevMono = this.monoAmt;
+    this.monoAmt += (monoTarget - this.monoAmt) * (1 - Math.pow(monoTarget > this.monoAmt ? 0.45 : 0.8, dtFrames));
+    if (this.monoAmt < 0.01) this.monoAmt = 0;
+    this.mono.alpha = this.monoAmt;
+    if ((prevMono > 0.01) !== (this.monoAmt > 0.01)) this.applyFilters();
 
     // shockwaves
     for (let i = this.waves.length - 1; i >= 0; i--) {
       const w = this.waves[i];
-      w.time += dtFrames / 60;
+      w.time += fxDt / 60;
       const p = this.field.toGlobal({ x: (w as unknown as { _wx: number })._wx, y: (w as unknown as { _wy: number })._wy });
       w.centerX = p.x;
       w.centerY = p.y;
@@ -419,7 +559,7 @@ export class BattleView {
     }
     // chroma (just dodge) decays 6px → 0 over ~20F
     if (this.chroma > 0) {
-      this.chroma = Math.max(0, this.chroma - dtFrames / 22);
+      this.chroma = Math.max(0, this.chroma - (slowing ? fxDt / 30 : dtFrames / 22));
       const px = 6 * this.chroma;
       this.rgb.red = { x: -px, y: 0 };
       this.rgb.green = { x: 0, y: px * 0.5 };
@@ -431,15 +571,24 @@ export class BattleView {
     const fg = this.flashG;
     fg.clear();
     if (this.screenFlash > 0.01) {
-      fg.rect(0, 0, app.screen.width, app.screen.height).fill({ color: this.screenFlashColor, alpha: this.screenFlash });
+      fg.rect(0, 0, this.host.screen.width, this.host.screen.height).fill({ color: this.screenFlashColor, alpha: this.screenFlash });
       this.screenFlash *= Math.pow(0.82, dtFrames);
     }
-    if (s.freeze > 0 && !settings.reduceFlash) {
-      // just-dodge freeze: desaturate-ish dim + vignette
-      fg.rect(0, 0, app.screen.width, app.screen.height).fill({ color: 0x0a1a2a, alpha: 0.25 });
+    if (this.impactFrames > 0) {
+      // impact frames: a white flash, then a dark frame
+      fg.rect(0, 0, this.host.screen.width, this.host.screen.height).fill({ color: this.impactFrames > 1 ? 0xffffff : 0x000000, alpha: this.impactFrames > 1 ? 0.55 : 0.45 });
+      if (newFrame) this.impactFrames--;
+    } else if (slowing) {
+      // slow motion: dim edges (cheap vignette)
+      const W = this.host.screen.width;
+      const H = this.host.screen.height;
+      for (let k = 0; k < 4; k++) {
+        const m = (k + 1) * Math.min(W, H) * 0.06;
+        fg.rect(0, 0, W, m).rect(0, H - m, W, m).rect(0, m, m, H - 2 * m).rect(W - m, m, m, H - 2 * m).fill({ color: 0x000000, alpha: 0.1 * this.monoAmt });
+      }
     }
     if (s.phase === PH_INTRO) {
-      fg.rect(0, 0, app.screen.width, app.screen.height).fill({ color: 0x000000, alpha: 0.15 });
+      fg.rect(0, 0, this.host.screen.width, this.host.screen.height).fill({ color: 0x000000, alpha: 0.15 });
     }
   }
 
@@ -525,8 +674,8 @@ export class BattleView {
    */
   private updateCamera(dt: number): void {
     const s = this.sim.s;
-    const sw = app.screen.width;
-    const sh = app.screen.height;
+    const sw = this.host.screen.width;
+    const sh = this.host.screen.height;
     const top = this.topInset;
     const vh = Math.max(1, sh - top);
     const margin = 0.35 * PX;

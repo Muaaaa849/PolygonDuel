@@ -5,7 +5,7 @@ import { SYSTEM } from '../../data/system';
 import { M_N1, M_S1, M_S2, SH, SHAPES } from '../../core/compile';
 import {
   type SimEvent, eventKey, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE,
-  EV_KNOCKDOWN, EV_STEP, EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_MOVE,
+  EV_KNOCKDOWN, EV_STEP, EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_MOVE, EV_WALL, EV_BLINK,
   HF_COUNTER, HF_KNOCKDOWN,
 } from '../../core/events';
 import { PH_FIGHT, PH_INTRO, ST_FREE, ST_STEP, ST_ATTACK, type FighterState } from '../../core/state';
@@ -191,6 +191,13 @@ export function battleScreen(cfg: BattleConfig): Screen {
       case EV_JUST:
         sfx.just();
         if (involvesLocal(e.who)) vibrate(15);
+        break;
+      case EV_WALL:
+        sfx.wall(e.a);
+        vibrate(35);
+        break;
+      case EV_BLINK:
+        sfx.blink();
         break;
       case EV_RIPOSTE:
         sfx.riposte();
@@ -433,7 +440,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
   let advTimer = 0;
   function trackAdvantage(): void {
     const s = sim.s;
-    if (s.hitstop > 0 || s.freeze > 0) return;
+    if (!sim.advanced) return;
     lf++;
     const busy = [!actionable(s.f[0]), !actionable(s.f[1])];
     if (busy[0] && busy[1]) {
@@ -465,6 +472,8 @@ export function battleScreen(cfg: BattleConfig): Screen {
   let renderErrorLogged = false;
 
   let devBot: ((s: Sim) => number) | null = null;
+  /** Dev: render clock multiplier (0 freezes effects for screenshots). */
+  let devTime = 1;
   function readLocal(): number {
     const w = devBot ? devBot(sim) : localInput();
     if (simDelay === 0) return w;
@@ -520,7 +529,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
     try {
       const a = touch.aim;
       view.aim = a ? { slot: a.id === 'atk' ? M_N1 : a.id === 's1' ? M_S1 : M_S2, x: a.x, y: a.y, frac: a.frac, cancel: a.cancel, who: cfg.local } : null;
-      view.render(dt / TICK_MS);
+      view.render((dt / TICK_MS) * devTime);
       app.render();
     } catch (err) {
       if (!renderErrorLogged) console.error('[render]', err);
@@ -567,6 +576,8 @@ export function battleScreen(cfg: BattleConfig): Screen {
       return ok ? 'ready' : 'off';
     };
     touch.setAvailability({ s1: av(M_S1), s2: av(M_S2), step: f.steps > 0 ? 'ok' : 'off' });
+    // just-dodge slow motion: the attack button pulses ("press now → blink attack")
+    touch.setPrompt('atk', sim.s.slow > 0 && sim.s.slowWho === cfg.local && f.justWin > 0);
   }
 
   // events emitted while constructing the sim (ROUND 1)
@@ -591,6 +602,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
       reset: () => resetPositions(),
       setBot: (fn: ((s: Sim) => number) | null) => (devBot = fn),
       pause: (v: boolean) => (paused = v),
+      setTime: (k: number) => (devTime = k),
       step: (n: number, inA = 0, inB = 0) => {
         for (let k = 0; k < n; k++) {
           sim.step(inA, inB);

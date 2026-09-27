@@ -25,7 +25,7 @@ function randomPlayer(seed: number) {
     else if (r < 12) w |= IN_S2;
     else if (r < 14) w |= IN_STEP;
     // half the presses are aimed (bits above 16: exercises the 32-bit input packets)
-    if (r < 12 && rng.int(2)) w |= aimBits(rng.int(64), rng.int(4));
+    if (r < 12 && rng.int(2)) w |= aimBits(rng.int(256), rng.int(4));
     return w;
   };
 }

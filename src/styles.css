@@ -1966,3 +1966,16 @@ kbd {
 .pane p.error {
   color: var(--bad);
 }
+
+/* "press now" pulse (just-dodge slow motion → attack) */
+.cbtn.prompt {
+  border-color: #6ff3ff;
+  box-shadow: 0 0 0 4px rgba(111, 243, 255, 0.35), 0 0 30px rgba(111, 243, 255, 0.7);
+  animation: btn-prompt 0.28s ease-in-out infinite alternate;
+}
+@keyframes btn-prompt {
+  to {
+    transform: scale(1.1);
+    box-shadow: 0 0 0 8px rgba(111, 243, 255, 0.15), 0 0 44px rgba(111, 243, 255, 0.9);
+  }
+}

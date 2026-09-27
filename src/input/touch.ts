@@ -108,6 +108,11 @@ export class TouchControls {
     }
   }
 
+  /** Pulse a button to say "press now". */
+  setPrompt(id: BtnId, on: boolean): void {
+    this.btns[id].classList.toggle('prompt', on);
+  }
+
   /** Reflect availability (cost / step stock) on the buttons. */
   setAvailability(av: Partial<Record<BtnId, 'ready' | 'ok' | 'off'>>): void {
     for (const id of Object.keys(av) as BtnId[]) {

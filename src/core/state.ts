@@ -97,6 +97,8 @@ export interface FighterState {
   aimS2: number;
   /** Current move was aimed (no homing). */
   aimed: number;
+  /** Wall impacts taken during the current combo. */
+  wallHits: number;
   /** Lunge / dash distance of the current move in % (reach level). */
   lungePct: number;
   // stats (for the result screen)
@@ -120,8 +122,11 @@ export interface GameState {
   timer: number;
   round: number;
   hitstop: number;
-  /** Just-dodge freeze frames. */
+  /** (legacy) global freeze frames. */
   freeze: number;
+  /** Just-dodge slow motion: real frames left, and who dodged. */
+  slow: number;
+  slowWho: number;
   winsA: number;
   winsB: number;
   /** -1 none, 0 / 1 = player, 2 = draw. */
@@ -142,7 +147,7 @@ export function newFighter(): FighterState {
     bufAtk: 0, bufS1: 0, bufS2: 0, bufStep: 0, gcQueued: 0, noGc: 0, justWin: 0, jaChain: 0,
     chainResetUsed: 0, otgUsed: 0, comboHits: 0, comboFrames: 0, comboDmg: 0, downAge: 0, kbDist: 0, kbAngle: 0,
     limited: 0, buff: 0, healUses: 0, csHit: 0, prevIn: 0, lastDir: 0,
-    aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, lungePct: 100,
+    aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, wallHits: 0, lungePct: 100,
     statDmg: 0, statGc: 0, statJust: 0, statCrush: 0, statMaxCombo: 0, statBlocks: 0, statHitsTaken: 0,
     infGuard: 0, infCost: 0,
   };
@@ -150,7 +155,7 @@ export function newFighter(): FighterState {
 
 export function newGameState(): GameState {
   return {
-    frame: 0, phase: 0, phaseF: 0, timer: 0, round: 0, hitstop: 0, freeze: 0, winsA: 0, winsB: 0,
+    frame: 0, phase: 0, phaseF: 0, timer: 0, round: 0, hitstop: 0, freeze: 0, slow: 0, slowWho: 0, winsA: 0, winsB: 0,
     roundWinner: -1, matchWinner: -1, trainingRefill: 0, noTimer: 0, seed: 0,
     f: [newFighter(), newFighter()],
   };

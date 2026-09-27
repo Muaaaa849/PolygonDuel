@@ -64,13 +64,32 @@ export const SYSTEM = {
   },
 
   just: {
-    freeze: 10,
+    /** (unused since v0.4: replaced by the slow-motion below) */
+    freeze: 0,
+    /**
+     * Just dodge = slow motion: `slow` real frames (0.6s) during which the fighters
+     * advance only every `slowDiv`-th frame. Pressing ATK ends it at once and starts the JA.
+     */
+    slow: 36,
+    slowDiv: 4,
+    /** Frames (fighter-advancing) the JA can be started after the dodge. */
     window: 20,
+    /** The JA teleports to this distance in front of the opponent (u), on the dodger's side. */
+    blinkDist: 1.3,
     jaS: 8,
     jaA: 3,
     jaT: 30,
-    jaLunge: 2.0,
+    jaLunge: 0.3,
     mul: 1.5,
+  },
+
+  /** Knocked into the arena edge by a hit: extra damage + impact (max `perCombo` per combo). */
+  wall: {
+    /** Base damage, + up to `bonus` scaled by the knockback left when hitting the wall. */
+    dmg: 30,
+    bonus: 30,
+    perCombo: 2,
+    hitstop: 8,
   },
 
   /** Normal swings: a fan in front (half-width in degrees). */
