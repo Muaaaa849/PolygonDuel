@@ -29,7 +29,9 @@ function serviceWorker(): Plugin {
     name: 'polygon-duel-sw',
     apply: 'build',
     generateBundle(_opts, bundle) {
-      const files = Object.keys(bundle).filter((f) => !f.endsWith('.map'));
+      const fxDir = join(import.meta.dirname, 'public/fx');
+      const fx = readdirSync(fxDir).map((f) => `fx/${f}`);
+      const files = [...Object.keys(bundle).filter((f) => !f.endsWith('.map')), ...fx];
       const src = readFileSync(join(import.meta.dirname, 'src/sw-template.js'), 'utf8')
         .replace('__CACHE__', `polygon-duel-${BUILD_HASH}-${Date.now().toString(36)}`)
         .replace('__FILES__', JSON.stringify(['./', ...files, 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png']));

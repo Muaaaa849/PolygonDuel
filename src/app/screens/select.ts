@@ -94,6 +94,19 @@ function preview(c: CharacterDef): { canvas: HTMLCanvasElement; stop: () => void
       ctx.lineTo(len - 5 * dpr, 7 * dpr);
       ctx.fill();
     } else if (f >= n1.S && f < n1.S + n1.A + 4) {
+      // 70° swing from the character's side
+      const sgn = c.swing === 'right' ? 1 : -1;
+      const half = (35 * Math.PI) / 180;
+      const p = Math.min(1, 0.5 + (0.5 * (f - n1.S)) / Math.max(1, n1.A - 1));
+      const a0 = sgn * half;
+      const a1 = a0 - sgn * 2 * half * p;
+      ctx.fillStyle = col + '44';
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, reach, Math.min(a0, a1), Math.max(a0, a1));
+      ctx.closePath();
+      ctx.fill();
+      ctx.rotate(a1);
       ctx.strokeStyle = col;
       ctx.lineCap = 'round';
       ctx.lineWidth = 9 * dpr;

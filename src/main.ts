@@ -1,5 +1,6 @@
 import './styles.css';
 import { initPixi, setAmbient } from './render/pixi-app';
+import { loadFx } from './render/fx-sprites';
 import { show } from './app/router';
 import { applySettingsToDom, saveSettings } from './app/settings';
 import { titleScreen } from './app/screens/title';
@@ -86,6 +87,8 @@ async function boot(): Promise<void> {
   await initPixi();
   // Pixi text uses the display font; make sure it is loaded before the first battle.
   void document.fonts?.load('700 20px "Chakra Petch"');
+  // effect sprite sheets stream in the background; battles work before they arrive
+  void loadFx();
   window.addEventListener('pointerdown', () => unlockAudio(), { once: true });
 
   const code = extractCode(decodeURIComponent(location.hash || ''));

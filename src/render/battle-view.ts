@@ -14,6 +14,7 @@ import {
 } from '../core/events';
 import { Morph, SHAPE_RADII, toPoints } from './shapes';
 import { Vfx } from './vfx';
+import { FxLayer, type FxHandle } from './fx-sprites';
 import { app } from './pixi-app';
 import { settings } from '../app/settings';
 
@@ -50,6 +51,14 @@ class FighterView {
   trail: { x: number; y: number; ex: number; ey: number; life: number }[] = [];
   pts: number[] = [];
   label: Text;
+  // move-instance tracking for state-driven sprite effects
+  lastMove = -1;
+  lastSf = 0;
+  instance = 0;
+  slashFor = -1;
+  skillFxFor = -1;
+  lastPuff = 0;
+  loops: Partial<Record<'danger' | 'stun' | 'breeze' | 'stance' | 'ja', FxHandle | null>> = {};
   scaleNow = 1;
 
   constructor(public idx: number, public color: number, tag: string) {
@@ -74,6 +83,7 @@ export class BattleView {
   private overlay = new Graphics();
   private labels = new Container();
   vfx = new Vfx();
+  fx = new FxLayer();
   private fighters: FighterView[];
   private cam = { x: FW / 2, y: FHt / 2, zoom: 1 };
   private shake = 0;
@@ -103,7 +113,8 @@ export class BattleView {
     this.glow.blendMode = 'add';
     this.fieldFx.blendMode = 'add';
     this.field.addChild(this.fieldG, this.fieldFx);
-    this.world.addChild(this.field, this.glow, this.bodies, this.overlay, this.vfx.root, this.labels);
+    this.fx.root.sortableChildren = false;
+    this.world.addChild(this.field, this.glow, this.bodies, this.fx.root, this.overlay, this.vfx.root, this.labels);
     for (const f of this.fighters) this.labels.addChild(f.label);
     this.root.addChild(this.world, this.flashG);
     this.rgb = new RGBSplitFilter({ red: [0, 0], green: [0, 0], blue: [0, 0] });
@@ -199,7 +210,22 @@ export class BattleView {
         else if (e.b & HF_JA && combo === 1) this.vfx.text('JUST ATTACK', x, y - 90, 0x6ff3ff, 28, 50, -0.7);
         else if (e.b & HF_OTG) this.vfx.text('DOWN ATTACK', x, y - 90, col, 24, 44, -0.7);
         if (combo >= 2) this.vfx.text(`${combo} HIT`, toPx(s.f[1 - e.who].x), toPx(s.f[1 - e.who].y) - 120, col, 26, 40, -0.4);
-        this.addShake(heavy ? 12 : 5);
+        const ang = Math.atan2(toPx(s.f[1 - e.who].y) - toPx(s.f[e.who].y), toPx(s.f[1 - e.who].x) - toPx(s.f[e.who].x));
+        this.fx.spawn(heavy ? 'hit_heavy_t' : 'hit_t', { x, y, size: (heavy ? 3.2 : 2.2) * PX, tint: col, rot: ang, alpha: 0.8 });
+        if (e.b & HF_COUNTER) this.fx.spawn('hit_heavy_t', { x, y, size: 2.6 * PX, tint: 0xffd060, rot: ang + 0.4 });
+        if (heavy) {
+          // 3rd hit: a ripple bursts out from the ATTACKER, plus dust where the defender lands
+          const ax = toPx(s.f[e.who].x);
+          const ay = toPx(s.f[e.who].y);
+          this.fx.spawn('ripple_t', { x: ax, y: ay, size: 6 * PX, tint: col });
+          this.fx.spawn('ripple_t', { x: ax, y: ay, size: 3.6 * PX, tint: 0xffffff, alpha: 0.7, speed: 1.3 });
+          this.vfx.ring(ax, ay, col, 40, 330, 26, 12);
+          this.wave(ax, ay, 1.3);
+          this.flashScreen(col, 0.18);
+        }
+        if (this.moveIs(e.who, 'flareRush')) this.fx.spawn('flare', { x, y, size: 3.4 * PX });
+        if (this.moveIs(e.who, 'galePierce')) this.fx.spawn('hit_heavy_t', { x, y, size: 2.4 * PX, tint: 0x9dffc8, alpha: 0.6, rot: ang });
+        this.addShake(heavy ? 16 : 6);
         if (heavy) this.wave(x, y, 0.8);
         break;
       }
@@ -208,7 +234,12 @@ export class BattleView {
         def.wobbleAng = Math.atan2(toPx(s.f[e.who].y) - toPx(s.f[1 - e.who].y), toPx(s.f[e.who].x) - toPx(s.f[1 - e.who].x));
         this.vfx.spark(x, y, 0x9cc8ff, 6, 16, 18, 4, Math.PI * 0.9, def.wobbleAng);
         this.vfx.ring(x, y, 0x9cc8ff, 8, 40, 9, 4);
-        this.addShake(2);
+        {
+          const df = s.f[1 - e.who];
+          // honeycomb shield flash, impact side facing the attacker
+          this.fx.spawn('guard_t', { x: toPx(df.x), y: toPx(df.y), size: 2.7 * PX, rot: def.wobbleAng, tint: mix(def.color, 0x9cc8ff, 0.55), speed: 0.6 });
+        }
+        this.addShake(3);
         break;
       }
       case EV_CRUSH:
@@ -218,6 +249,8 @@ export class BattleView {
         const fx = toPx(f.x);
         const fy = toPx(f.y);
         this.vfx.shatter(fx, fy, this.fighters[who].color, 6, 18, 30);
+        this.fx.spawn('crush', { x: fx, y: fy, size: 3.4 * PX, alpha: 0.75 });
+        if (e.type === EV_CRUSH && this.moveIs(e.who, 'breakFang')) this.fx.spawn('fang', { x: fx, y: fy, size: 2.6 * PX, rot: s.f[e.who].facing * ANG_TO_RAD, speed: 1.6 });
         this.vfx.ring(fx, fy, 0xffd060, 20, 180, 20, 10);
         this.vfx.spark(fx, fy, 0xffd060, 16, 30, 40, 6);
         this.vfx.text(e.type === EV_CRUSH ? 'CRUSH!' : 'GUARD BREAK', fx, fy - 100, 0xffd060, 40, 56, -0.6);
@@ -230,6 +263,7 @@ export class BattleView {
       case EV_GB_OPEN:
         this.vfx.spark(x, y, 0xffd060, 6, 16, 20, 4);
         this.vfx.text(String(e.a), x, y - 40, 0xffd060, 26);
+        this.fx.spawn('hit_t', { x, y, size: 1.8 * PX, tint: 0xffd060 });
         def.flash = 2;
         break;
       case EV_JUST: {
@@ -237,6 +271,7 @@ export class BattleView {
         this.vfx.ring(x, y, 0xffffff, 10, 160, 18, 4);
         this.vfx.glitter(x, y, 0x6ff3ff, 30, 12, 40, 5);
         this.vfx.text('JUST!', x, y - 100, 0x6ff3ff, 46, 60, -0.5);
+        this.fx.spawn('just', { x, y, size: 4.2 * PX });
         this.chroma = 1;
         this.wave(x, y, 1.4);
         this.flashScreen(0x6ff3ff, 0.2);
@@ -246,6 +281,8 @@ export class BattleView {
         const f = s.f[e.who];
         this.vfx.spark(x, y, 0xffffff, 18, 34, 46, 7);
         this.vfx.ring(toPx(f.x), toPx(f.y), this.fighters[e.who].color, 30, 200, 20, 10);
+        this.fx.spawn('riposte', { x: toPx(f.x), y: toPx(f.y), size: 3.6 * PX, rot: Math.atan2(y - toPx(f.y), x - toPx(f.x)) });
+        this.fx.spawn('hit_heavy_t', { x, y, size: 3 * PX, tint: this.fighters[e.who].color });
         this.vfx.text('REVERSAL', x, y - 100, this.fighters[e.who].color, 38, 56, -0.6);
         this.vfx.text(String(e.a), x, y - 40, 0xffffff, 36);
         this.flashScreen(0xffffff, 0.35);
@@ -256,6 +293,7 @@ export class BattleView {
       case EV_KNOCKDOWN: {
         const f = s.f[e.who];
         this.vfx.ring(toPx(f.x), toPx(f.y), 0x9aa6c8, 20, 90, 18, 4);
+        this.fx.spawn('dust', { x: toPx(f.x), y: toPx(f.y), size: 2.6 * PX, blend: 'normal', alpha: 0.8 });
         break;
       }
       case EV_STEP: {
@@ -268,12 +306,15 @@ export class BattleView {
         this.vfx.rise(toPx(f.x), toPx(f.y), 0x9dffc8, 22);
         this.vfx.ring(toPx(f.x), toPx(f.y), 0x9dffc8, 30, 110, 24, 5);
         this.vfx.text(`+${e.a}`, toPx(f.x), toPx(f.y) - 70, 0x9dffc8, 32);
+        this.fx.spawn('ripple_t', { x: toPx(f.x), y: toPx(f.y), size: 3.4 * PX, tint: 0x9dffc8 });
         break;
       }
       case EV_KO: {
         const f = s.f[e.who];
         const fv = this.fighters[e.who];
         this.vfx.shatter(toPx(f.x), toPx(f.y), fv.color, 10, 22, 34);
+        this.fx.spawn('ko', { x: toPx(f.x), y: toPx(f.y), size: 6 * PX, alpha: 0.85 });
+        this.fx.spawn('ripple_t', { x: toPx(f.x), y: toPx(f.y), size: 8 * PX, tint: fv.color });
         this.vfx.ring(toPx(f.x), toPx(f.y), 0xffffff, 20, 360, 34, 12);
         this.flashScreen(0xffffff, 0.6);
         this.addShake(20);
@@ -288,6 +329,10 @@ export class BattleView {
         break;
       }
     }
+  }
+
+  private moveIs(i: number, id: string): boolean {
+    return this.sim.moveOf(this.sim.s.f[i])?.id === id;
   }
 
   private addShake(px: number): void {
@@ -350,8 +395,10 @@ export class BattleView {
     // hitbox trails & ghosts first (under bodies)
     for (let i = 0; i < 2; i++) this.drawTrail(i, dtFrames, newFrame && !frozen);
     for (let i = 0; i < 2; i++) this.drawFighter(i, dtFrames, frozen);
+    for (let i = 0; i < 2; i++) this.stateFx(i, newFrame && !frozen);
 
     this.vfx.update(dtFrames);
+    this.fx.update(dtFrames);
 
     // shockwaves
     for (let i = this.waves.length - 1; i >= 0; i--) {
@@ -391,6 +438,80 @@ export class BattleView {
     }
   }
 
+  /** Sprite effects driven by state: swing smears, skill signatures, loops. */
+  private stateFx(i: number, advanced: boolean): void {
+    const s = this.sim.s;
+    const f = s.f[i];
+    const fv = this.fighters[i];
+    const m = f.st === ST_ATTACK ? this.sim.moveOf(f) : null;
+    if (f.st === ST_ATTACK && (f.move !== fv.lastMove || f.sf < fv.lastSf)) fv.instance++;
+    fv.lastMove = f.st === ST_ATTACK ? f.move : -1;
+    fv.lastSf = f.sf;
+    const pos = () => {
+      const ff = this.sim.s.f[i];
+      return { x: toPx(ff.x), y: toPx(ff.y) };
+    };
+    const x = toPx(f.x);
+    const y = toPx(f.y);
+    const face = f.facing * ANG_TO_RAD;
+    const cos = Math.cos(face);
+    const sin = Math.sin(face);
+
+    if (m) {
+      const reach = (m.reach / 1000) * PX;
+      // swing smear, spawned on the first active frame
+      if (m.isSweep && f.sf >= m.S && f.sf < m.S + m.A && fv.slashFor !== fv.instance) {
+        fv.slashFor = fv.instance;
+        const spin = Math.abs(m.sweepTo - m.sweepFrom) >= 1024;
+        const name = spin ? 'spin' : 'slash';
+        const o = { x, y, size: reach * 2.08, rot: face, flipY: m.sweepFrom < 0, follow: pos };
+        this.fx.spawn(`${name}_t`, { ...o, tint: fv.color, alpha: 0.7 });
+        this.fx.spawn(`${name}_core`, { ...o, alpha: 0.45 });
+      }
+      const once = (atFrame: boolean, fn: () => void) => {
+        if (atFrame && fv.skillFxFor !== fv.instance) {
+          fv.skillFxFor = fv.instance;
+          fn();
+        }
+      };
+      switch (m.id) {
+        case 'flareRush':
+          if (advanced && f.sf >= 3 && f.sf < m.S + m.A && this.t - fv.lastPuff >= 2) {
+            fv.lastPuff = this.t;
+            this.fx.spawn('flare', { x: x - cos * 40, y: y - sin * 40, size: 2.6 * PX, rot: Math.random() * 6.28, speed: 1.2 });
+          }
+          break;
+        case 'breakFang':
+          once(f.sf >= m.S - 6, () => this.fx.spawn('fang', { x: x + cos * reach * 0.75, y: y + sin * reach * 0.75, size: 2.4 * PX, rot: face, speed: 1.1 }));
+          break;
+        case 'galePierce':
+          once(f.sf >= m.S, () => this.fx.spawn('gale', { x, y, size: reach * 1.05, rot: face, follow: () => ({ ...pos(), rot: this.sim.s.f[i].facing * ANG_TO_RAD }) }));
+          break;
+        case 'shieldBash':
+          once(f.sf >= m.S, () => this.fx.spawn('bash', { x: x + cos * 60, y: y + sin * 60, size: 3.2 * PX, rot: face }));
+          break;
+      }
+    }
+    // loops
+    const loop = (key: 'danger' | 'stun' | 'breeze' | 'stance' | 'ja', on: boolean, spawn: () => FxHandle | null) => {
+      const h = fv.loops[key];
+      if (on && (!h || h.dead)) fv.loops[key] = spawn();
+      else if (!on && h) {
+        h.kill();
+        fv.loops[key] = null;
+      }
+    };
+    const dangerOn = !!m && !!m.gb && f.sf < m.S;
+    loop('danger', dangerOn, () => this.fx.spawn('danger', { x, y, size: 2.6 * PX, rot: face, loop: true, follow: () => ({ ...pos(), rot: this.sim.s.f[i].facing * ANG_TO_RAD }) }));
+    loop('stun', f.st === ST_STUN, () => this.fx.spawn('stun', { x, y, size: 2 * PX, loop: true, alpha: 0.85, follow: pos }));
+    const casting = !!m && !!m.heal && f.sf < m.heal.frame;
+    loop('breeze', casting || f.buff > 0, () => this.fx.spawn('breeze', { x, y, size: 2.9 * PX, loop: true, alpha: casting ? 1 : 0.55, follow: pos }));
+    const stance = !!m && !!m.cs && f.sf >= m.cs.from && f.sf <= m.cs.to;
+    // just-attack ready: attack now for a 1.5x JA
+    loop('ja', f.justWin > 0, () => this.fx.spawn('charge_t', { x, y, size: 2.4 * PX, loop: true, tint: 0x6ff3ff, follow: pos }));
+    loop('stance', stance, () => this.fx.spawn('guard_t', { x, y, size: 2.3 * PX, loop: true, alpha: 0.55, speed: 0.7, tint: 0xc8dcff, follow: pos }));
+  }
+
   private updateCamera(dt: number): void {
     const s = this.sim.s;
     const sw = app.screen.width;
@@ -405,7 +526,7 @@ export class BattleView {
     let cy = FHt / 2;
     if (settings.dynamicCamera) {
       const dist = Math.hypot(ax - bx, ay - by) / PX;
-      zoom = 1 + Math.max(0, Math.min(1, (7 - dist) / 5)) * 0.28;
+      zoom = 1 + Math.max(0, Math.min(1, (6 - dist) / 4)) * 0.4;
       // keep both fighters (+margin) in view
       const needW = (Math.abs(ax - bx) + 3.2 * PX) * fit;
       const needH = (Math.abs(ay - by) + 3.0 * PX) * fit;
@@ -598,23 +719,45 @@ export class BattleView {
     if (m && m.hasHitbox) {
       const edge = 0.52 * PX;
       const reach = (m.reach / 1000) * PX;
+      const danger = m.shape === SH.triangle;
+      const col = danger ? 0xffd060 : 0xffffff;
+      if (m.isSweep) {
+        const from = a + m.sweepFrom * ANG_TO_RAD;
+        const to = a + m.sweepTo * ANG_TO_RAD;
+        const spin = Math.abs(m.sweepTo - m.sweepFrom) >= 1024;
+        if (f.sf < m.S) {
+          // telegraph: the fan it will cover fades in; the blade winds up on the starting side
+          const p = Math.min(1, f.sf / (m.S - 1));
+          const pts: number[] = [x, y];
+          const steps = spin ? 48 : 16;
+          for (let k = 0; k <= steps; k++) {
+            const t = spin ? (k / steps) * Math.PI * 2 : from + ((to - from) * k) / steps;
+            pts.push(x + Math.cos(t) * reach, y + Math.sin(t) * reach);
+          }
+          glow.poly(pts).fill({ color: fv.color, alpha: 0.05 + 0.13 * p });
+          g.poly(pts.slice(2)).stroke({ width: 2.5, color: fv.color, alpha: 0.25 + 0.5 * p });
+          const wind = from + (spin ? 0 : (from - to) * 0.15 * p);
+          const len = edge + (reach - edge) * p;
+          const wc = Math.cos(wind);
+          const ws = Math.sin(wind);
+          g.moveTo(x + wc * edge, y + ws * edge).lineTo(x + wc * len, y + ws * len).stroke({ width: 5, color: col, alpha: 0.5 + 0.45 * p, cap: 'round' });
+        } else if (f.sf < m.S + m.A) {
+          const cur = a + this.sim.swingAngle(m, f.sf) * ANG_TO_RAD;
+          this.blade(g, glow, x, y, cur, edge, reach, fv.color, danger);
+        }
+        return;
+      }
       if (f.sf < m.S) {
-        // telegraph: arrow grows from the body toward the reach as startup elapses
+        // thrust telegraph: arrow grows from the body toward the reach as startup elapses
         const p = Math.min(1, f.sf / (m.S - 1));
         const len = edge + (reach - edge) * p;
-        const w = m.shape === SH.triangle ? 5 : 3.5;
-        const col = m.shape === SH.triangle ? 0xffd060 : 0xffffff;
+        const w = danger ? 6 : 4;
         g.moveTo(x + cos * edge, y + sin * edge).lineTo(x + cos * len, y + sin * len).stroke({ width: w, color: col, alpha: 0.55 + 0.4 * p, cap: 'round' });
-        this.arrowHead(g, x + cos * len, y + sin * len, a, 16, col, 0.9);
-        // faint full-reach guide
-        g.moveTo(x + cos * len, y + sin * len).lineTo(x + cos * reach, y + sin * reach).stroke({ width: 1.5, color: col, alpha: 0.18 });
+        this.arrowHead(g, x + cos * len, y + sin * len, a, 18, col, 0.9);
+        g.moveTo(x + cos * len, y + sin * len).lineTo(x + cos * reach, y + sin * reach).stroke({ width: 2, color: col, alpha: 0.25 });
       } else if (f.sf < m.S + m.A) {
-        // active: solid bar
-        glow.moveTo(x + cos * edge, y + sin * edge).lineTo(x + cos * reach, y + sin * reach).stroke({ width: 26, color: fv.color, alpha: 0.5, cap: 'round' });
-        g.moveTo(x + cos * edge, y + sin * edge).lineTo(x + cos * reach, y + sin * reach).stroke({ width: 13, color: m.shape === SH.triangle ? 0xffd060 : fv.color, alpha: 1, cap: 'round' });
-        g.moveTo(x + cos * edge, y + sin * edge).lineTo(x + cos * reach, y + sin * reach).stroke({ width: 5, color: 0xffffff, alpha: 1, cap: 'round' });
+        this.blade(g, glow, x, y, a, edge, reach, fv.color, danger);
       } else {
-        // recovery: bar retracts & fades
         const k = Math.max(0, 1 - (f.sf - m.S - m.A) / 10);
         if (k > 0) {
           const len = edge + (reach - edge) * k;
@@ -627,6 +770,19 @@ export class BattleView {
     // idle facing chevron
     const d = 0.82 * PX;
     this.arrowHead(g, x + cos * d, y + sin * d, a, 13, mix(fv.color, 0xffffff, 0.5), 0.85);
+  }
+
+  /** The active hitbox bar (white core + colored body + glow). */
+  private blade(g: Graphics, glow: Graphics, x: number, y: number, ang: number, edge: number, reach: number, color: number, danger: boolean): void {
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    const x0 = x + c * edge;
+    const y0 = y + s * edge;
+    const x1 = x + c * reach;
+    const y1 = y + s * reach;
+    glow.moveTo(x0, y0).lineTo(x1, y1).stroke({ width: 34, color, alpha: 0.5, cap: 'round' });
+    g.moveTo(x0, y0).lineTo(x1, y1).stroke({ width: 16, color: danger ? 0xffd060 : color, alpha: 1, cap: 'round' });
+    g.moveTo(x0, y0).lineTo(x1, y1).stroke({ width: 6, color: 0xffffff, alpha: 1, cap: 'round' });
   }
 
   private arrowHead(g: Graphics, x: number, y: number, a: number, size: number, color: number, alpha: number): void {

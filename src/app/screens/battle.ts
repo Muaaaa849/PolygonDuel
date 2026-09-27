@@ -358,6 +358,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
     sim.skipIntro();
     sim.s.f.forEach((f, i) => ([f.infGuard, f.infCost] = keep[i]));
     view.vfx.clear();
+    view.fx.clear();
   }
 
   function buildTrainingBar(): HTMLElement {
@@ -568,6 +569,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
       sim,
       view,
       session: () => session,
+      reset: () => resetPositions(),
       setBot: (fn: ((s: Sim) => number) | null) => (devBot = fn),
       pause: (v: boolean) => (paused = v),
       step: (n: number, inA = 0, inB = 0) => {

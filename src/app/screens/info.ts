@@ -38,7 +38,7 @@ export function howtoScreen(onBack: () => void): Screen {
       h('div', { class: 'section-title' }, '操作'),
       h('div', { class: 'prose', html: `
         <b>左手</b>：スティックで移動。<b>指を離す（中央）とガード</b>（六角）。ガード中は自動で相手を向きます。<br>
-        <b>右手</b>：攻撃（1→2→3段）／S1・S2（スキル、コスト消費）／STEP（倒した方向へ。中央なら後ろへ）。<br>
+        <b>右手</b>：攻撃（1→2→3段。前方70°の横振りで、1段目はキャラごとに右／左から、2段目は逆から、3段目は一回転）／S1・S2（スキル、コスト消費）／STEP（倒した方向へ。中央なら後ろへ）。<br>
         ボタンのアイコンは、その技を出したとき自分が変わる<b>形</b>です。` }),
       h('div', { class: 'section-title' }, '基本のじゃんけん'),
       h('div', { class: 'prose', html: `
