@@ -7,7 +7,8 @@ import { titleScreen } from './app/screens/title';
 import { selectScreen } from './app/screens/select';
 import { howtoScreen, settingsScreen } from './app/screens/info';
 import { battleScreen, type BattleConfig } from './app/screens/battle';
-import { onlineHome, joinScreen } from './app/screens/online';
+import { onlineHome, joinScreen, roomJoinScreen } from './app/screens/online';
+import { parseRoomCode } from './net/relay';
 import { createTutorial } from './app/screens/tutorial';
 import { extractCode } from './net/qr-signaling';
 import { charIndex } from './data/characters';
@@ -91,8 +92,15 @@ async function boot(): Promise<void> {
   void loadFx();
   window.addEventListener('pointerdown', () => unlockAudio(), { once: true });
 
-  const code = extractCode(decodeURIComponent(location.hash || ''));
-  if (code) {
+  const hash = decodeURIComponent(location.hash || '');
+  const room = /^#room=/i.test(hash) ? parseRoomCode(hash) : null;
+  const code = room ? null : extractCode(hash);
+  if (room) {
+    // arrived through a room link (LINE / Discord…)
+    history.replaceState(null, '', location.pathname + location.search);
+    menuMode();
+    show(roomJoinScreen(nav, room));
+  } else if (code) {
     history.replaceState(null, '', location.pathname + location.search);
     menuMode();
     show(joinScreen(nav, code));

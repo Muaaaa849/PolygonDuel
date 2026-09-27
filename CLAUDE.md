@@ -34,7 +34,8 @@
    - 先端ギリギリで当てた攻撃をガードすると、押し戻しでGCが届かないことがある。**これは仕様**（間合いを制した側の利）。GCに追加の踏み込みを足してはいけない（過去に足して、差し戻された）。
    - 通常攻撃は前方70°の扇形の横振り。1段目は右から・左からのどちらかをキャラごとに決める。2段目は逆側から、3段目は一回転。
    - 被弾側もコストを回復する。量は攻撃側の半分。
-   - コマは大きめ（フィールドを縮めて拡大表示）で、カメラも寄る。
+   - コマは大きめで、カメラも寄る。ステージはその1.5倍の広さ（16.5×9.3u）で、カメラが追従する。
+   - 攻撃・スキルはボタンをドラッグしてエイムできる（方向とリーチ）。離して発動（ブロスタ式）。
 
 ---
 
@@ -66,10 +67,10 @@ src/core/      決定論シミュレーション（DOMに触れない純粋計�
   state.ts       GameState/FighterState（全て整数）、save/load/hash
   sim.ts         Sim.step(inA, inB)：本体
   events.ts      SimEvent 定義（演出用。状態には入らない）
-  input.ts       入力ワード（10bit）
+  input.ts       入力ワード（19bit：10bit＋エイム9bit）
   rng.ts         xorshift（CPU用。sim内では未使用）
 src/data/      純データ：system.ts（共通数値）、characters/{blaze,zephyr,bastion}.ts、types.ts
-src/net/       qr-signaling.ts（SDP圧縮）、transport.ts（WebRTC）、rollback.ts
+src/net/       qr-signaling.ts（SDP圧縮）、transport.ts（WebRTC）、rollback.ts、relay.ts（リンク部屋のシグナリング）
 src/input/     touch.ts（フローティングスティック＋形アイコンボタン）、keyboard.ts（＋ゲームパッド）
 src/render/    pixi-app.ts、battle-view.ts（描画本体）、shapes.ts（64頂点モーフ）、
                vfx.ts（手続き的パーティクル）、fx-sprites.ts（焼き込みスプライト）
@@ -77,9 +78,9 @@ src/audio/     sfx.ts（WebAudio合成音・振動）
 src/ai/        cpu.ts（CPU＋トレモ用ダミー）
 src/app/       ui.ts, router.ts, settings.ts, hud.ts, qr-view.ts,
                screens/{title,select,battle,online,tutorial,info,frame-meter}.ts
-public/fx/     焼き込み済みの透過WebPスプライトシート21種＋fx.json（コミット済み）
+public/fx/     焼き込み済みの透過WebPスプライトシート21種＋fx.json（コミット済み）。lo/ はスマホ用の半解像度版
 tests/         harness.ts（ボットで実シムを駆動）ほか
-tools/         gen-trig.mjs, gen-icons.mjs, fx/gen_fx.py, shot.mjs, online-test.mjs
+tools/         gen-trig.mjs, gen-icons.mjs, fx/gen_fx.py, shot.mjs, online-test.mjs, room-test.mjs
 ```
 
 **ビルドハッシュ**（`vite.config.ts` の simHash）は `src/core`・`src/data`・`src/net/rollback.ts` の内容から作る。QRに埋め込み、接続時に照合する。ハッシュが違う相手とは対戦できない。
@@ -95,8 +96,10 @@ tools/         gen-trig.mjs, gen-icons.mjs, fx/gen_fx.py, shot.mjs, online-test.
 - **コストは4分の1単位**（`COST_UNIT = 4`）。開始2（=8）、最大4（=16）。UIの表示は `cost / COST_UNIT`。
 - ガードゲージは「フレーム×4」（quarter-frame）。消費は通常4/F、相手が5u以上離れていると1/F。回復は2/F。
 - 入力ワード：bit0-4 方向、bit5 スティック倒し、bit6 ATK、bit7 S1、bit8 S2、bit9 STEP。
+  bit10 エイムあり、bit11-16 エイム方向（64方向）、bit17-18 リーチ段階（0〜3）。エイムはボタンを押したフレームにだけ載せる。
+  通信パケットの入力は32bit（`rollback.ts`）。
   スティックが中央＝ガード。押下の判定は前フレームとの差分で行う。
-- フィールド：**11u × 6.2u**（計画書の16×9から縮小して、コマを大きく見せている）。
+- フィールド：**16.5u × 9.3u**。カメラはズーム1で `SYSTEM.view`（11u × 6.2u）を映す大きさ＝コマは大きいまま、広いステージを追従する。
   開始位置は中央±2.5u。胴体の半径と食らい判定の半径はどちらも0.5u。
 
 ---
@@ -201,7 +204,7 @@ FREE のときは、スティックを倒していれば移動（四角）、中
 
 | | ブレイズ（赤・右振り） | ゼファー（緑・左振り） | バスティオン（青・右振り） |
 |---|---|---|---|
-| 体力 / 歩き | 900 / 5.6u/s | 1000 / 5.2 | 1150 / 4.4 |
+| 体力 / 歩き | 900 / 5.0u/s | 1000 / 4.7 | 1150 / 4.0 |
 | ステップ | 2.4u・回復50F | 2.8u・40F | 2.2u・60F |
 | ガードゲージ | 240F | 240F | 300F |
 | N1 S/A/T 硬直H/G | 20/3/42 28/12 | 22/3/46 30/14 | 24/4/50 32/16 |
@@ -237,6 +240,8 @@ FREE のときは、スティックを倒していれば移動（四角）、中
   - ゼファーの長槍の先端当てにはGCが届かない。
 - `combos.test.ts`：上記のダメージ表。
 - `swing.test.ts`：横振りの範囲と振る順番、3段目の一回転、突きスキルは横を捉えないこと、コスト（攻撃側+1.5・被弾側+0.75）。
+- `aim.test.ts`：エイムのビット、エイムした方向へ出てホーミングしないこと、下がりながら前を攻撃、リーチ段階で突進距離が変わること、決定論。
+- `relay.test.ts`：ルームコードの生成と、リンク・招待文からの読み取り。
 - `netcode.test.ts`：遅延・ロスありの擬似ネットワークで両端末が同期すること、巻き戻し後の結果が一直線に実行した結果と同じこと、決定論、状態が整数だけであること。
 - `qr-signaling.test.ts`：SDP圧縮の往復変換。
 - `cpu-soak.test.ts`：CPU同士の全組み合わせが最後まで決着すること（勝率をログに出す）。
@@ -260,12 +265,21 @@ FREE のときは、スティックを倒していれば移動（四角）、中
   - 30Fごとに確定したフレームの状態ハッシュを交換し、不一致なら `onDesync`。
 - **演出イベントの重複除去**：巻き戻し再計算で同じイベントが再発行されるので、`frame:type:who` をキーに重複を除く（battle.ts）。
 - ホストが1P（左）、ゲストが2P。対戦後は接続を維持したまま、オンラインのキャラ選択画面に戻る。
+- **リンク部屋**（遠くの人と。`relay.ts`＋`online.ts` の roomHostScreen / roomJoinScreen）
+  - 公開のPeerJSシグナリングサーバー（`wss://0.peerjs.com`）を、SDPと候補の受け渡しにだけ使う。対戦はP2Pのまま。
+  - サーバーはPeerJS形式のメッセージしか中継しない（独自形式を送ると切断される）。そこで自前のJSONを文字列にして
+    `CANDIDATE` の封筒（`payload.candidate.candidate`）に入れて送る。宛先がいないと `EXPIRE` が返る＝部屋が見つからない。
+  - ホストは `polygonduel-<6文字コード>` のIDを取り、`<サイトURL>#room=<コード>` を共有する。ゲストはランダムIDで `join` を2.5秒ごとに送る（ホストがバックグラウンドから戻るのを待つため、約25秒まで）。
+  - ホストが `offer`（SDP全文）を返し、ゲストが `answer`。候補はトリクルで `ice` として送る。TURNはPeerJSの公開サーバー（ベストエフォート）。
+  - ホストは中継サーバーとの接続が切れたら自動で再接続する（LINEに切り替えて戻っても続けられる）。
+  - 開発時は `localStorage['pd.relay']` でローカルのPeerJSサーバーに向けられる（この開発環境のChromiumは外部WSSの証明書を検証できないため）。E2E：`RELAY=ws://127.0.0.1:9000/peerjs?key=peerjs node tools/room-test.mjs`。
 
 ---
 
 ## 9. 描画・演出（src/render）
 
-- `battle-view.ts`：ワールドは PX=100（1u=100px）。カメラはフィールド全体が収まる大きさを基準に、近いほど最大1.4倍まで寄せる。どちらのコマも画面外に出さない。
+- `battle-view.ts`：ワールドは PX=100（1u=100px）。カメラはズーム1で `SYSTEM.view`（11×6.2u）が収まる大きさ。2人の中点を追従し、近いほど最大1.4倍まで寄せ、離れると（最大でステージ全体まで）引く。どちらのコマも画面外に出さない（0.9uの余白を強制）。壁の外は1.1uまで映す。
+  - エイム表示（`drawAim`）：ドラッグ中、踏み込み・突進の経路（破線）と、その先の扇（横振り）／帯（突き）を光らせる。相手が範囲内なら相手に照準リング。
   - 重ね順：field → glow（加算）→ bodies → fx.root（スプライト、加算）→ overlay → vfx → labels。
   - 攻撃の予兆
     - 横振り：これから振る扇がだんだん浮かび上がり、刃が振り始める側で構える。
@@ -278,6 +292,8 @@ FREE のときは、スティックを倒していれば移動（四角）、中
   - `handle(e)`：イベントに応じた演出。
     - ヒット、3段目で攻撃側から広がる波紋（ripple）＋衝撃波、ガード成功時のハニカムシールド（guard_t）、クラッシュ、ジャスト、リポスト、KO、土煙。
 - `fx-sprites.ts`：`public/fx/fx.json` を読み込んで、コマ送りのスプライトを管理する。
+  - **タッチ端末とメモリ4GB以下の端末は `fx/lo/`（半解像度）を読む**。フル解像度はGPUメモリを約154MB使い、スマホでWebGLコンテキストが落ちて画面が真っ暗になった（シムと音は動き続ける）。半解像度は約38MB。
+  - コンテキストが落ちたら「描画を復旧しています…」を出す（Pixiが復元する）。描画の例外で対戦ループは止めない。
   - `spawn(name, {x, y, size, rot, tint, flipY, loop, follow, speed, alpha})`
   - `_t` で終わるシートは白で焼いてあり、`tint` でキャラ色に着色する。
   - 起動後に `loadFx()` でバックグラウンド読み込みする。読み込み前はスプライトが出ないだけで、ゲームは動く。
@@ -296,7 +312,12 @@ FREE のときは、スティックを倒していれば移動（四角）、中
 - スクリーンショット：`OUT=<dir> STEPS='[{"click":"CPUと戦う"},{"wait":500,"shot":"x"},{"eval":"..."}]' node tools/shot.mjs`（URL は環境変数 `URL` で指定可）。
   - この開発環境の Chromium は swiftshader で描画するため遅い。短いエフェクトは、撮る前に消えていることがある。
   - この開発環境のブラウザは、プロキシの制限で公開サイトのサブリソースを読めない。公開版を確認するときは、curl でファイルを取得してローカルで開く。
-- 2台接続のE2E：`node tools/online-test.mjs`（dev サーバーを起動しておく必要がある）。
+- 2台接続のE2E：`node tools/online-test.mjs`（QR）、`node tools/room-test.mjs`（リンク部屋）。dev サーバーを起動しておく必要がある。
+- **タッチのエイム**（`touch.ts`）：自由状態かステップ中に ATK／S1／S2 を押すと、そのボタンが小さなスティックになる。
+  - 18px以上ドラッグでエイム開始、78pxで最大リーチ。離すと発動、中央に戻して離すとキャンセル。ドラッグしないタップは離した時に自動照準で発動。
+  - それ以外の状態（ガード硬直中のGC、チェーン、キャンセル）は押した瞬間に発動する（受付を遅らせないため）。設定「ドラッグでエイム」でオフにできる。
+  - シム側（`sim.ts`）：押下時にエイムを `aimAtk/aimS1/aimS2` に保存し、技の開始時に使う。エイムした技は向きが固定でホーミングしない。リーチ段階で踏み込み・突進が40/60/80/100%になる。GC・JAは常に自動照準、チェーンは向きを維持（スキルキャンセルはエイム可）。
+- キャラ選択のスキルチップ（1行2列、S1/S2は角のバッジ）をタップすると `move-sheet.ts` の技詳細（実速度プレビュー・フレーム・相手の対処・コンボ）が開く。
 - 設定は localStorage の `polygon-duel.settings.v1` に保存する（try/catch で囲むこと）。
 
 ## 11. 作業の約束

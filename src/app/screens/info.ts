@@ -64,9 +64,11 @@ export function howtoScreen(onBack: () => void): Screen {
         <span><kbd>K</kbd>/<kbd>X</kbd> <kbd>L</kbd>/<kbd>C</kbd></span><span>S1 / S2</span>
         <span><kbd>Space</kbd></span><span>ステップ</span>
         <span><kbd>Esc</kbd></span><span>ポーズ</span>` }),
-      h('div', { class: 'section-title' }, '2台で対戦するには'),
+      h('div', { class: 'section-title' }, 'オンライン対戦'),
       h('div', { class: 'prose', html: `
-        片方が「部屋を作る」でQRを表示 → もう片方が「部屋に入る」で読み取り → 表示されたQRを最初の人が読み取れば接続完了。<br>
+        <b>遠くの人と（リンク）</b>：「リンクで部屋を作る」→ 表示されたリンクをLINEやDiscordで送る → 相手がリンクを開けば接続。ルームコード（6文字）を入力しても参加できます。部屋を作った人はその画面を開いたままにしてください。
+        接続情報の受け渡しにだけ公開のシグナリングサーバー（PeerJS）を使い、対戦そのものは端末どうしの直接通信です。<br>
+        <b>近くの人と（QR）</b>：「QRで部屋を作る」でQRを表示 → もう片方が「QRで部屋に入る」で読み取り → 表示されたQRを最初の人が読み取れば接続完了。
         <b>テザリング／同じWi-Fi</b>だと直結になり、遅延はほぼゼロ。サーバーには何も送りません。` }),
     ),
   );

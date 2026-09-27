@@ -37,9 +37,9 @@ export function titleScreen(a: TitleActions): Screen {
   const menu = h('div', { class: 'menu' },
     firstTime
       ? item('hero', shapeIcon('circle', '#6ff3ff'), 'チュートリアル', '約90秒。形の読み方を体で覚える', a.tutorial)
-      : item('hero', ICONS.qr, '対戦する（2台）', 'QRを読み合うだけ。サーバー不要のP2P対戦', a.online),
+      : item('hero', ICONS.qr, 'オンライン対戦', 'リンクを送って遠くの人と／QRで近くの人と', a.online),
     firstTime
-      ? item('', ICONS.qr, '対戦する（2台）', 'QRを読み合うだけ。サーバー不要のP2P対戦', a.online)
+      ? item('', ICONS.qr, 'オンライン対戦', 'リンクを送って遠くの人と／QRで近くの人と', a.online)
       : item('', ICONS.cpu, 'CPUと戦う', '3段階の強さ。形への反応速度が違う', a.cpu),
     firstTime ? item('', ICONS.cpu, 'CPUと戦う', '3段階の強さ。形への反応速度が違う', a.cpu) : item('', ICONS.target, 'トレーニング', 'フレームメーター・判定表示・ダミー設定', a.training),
     h('div', { class: 'menu-row' },

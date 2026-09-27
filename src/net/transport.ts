@@ -27,7 +27,10 @@ export class PeerLink {
   onOpen?: () => void;
   onClose?: (reason: string) => void;
   onStateChange?: (state: string) => void;
+  /** Trickle ICE (link rooms): each local candidate as it is found, null at the end. */
+  onLocalCandidate?: (c: RTCIceCandidateInit | null) => void;
   rttMs = 0;
+  private pendingRemote: RTCIceCandidateInit[] = [];
   private opened = 0;
   private closed = false;
   private pingTimer = 0;
@@ -63,6 +66,7 @@ export class PeerLink {
       if (this.pc.connectionState === 'failed') this.handleClose('接続に失敗しました');
       if (this.pc.connectionState === 'closed') this.handleClose('切断されました');
     };
+    this.pc.onicecandidate = (e) => this.onLocalCandidate?.(e.candidate ? e.candidate.toJSON() : null);
     this.pc.oniceconnectionstatechange = () => {
       if (this.pc.iceConnectionState === 'disconnected') this.onStateChange?.('disconnected');
     };
@@ -93,6 +97,50 @@ export class PeerLink {
     if (sig.type !== 'answer') throw new Error('これは「部屋に入る」側のコードではありません');
     await this.pc.setRemoteDescription({ type: 'answer', sdp: sig.sdp });
     return { remoteBuild: sig.build };
+  }
+
+  // ── link rooms: full SDP + trickle ICE through the relay (no size limit, faster) ──
+
+  /** Host: create an offer; candidates follow via onLocalCandidate. */
+  async offerSdp(): Promise<string> {
+    const offer = await this.pc.createOffer();
+    await this.pc.setLocalDescription(offer);
+    return this.pc.localDescription!.sdp;
+  }
+
+  /** Guest: answer the host's offer. */
+  async answerSdp(offerSdp: string): Promise<string> {
+    await this.pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
+    await this.flushRemoteCandidates();
+    const answer = await this.pc.createAnswer();
+    await this.pc.setLocalDescription(answer);
+    return this.pc.localDescription!.sdp;
+  }
+
+  /** Host: apply the guest's answer. */
+  async setAnswerSdp(sdp: string): Promise<void> {
+    await this.pc.setRemoteDescription({ type: 'answer', sdp });
+    await this.flushRemoteCandidates();
+  }
+
+  /** A remote trickled candidate (queued until the remote description is set). */
+  async addRemoteCandidate(c: RTCIceCandidateInit | null): Promise<void> {
+    if (!c) return;
+    if (!this.pc.remoteDescription) {
+      this.pendingRemote.push(c);
+      return;
+    }
+    try {
+      await this.pc.addIceCandidate(c);
+    } catch {
+      /* stale / unparsable candidate */
+    }
+  }
+
+  private async flushRemoteCandidates(): Promise<void> {
+    const list = this.pendingRemote;
+    this.pendingRemote = [];
+    for (const c of list) await this.addRemoteCandidate(c);
   }
 
   /** Candidates must all be in the QR (no trickle), so wait — but not forever (no STUN offline). */

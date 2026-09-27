@@ -1,6 +1,10 @@
-// Online lobby (plan §9-1, §13): host shows QR-A → guest scans, shows QR-B → host scans.
-// No server: the QR *is* the signaling. After connecting, the link stays up for rematches.
+// Online lobby (plan §9-1, §13). Two ways to connect:
+//  - Link room (far away): host opens a room and sends its link over LINE / Discord;
+//    opening the link joins. A public signaling server only swaps connection info.
+//  - QR (nearby): host shows QR-A → guest scans, shows QR-B → host scans. No server at all.
+// After connecting, the P2P link stays up for rematches.
 import { PeerLink, requestCamera } from '../../net/transport';
+import { Relay, RELAY_ICE, newRoomCode, parseRoomCode, roomLink, roomPeerId, ROOM_CODE_LEN, type RoomMsg } from '../../net/relay';
 import { extractCode } from '../../net/qr-signaling';
 import { CHARACTERS } from '../../data/characters';
 import { settings, saveSettings } from '../settings';
@@ -32,8 +36,8 @@ const tethering = () =>
     h('div', null, h('b', null, '近くにいるならテザリングか同じWi-Fiがおすすめ'), h('br'), '端末どうしが直結になり、遅延はほぼゼロ。インターネットは使いません。'));
 
 export function onlineHome(nav: OnlineNav): Screen {
-  const choice = (icon: string, title: string, desc: string, fn: () => void) => {
-    const b = h('button', { class: 'choice' }, h('div', { class: 'big-ico', html: icon }), h('b', null, title), h('p', null, desc));
+  const choice = (icon: string, title: string, desc: string, fn: () => void, cls = '') => {
+    const b = h('button', { class: `choice${cls}` }, h('div', { class: 'big-ico', html: icon }), h('b', null, title), h('p', null, desc));
     b.onclick = () => {
       unlockAudio();
       sfx.confirm();
@@ -41,13 +45,30 @@ export function onlineHome(nav: OnlineNav): Screen {
     };
     return b;
   };
+  const codeIn = h('input', { placeholder: 'ルームコード', maxlength: String(ROOM_CODE_LEN + 20), autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false' }) as HTMLInputElement;
+  const joinBtn = h('button', { class: 'btn small' }, '参加');
+  const joinCode = () => {
+    const c = parseRoomCode(codeIn.value);
+    if (!c) return toast('ルームコード（6文字）を入力してください');
+    unlockAudio();
+    sfx.confirm();
+    show(roomJoinScreen(nav, c));
+  };
+  joinBtn.onclick = joinCode;
+  codeIn.onkeydown = (e) => e.key === 'Enter' && joinCode();
   const el = h('div', { class: 'screen' },
     h('div', { class: 'topbar' }, backButton(() => { sfx.back(); nav.title(); }), h('h2', null, 'ONLINE'), h('span', { class: 'sub' }, '2台で対戦')),
     h('div', { class: 'online-body' },
-      choice(shapeIcon('hexagon', '#5aa0ff'), '部屋を作る', 'QRコードを表示します。相手に読み取ってもらったら、相手のQRを読み取ります。', () => show(hostScreen(nav))),
-      choice(shapeIcon('arrow', '#58f0a0'), '部屋に入る', '相手のQRをカメラで読み取ります。読み取ると自分のQRが表示されるので、相手に読み取ってもらいます。', () => show(joinScreen(nav))),
+      choice(ICONS.link, 'リンクで部屋を作る', 'LINE・Discordなどでリンクを送るだけ。遠くの人とも対戦できます。相手はリンクを開けば参加。', () => show(roomHostScreen(nav)), ' primary-choice'),
+      h('div', { class: 'choice-col' },
+        choice(shapeIcon('hexagon', '#5aa0ff'), 'QRで部屋を作る', '近くの人と。QRを見せ合って直結（サーバー不要）。', () => show(hostScreen(nav)), ' small'),
+        choice(shapeIcon('arrow', '#58f0a0'), 'QRで部屋に入る', '相手のQRをカメラで読み取ります。', () => show(joinScreen(nav)), ' small'),
+      ),
     ),
-    h('div', { style: 'margin-top:10px' }, tethering()),
+    h('div', { class: 'online-foot' },
+      h('div', { class: 'code-row' }, h('span', { class: 'lbl' }, 'コードで参加'), codeIn, joinBtn),
+      tethering(),
+    ),
   );
   return { el, onBack: () => (nav.title(), true) };
 }
@@ -276,6 +297,363 @@ export function joinScreen(nav: OnlineNav, presetCode?: string): Screen {
     dispose: () => {
       disposed = true;
       scanner?.stop();
+    },
+    onBack: () => {
+      cleanup();
+      show(onlineHome(nav));
+      return true;
+    },
+  };
+}
+
+/** Share / copy buttons for a room link. */
+function shareButtons(code: string): HTMLElement {
+  const url = roomLink(code);
+  const text = `POLYGON DUELで対戦しよう！ ルームコード ${code}`;
+  const row = h('div', { class: 'share-row' });
+  const canShare = typeof navigator.share === 'function';
+  if (canShare) {
+    const share = h('button', { class: 'btn primary' }, h('span', { html: ICONS.link, class: 'bi' }), '共有（LINE・Discord…）');
+    share.onclick = async () => {
+      try {
+        await navigator.share({ title: 'POLYGON DUEL', text, url });
+      } catch {
+        /* cancelled */
+      }
+    };
+    row.append(share);
+  }
+  const copy = h('button', { class: `btn${canShare ? '' : ' primary'}` }, h('span', { html: ICONS.copy, class: 'bi' }), 'リンクをコピー');
+  copy.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      toast('コピーしました。LINEやDiscordに貼り付けて送ってください');
+    } catch {
+      toast(url, 6000);
+    }
+  };
+  row.append(copy);
+  return row;
+}
+
+const relayError = (why: string) =>
+  why === 'id-taken' ? 'このルームは使用中です' : '接続サーバーに繋がりません。通信環境を確認するか、近くの人とはQRで対戦できます。';
+
+/** Link room — host: claim a room code on the relay, share the link, wait for the guest. */
+export function roomHostScreen(nav: OnlineNav): Screen {
+  let code = newRoomCode();
+  let relay: Relay | null = null;
+  let link: PeerLink | null = null;
+  let guest: string | null = null;
+  let guestAt = 0;
+  let offer: string | null = null;
+  let localCands: (RTCIceCandidateInit | null)[] = [];
+  let disposed = false;
+  let connected = false;
+  let reconnectTimer = 0;
+  const left = h('div', { class: 'pane' });
+  const right = h('div', { class: 'pane' });
+  const steps = h('div');
+  const setStep = (i: number) => {
+    steps.innerHTML = '';
+    steps.append(stepsBar(i, ['リンクを送る', '相手の参加', '接続']));
+  };
+  setStep(0);
+  const el = h('div', { class: 'screen' },
+    h('div', { class: 'topbar' }, backButton(() => { sfx.back(); cleanup(); show(onlineHome(nav)); }), h('h2', null, 'ROOM'), h('span', { class: 'spacer' }), steps),
+    h('div', { class: 'online-body' }, left, right),
+  );
+
+  const waiting = () => {
+    setStep(1);
+    right.innerHTML = '';
+    right.append(
+      h('div', { class: 'spinner' }),
+      h('p', null, h('b', null, '相手の参加を待っています'), h('br'), '相手がリンクを開くか、ルームコードを入力すると自動でつながります。'),
+      h('div', { class: 'tip' }, h('span', { html: ICONS.info }), h('div', null, 'このページは開いたままに。LINEなどに切り替えて送っても大丈夫です（戻ると自動で再接続）。')),
+    );
+  };
+
+  function resetLink(): void {
+    link?.close();
+    guest = null;
+    offer = null;
+    localCands = [];
+    const l = new PeerLink(RELAY_ICE);
+    link = l;
+    l.onLocalCandidate = (c) => {
+      localCands.push(c);
+      if (guest && offer) relay?.send(guest, { t: 'ice', c });
+    };
+    l.onOpen = () => {
+      if (disposed || link !== l) return;
+      connected = true;
+      relay?.close();
+      sfx.success();
+      show(onlineSelect(nav, l, true));
+    };
+    l.onClose = (r) => {
+      if (disposed || connected || link !== l) return;
+      toast(`${r}。相手にもう一度リンクを開いてもらってください`, 4000);
+      resetLink();
+      waiting();
+    };
+  }
+
+  async function onMsg(from: string, m: RoomMsg): Promise<void> {
+    if (disposed || connected || !relay) return;
+    if (m.t === 'join') {
+      if (m.build !== __BUILD_HASH__) {
+        relay.send(from, { t: 'reject', why: 'version' });
+        toast('相手とバージョンが違います。両方のページを再読み込みしてください。', 5000);
+        return;
+      }
+      if (guest && guest !== from) {
+        if (performance.now() - guestAt < 15000) {
+          relay.send(from, { t: 'reject', why: 'full' });
+          return;
+        }
+        resetLink(); // the previous guest never finished connecting
+      }
+      if (guest === from && offer) {
+        // the guest retried before our offer arrived: resend everything
+        relay.send(from, { t: 'offer', sdp: offer });
+        for (const c of localCands) relay.send(from, { t: 'ice', c });
+        return;
+      }
+      guest = from;
+      guestAt = performance.now();
+      const l = link!;
+      const sdp = await l.offerSdp();
+      if (link !== l || guest !== from) return;
+      offer = sdp;
+      relay.send(from, { t: 'offer', sdp });
+      for (const c of localCands) relay.send(from, { t: 'ice', c });
+      sfx.confirm();
+      setStep(2);
+      right.innerHTML = '';
+      right.append(h('div', { class: 'spinner' }), h('p', null, h('b', null, '相手が見つかりました'), h('br'), '接続しています…'));
+    } else if (from === guest) {
+      if (m.t === 'answer') await link?.setAnswerSdp(m.sdp as string).catch(() => undefined);
+      else if (m.t === 'ice') await link?.addRemoteCandidate(m.c as RTCIceCandidateInit | null);
+      else if (m.t === 'bye') {
+        resetLink();
+        waiting();
+      }
+    }
+  }
+
+  async function openRelay(first: boolean): Promise<void> {
+    clearTimeout(reconnectTimer);
+    if (disposed || connected) return;
+    const r = new Relay(roomPeerId(code));
+    r.onMessage = (from, m) => void onMsg(from, m);
+    r.onDrop = () => scheduleReconnect();
+    try {
+      await r.connect();
+    } catch (e) {
+      const why = (e as Error).message;
+      if (first && why === 'id-taken') {
+        code = newRoomCode();
+        return openRelay(true);
+      }
+      if (first) {
+        left.innerHTML = '';
+        left.append(h('p', { class: 'error' }, relayError(why)), h('button', { class: 'btn', onclick: () => { left.innerHTML = ''; left.append(h('div', { class: 'spinner' })); void openRelay(true); } }, 'もう一度'));
+        right.innerHTML = '';
+        right.append(
+          h('p', null, '近くの人とは、サーバーを使わないQR接続で対戦できます。'),
+          h('button', { class: 'btn primary', onclick: () => { cleanup(); show(hostScreen(nav)); } }, 'QRで部屋を作る'),
+        );
+        return;
+      }
+      scheduleReconnect();
+      return;
+    }
+    if (disposed || connected) return r.close();
+    relay = r;
+    if (first) showRoom();
+  }
+
+  function scheduleReconnect(): void {
+    relay = null;
+    if (disposed || connected) return;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = window.setTimeout(() => void openRelay(false), 2000);
+  }
+
+  function showRoom(): void {
+    left.innerHTML = '';
+    left.append(
+      h('h3', null, '① このリンクを相手に送る'),
+      h('div', { class: 'room-code' }, ...[...code].map((ch) => h('span', null, ch))),
+      h('div', { class: 'room-url' }, roomLink(code)),
+      shareButtons(code),
+      h('p', { class: 'small-note' }, '相手はリンクを開くだけ。アプリ内ブラウザで繋がらない時は、SafariやChromeで開いてもらってください。'),
+    );
+    waiting();
+  }
+
+  function cleanup(): void {
+    disposed = true;
+    clearTimeout(reconnectTimer);
+    if (guest && !connected) relay?.send(guest, { t: 'bye' });
+    relay?.close();
+    if (!connected) link?.close();
+  }
+
+  const onVis = () => {
+    if (!document.hidden && !relay?.isOpen && !disposed && !connected) void openRelay(false);
+  };
+  document.addEventListener('visibilitychange', onVis);
+  left.append(h('div', { class: 'spinner' }), h('p', null, '部屋を作っています…'));
+  resetLink();
+  void openRelay(true);
+  return {
+    el,
+    dispose: () => {
+      document.removeEventListener('visibilitychange', onVis);
+      if (!disposed) cleanup();
+    },
+    onBack: () => {
+      cleanup();
+      show(onlineHome(nav));
+      return true;
+    },
+  };
+}
+
+/** Link room — guest: find the host through the relay and connect. */
+export function roomJoinScreen(nav: OnlineNav, code: string): Screen {
+  const hostId = roomPeerId(code);
+  let relay: Relay | null = null;
+  let link: PeerLink | null = null;
+  let disposed = false;
+  let connected = false;
+  let gotOffer = false;
+  let answered = false;
+  let localCands: (RTCIceCandidateInit | null)[] = [];
+  let joinTimer = 0;
+  let failTimer = 0;
+  let tries = 0;
+  const left = h('div', { class: 'pane' });
+  const right = h('div', { class: 'pane' });
+  const steps = h('div');
+  const setStep = (i: number) => {
+    steps.innerHTML = '';
+    steps.append(stepsBar(i, ['ルームを探す', '接続', '対戦']));
+  };
+  setStep(0);
+  const el = h('div', { class: 'screen' },
+    h('div', { class: 'topbar' }, backButton(() => { sfx.back(); cleanup(); show(onlineHome(nav)); }), h('h2', null, 'JOIN'), h('span', { class: 'sub' }, `ルーム ${code}`), h('span', { class: 'spacer' }), steps),
+    h('div', { class: 'online-body' }, left, right),
+  );
+  right.append(
+    h('div', { class: 'room-code small' }, ...[...code].map((ch) => h('span', null, ch))),
+    h('p', null, '相手（部屋を作った人）がページを開いたままにしている必要があります。'),
+    h('p', { class: 'small-note' }, 'LINE・Discordのアプリ内ブラウザで繋がらない時は、SafariやChromeで開き直してください。'),
+  );
+  const status = (title: string, sub = '', spin = true) => {
+    left.innerHTML = '';
+    if (spin) left.append(h('div', { class: 'spinner' }));
+    left.append(h('p', null, h('b', null, title), sub ? h('br') : null, sub));
+  };
+  const fail = (title: string, sub: string) => {
+    clearInterval(joinTimer);
+    clearTimeout(failTimer);
+    left.innerHTML = '';
+    left.append(
+      h('p', { class: 'error' }, title),
+      h('p', null, sub),
+      h('div', { class: 'share-row' },
+        h('button', { class: 'btn primary', onclick: () => { cleanup(); show(roomJoinScreen(nav, code)); } }, 'もう一度'),
+        h('button', { class: 'btn', onclick: () => { cleanup(); show(onlineHome(nav)); } }, '戻る'),
+      ),
+    );
+  };
+
+  function cleanup(): void {
+    disposed = true;
+    clearInterval(joinTimer);
+    clearTimeout(failTimer);
+    if (!connected) {
+      relay?.send(hostId, { t: 'bye' });
+      link?.close();
+    }
+    relay?.close();
+  }
+
+  async function start(): Promise<void> {
+    status('ルームを探しています…');
+    const r = new Relay(`pdg-${Math.random().toString(36).slice(2, 12)}`);
+    try {
+      await r.connect();
+    } catch (e) {
+      if (!disposed) fail('接続できませんでした', relayError((e as Error).message));
+      return;
+    }
+    if (disposed) return r.close();
+    relay = r;
+    const l = new PeerLink(RELAY_ICE);
+    link = l;
+    l.onLocalCandidate = (c) => {
+      localCands.push(c);
+      if (answered) r.send(hostId, { t: 'ice', c });
+    };
+    l.onOpen = () => {
+      if (disposed) return;
+      connected = true;
+      clearTimeout(failTimer);
+      r.close();
+      sfx.success();
+      show(onlineSelect(nav, l, false));
+    };
+    l.onClose = (why) => {
+      if (!disposed && !connected) fail('接続が切れました', `${why}。もう一度お試しください。`);
+    };
+    r.onMessage = async (from, m) => {
+      if (from !== hostId || disposed || connected) return;
+      if (m.t === 'reject') {
+        if (m.why === 'version') fail('バージョンが違います', '両方のページを再読み込みしてから、もう一度リンクを開いてください。');
+        else fail('満員です', 'この部屋は別の人と接続中です。');
+      } else if (m.t === 'offer' && !gotOffer) {
+        gotOffer = true;
+        clearInterval(joinTimer);
+        setStep(1);
+        status('接続しています…', '相手の端末とつないでいます');
+        const ans = await l.answerSdp(m.sdp as string).catch(() => null);
+        if (!ans || disposed) return;
+        r.send(hostId, { t: 'answer', sdp: ans });
+        answered = true;
+        for (const c of localCands) r.send(hostId, { t: 'ice', c });
+        failTimer = window.setTimeout(() => {
+          if (!connected) fail('接続できませんでした', 'ネットワークの制限でつながらない場合があります。Wi-Fiとモバイル回線を切り替えるか、近くならQRで対戦してください。');
+        }, 25000);
+      } else if (m.t === 'ice') await l.addRemoteCandidate(m.c as RTCIceCandidateInit | null);
+    };
+    let expired = 0;
+    r.onExpire = (peer) => {
+      if (peer === hostId && !gotOffer) expired++;
+    };
+    r.onDrop = () => {
+      if (!disposed && !connected && !gotOffer) fail('接続サーバーから切断されました', 'もう一度お試しください。');
+    };
+    // keep knocking: the host's page may be reconnecting after being in the background
+    const knock = () => {
+      if (gotOffer || disposed) return;
+      tries++;
+      r.send(hostId, { t: 'join', build: __BUILD_HASH__ });
+      if (tries === 3 && expired) status('ルームを探しています…', '相手のページが閉じている／コードが違う可能性があります');
+      if (tries > 9) fail('ルームが見つかりません', 'コードが正しいか、相手が「部屋を作る」の画面を開いたままか確認してください。');
+    };
+    knock();
+    joinTimer = window.setInterval(knock, 2500);
+  }
+  void start();
+  return {
+    el,
+    dispose: () => {
+      if (!disposed) cleanup();
     },
     onBack: () => {
       cleanup();
