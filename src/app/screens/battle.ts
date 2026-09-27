@@ -5,7 +5,7 @@ import { SYSTEM } from '../../data/system';
 import { M_N1, M_S1, M_S2, SH, SHAPES } from '../../core/compile';
 import {
   type SimEvent, eventKey, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE,
-  EV_KNOCKDOWN, EV_STEP, EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_MOVE, EV_WALL, EV_BLINK,
+  EV_KNOCKDOWN, EV_STEP, EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END,
   HF_COUNTER, HF_KNOCKDOWN,
 } from '../../core/events';
 import { PH_FIGHT, PH_INTRO, ST_FREE, ST_STEP, ST_ATTACK, type FighterState } from '../../core/state';
@@ -199,13 +199,21 @@ export function battleScreen(cfg: BattleConfig): Screen {
       case EV_BLINK:
         sfx.blink();
         break;
+      case EV_GHOST:
+        // sounds exactly like what the decoy pretends to do
+        if (e.a === 1) sfx.step();
+        else sfx.whoosh();
+        break;
+      case EV_GHOST_END:
+        sfx.ghostOut();
+        break;
       case EV_RIPOSTE:
         sfx.riposte();
         vibrate(30);
         break;
       case EV_MOVE: {
         const m = sim.moveOf(s.f[e.who]);
-        if (m) {
+        if (m && !m.ghost) {
           const shape = SHAPES[m.shape];
           if (shape === 'triangle' || shape === 'pentagon' || shape === 'hexagon') sfx.startup(shape);
           else sfx.whoosh();

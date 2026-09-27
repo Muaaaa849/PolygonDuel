@@ -152,10 +152,11 @@ export interface CardsApi {
 }
 
 export function charCards(onSelect: (i: number) => void, initial = 0): CardsApi {
-  const grid = h('div', { class: 'select-grid' });
+  // 4+ characters: a denser card (one-line theme, one skill per row)
+  const grid = h('div', { class: `select-grid${CHARACTERS.length >= 4 ? ' dense' : ''}`, style: `--n:${CHARACTERS.length}` });
   const stops: (() => void)[] = [];
   const cards: HTMLElement[] = [];
-  const badges: (HTMLElement | null)[] = [null, null, null];
+  const badges: (HTMLElement | null)[] = CHARACTERS.map(() => null);
   let sel = initial;
   CHARACTERS.forEach((c, i) => {
     const pv = preview(c);
@@ -185,7 +186,7 @@ export function charCards(onSelect: (i: number) => void, initial = 0): CardsApi 
       h('div', { class: 'preview' }, pv.canvas),
       h('div', { class: 'info' },
         h('div', { class: 'name' }, h('b', null, c.name), h('span', { class: 'en' }, c.nameEn)),
-        h('div', { class: 'theme' }, `${c.theme} — ${c.blurb}`),
+        h('div', { class: 'theme' }, h('b', null, c.theme), h('span', { class: 'blurb' }, ` — ${c.blurb}`)),
         stats,
         skills,
       ),

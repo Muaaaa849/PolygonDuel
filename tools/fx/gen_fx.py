@@ -616,6 +616,81 @@ def wall_hit(size=384, n=14):
     save('wall_t', frames, tint=True)
 
 
+PURPLE = (0.78, 0.45, 1.0)
+
+
+def ghost_fade(size=320, n=16):
+    """Phantom decoy dissolving: the body breaks into violet wisps that curl up and away."""
+    x, y, r, th = grid(size)
+    frames = []
+    nz = fbm(size, 4, 77, 6)
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(t)
+        # dissolving disc eaten by noise from the outside in
+        disc = (1 - smooth(0.25 + 0.2 * e, 0.34 + 0.25 * e, r)) * smooth(t * 1.1 - 0.1, t * 1.1 + 0.05, nz) * (1 - t) ** 0.6
+        inten = disc * 1.1
+        # wisps: noisy streaks rising (−y) and spiralling out
+        for i in range(9):
+            a = i * 0.698 + 0.2 + t * 1.2
+            d = 0.15 + 0.7 * e * (0.6 + 0.4 * ((i * 41) % 10) / 10)
+            cx, cy = math.cos(a) * d, math.sin(a) * d - 0.35 * e
+            u = (x - cx) * math.cos(a + 1.3) + (y - cy) * math.sin(a + 1.3)
+            v = -(x - cx) * math.sin(a + 1.3) + (y - cy) * math.cos(a + 1.3)
+            inten += gauss(u, 0.14) * gauss(v + 0.03 * np.sin(u * 18 + t * 9), 0.018) * (1 - t) * 1.6
+        inten += gauss(r - (0.2 + 0.7 * e), 0.025) * (1 - t) ** 2 * 1.2
+        frames.append(rgba(glowify(inten, 4, 0.6), PURPLE, white_core=0.6))
+    save('ghost_fade', frames)
+
+
+def ghost_appear(size=320, n=16):
+    """Phantom materializing: violet motes converge, a thin ring snaps shut, a flash."""
+    x, y, r, th = grid(size)
+    frames = []
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(min(1, t * 1.4))
+        inten = np.zeros_like(r)
+        for i in range(14):
+            a = i * 0.449 + 0.5 - e * 1.4
+            d = 0.9 * (1 - e) + 0.08
+            cx, cy = math.cos(a) * d, math.sin(a) * d
+            inten += gauss(np.sqrt((x - cx) ** 2 + (y - cy) ** 2), 0.02 + 0.015 * (1 - e)) * (0.4 + 0.8 * e) * (1 - max(0, t - 0.75) * 4)
+        ring = 0.95 * (1 - e) + 0.3
+        inten += gauss(r - ring, 0.02) * math.sin(min(1, t * 1.3) * math.pi) * 1.3
+        flash = max(0.0, 1 - abs(t - 0.62) * 5)
+        inten += gauss(r, 0.22) * flash * 2.2
+        inten += (gauss(x, 0.012) * gauss(y, 0.5) + gauss(y, 0.012) * gauss(x, 0.5)) * flash * 1.6
+        frames.append(rgba(glowify(inten, 4, 0.7), PURPLE, white_core=0.85))
+    save('ghost_appear', frames)
+
+
+def reaper(size=384, n=14):
+    """Soul Ripper: three violet claw crescents raking across, with a ghostly afterglow."""
+    x, y, r, th = grid(size)
+    frames = []
+    nz = fbm(size, 3, 91, 5)
+    for k in range(n):
+        t = k / (n - 1)
+        inten = np.zeros_like(r)
+        for i, off in enumerate((-0.28, 0.0, 0.28)):
+            lt = np.clip(t * 1.6 - i * 0.12, 0, 1)
+            if lt <= 0:
+                continue
+            # crescent: arc of radius R centred off to one side, revealed as lt sweeps
+            R = 0.75
+            cx, cy = -0.35, off - R * 0.2
+            rr = np.sqrt((x - cx) ** 2 + (y - cy - R) ** 2)
+            ang = np.arctan2(y - cy - R, x - cx)
+            sweep = smooth(-2.2, -2.2 + 1.9 * lt, ang) * (1 - smooth(-2.2 + 1.9 * lt, -2.2 + 1.9 * lt + 0.15, ang))
+            width = 0.028 * (1 - lt * 0.6)
+            inten += gauss(rr - R, width) * (0.6 + 0.4 * nz) * sweep * (1 - max(0, lt - 0.6) * 2.4) * 2.0
+            inten += gauss(rr - R, width * 4) * sweep * (1 - lt) * 0.5
+        inten += gauss(r, 0.35) * (1 - t) ** 3 * 0.6 * nz
+        frames.append(rgba(glowify(inten, 4, 0.7), PURPLE, white_core=0.8))
+    save('reaper', frames)
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     slash()
@@ -639,6 +714,9 @@ if __name__ == '__main__':
     charge()
     blink()
     wall_hit()
+    ghost_fade()
+    ghost_appear()
+    reaper()
     with open(os.path.join(OUT, 'fx.json'), 'w') as f:
         json.dump(MANIFEST, f, indent=1)
     total = sum(os.path.getsize(os.path.join(OUT, m['file'])) for m in MANIFEST.values())

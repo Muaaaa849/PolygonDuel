@@ -10,7 +10,7 @@ import {
 } from '../core/state';
 import {
   type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN,
-  EV_STEP, EV_HEAL, EV_KO, EV_MOVE, EV_WALL, EV_BLINK, HF_COUNTER, HF_JA, HF_OTG,
+  EV_STEP, EV_HEAL, EV_KO, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END, HF_COUNTER, HF_JA, HF_OTG,
 } from '../core/events';
 import { Morph, SHAPE_RADII, toPoints } from './shapes';
 import { Vfx } from './vfx';
@@ -98,7 +98,13 @@ export class BattleView {
   private labels = new Container();
   vfx = new Vfx();
   fx = new FxLayer();
+  /** 0/1 = the fighters, 2/3 = their illusion decoys (Phantom's S1). */
   private fighters: FighterView[];
+  /** Decoys are drawn into their own layers so their opacity can depend on who is watching. */
+  private ghostLayer = new Container();
+  private ghostGlow = new Graphics();
+  private ghostBodies = new Graphics();
+  private ghostOverlay = new Graphics();
   private cam = { x: FW / 2, y: FHt / 2, zoom: 1 };
   private shake = 0;
   private shakeX = 0;
@@ -128,13 +134,18 @@ export class BattleView {
     const cB = sim.char(1).def;
     const colA = cA.color;
     const colB = cA.id === cB.id ? cB.altColor : cB.color;
-    this.fighters = [new FighterView(0, colA, opts.tags[0]), new FighterView(1, colB, opts.tags[1])];
+    this.fighters = [
+      new FighterView(0, colA, opts.tags[0]), new FighterView(1, colB, opts.tags[1]),
+      new FighterView(0, colA, opts.tags[0]), new FighterView(1, colB, opts.tags[1]),
+    ];
+    this.ghostGlow.blendMode = 'add';
+    this.ghostLayer.addChild(this.ghostGlow, this.ghostBodies, this.ghostOverlay);
     this.glow.blendMode = 'add';
     this.fieldFx.blendMode = 'add';
     this.field.addChild(this.fieldG, this.borderG, this.fieldFx);
     this.mono.desaturate();
     this.fx.root.sortableChildren = false;
-    this.world.addChild(this.field, this.glow, this.bodies, this.fx.root, this.overlay, this.vfx.root, this.labels);
+    this.world.addChild(this.field, this.glow, this.bodies, this.ghostLayer, this.fx.root, this.overlay, this.vfx.root, this.labels);
     for (const f of this.fighters) this.labels.addChild(f.label);
     this.root.addChild(this.world, this.flashG);
     this.rgb = new RGBSplitFilter({ red: [0, 0], green: [0, 0], blue: [0, 0] });
@@ -143,6 +154,33 @@ export class BattleView {
     // auto: start at mid on touch devices (phones), high elsewhere; adjusted by measured frame time
     const touch = matchMedia('(pointer: coarse)').matches;
     this.setQuality(settings.quality === 'auto' ? (touch ? 'mid' : 'high') : settings.quality);
+  }
+
+  /** Fighter i (0/1), or the decoy of fighter i-2 (2/3; null when there is none). */
+  private fOf(i: number): FighterState | null {
+    return i < 2 ? this.sim.s.f[i] : this.sim.decoyOf(i - 2);
+  }
+
+  private fvOf(i: number): FighterView {
+    return this.fighters[i];
+  }
+
+  /** Does the viewer own fighter i (sees through its illusion)? Local 2P sees everything. */
+  private owns(i: number): boolean {
+    return this.opts.local === -1 || this.opts.local === i;
+  }
+
+  /** The real fighter is invisible to the opponent while its illusion is out. */
+  hidden(i: number): boolean {
+    return this.sim.s.f[i].ghostT > 0 && !this.owns(i);
+  }
+
+  /** Cost as this viewer should see it (the opponent can't tell the illusion was paid for). */
+  shownCost(i: number): number {
+    const f = this.sim.s.f[i];
+    if (f.ghostT <= 0 || this.owns(i)) return f.cost;
+    const g = this.sim.char(i).moves.find((m) => m.ghost);
+    return Math.min(SYSTEM.cost.max * COST_UNIT, f.cost + (g?.cost ?? 0));
   }
 
   colorOf(i: number): number {
@@ -269,6 +307,7 @@ export class BattleView {
         const fy = toPx(f.y);
         this.vfx.shatter(fx, fy, this.fighters[who].color, 6, 18, 30);
         this.fx.spawn('crush', { x: fx, y: fy, size: 3.4 * PX, alpha: 0.75 });
+        if (e.type === EV_CRUSH && this.moveIs(e.who, 'soulRipper')) this.fx.spawn('reaper', { x: fx, y: fy, size: 3.4 * PX, rot: s.f[e.who].facing * ANG_TO_RAD, speed: 1.4 });
         if (e.type === EV_CRUSH && this.moveIs(e.who, 'breakFang')) this.fx.spawn('fang', { x: fx, y: fy, size: 2.6 * PX, rot: s.f[e.who].facing * ANG_TO_RAD, speed: 1.6 });
         this.vfx.ring(fx, fy, 0xffd060, 20, 180, 20, 10);
         this.vfx.spark(fx, fy, 0xffd060, 16, 30, 40, 6);
@@ -321,6 +360,27 @@ export class BattleView {
         this.addShake(20);
         this.wave(x, y, 1.3);
         this.flashScreen(ac, 0.22);
+        break;
+      }
+      case EV_GHOST: {
+        // illusion out: the opponent sees nothing special (the decoy simply acts as the
+        // fighter); the owner gets a faint violet puff where the real one turns invisible
+        const f = s.f[e.who];
+        if (this.owns(e.who)) this.fx.spawn('ghost_appear', { x: toPx(f.x), y: toPx(f.y), size: 1.8 * PX, alpha: 0.5, speed: 1.6 });
+        break;
+      }
+      case EV_GHOST_END: {
+        // the decoy dissolves into wisps; the real one materializes where it actually is
+        const f = s.f[e.who];
+        const rx = toPx(f.x);
+        const ry = toPx(f.y);
+        this.fx.spawn('ghost_fade', { x, y, size: 2.9 * PX });
+        this.vfx.glitter(x, y, 0xc89bff, 14, 10, 34, 4);
+        this.fx.spawn('ghost_appear', { x: rx, y: ry, size: 2.6 * PX });
+        this.vfx.ring(rx, ry, 0xc89bff, 60, 10, 16, 5);
+        if (e.a === 2) this.vfx.text('幻影', x, y - 90, 0xd9a8ff, 26, 40, -0.6);
+        if (!this.owns(e.who)) this.chroma = Math.max(this.chroma, 0.45);
+        this.fvOf(e.who).flash = 3;
         break;
       }
       case EV_BLINK: {
@@ -520,9 +580,46 @@ export class BattleView {
     this.fieldFx.clear();
 
     // hitbox trails & ghosts first (under bodies)
-    for (let i = 0; i < 2; i++) this.drawTrail(i, dtFrames, newFrame && !frozen);
-    for (let i = 0; i < 2; i++) this.drawFighter(i, dtFrames, frozen);
-    for (let i = 0; i < 2; i++) this.stateFx(i, newFrame && !frozen);
+    this.ghostGlow.clear();
+    this.ghostBodies.clear();
+    this.ghostOverlay.clear();
+    for (let i = 0; i < 2; i++) {
+      const hide = this.hidden(i);
+      this.fvOf(i).label.visible = !hide;
+      if (!hide) this.drawTrail(i, dtFrames, newFrame && !frozen);
+    }
+    for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.drawFighter(i, dtFrames, frozen);
+    for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.stateFx(i, newFrame && !frozen);
+    // illusion decoys: to the opponent they ARE the fighter; the owner sees a translucent ghost
+    for (let i = 0; i < 2; i++) {
+      const fv = this.fvOf(2 + i);
+      const d = this.sim.decoyOf(i);
+      fv.label.visible = !!d && !this.owns(i);
+      if (!d) {
+        fv.trail.length = 0;
+        fv.ghosts.length = 0;
+        continue;
+      }
+      if (fv.label.parent !== this.labels) this.labels.addChild(fv.label);
+      this.ghostLayer.alpha = this.owns(i) ? 0.42 + 0.08 * Math.sin(this.t * 0.5) : 1;
+      const [g0, b0, o0] = [this.glow, this.bodies, this.overlay];
+      [this.glow, this.bodies, this.overlay] = [this.ghostGlow, this.ghostBodies, this.ghostOverlay];
+      this.drawTrail(2 + i, dtFrames, newFrame && !frozen);
+      this.drawFighter(2 + i, dtFrames, frozen);
+      [this.glow, this.bodies, this.overlay] = [g0, b0, o0];
+      this.stateFx(2 + i, newFrame && !frozen);
+      if (this.owns(i) && this.opts.local !== -1) {
+        // owner: mark the real (invisible to the opponent) piece
+        const f = this.sim.s.f[i];
+        const r = 0.72 * PX + Math.sin(this.t * 0.3) * 4;
+        for (let k = 0; k < 12; k += 2) {
+          const a0 = (k / 12) * Math.PI * 2 + this.t * 0.03;
+          const fx0 = toPx(f.x);
+          const fy0 = toPx(f.y);
+          ov.moveTo(fx0 + Math.cos(a0) * r, fy0 + Math.sin(a0) * r).arc(fx0, fy0, r, a0, a0 + Math.PI / 6).stroke({ width: 3, color: 0xd9a8ff, alpha: 0.8 });
+        }
+      }
+    }
     this.drawAim();
 
     this.vfx.update(fxDt);
@@ -596,16 +693,15 @@ export class BattleView {
 
   /** Sprite effects driven by state: swing smears, skill signatures, loops. */
   private stateFx(i: number, advanced: boolean): void {
-    const s = this.sim.s;
-    const f = s.f[i];
-    const fv = this.fighters[i];
+    const f = this.fOf(i)!;
+    const fv = this.fvOf(i);
     const m = f.st === ST_ATTACK ? this.sim.moveOf(f) : null;
     if (f.st === ST_ATTACK && (f.move !== fv.lastMove || f.sf < fv.lastSf)) fv.instance++;
     fv.lastMove = f.st === ST_ATTACK ? f.move : -1;
     fv.lastSf = f.sf;
     const pos = () => {
-      const ff = this.sim.s.f[i];
-      return { x: toPx(ff.x), y: toPx(ff.y) };
+      const ff = this.fOf(i);
+      return ff ? { x: toPx(ff.x), y: toPx(ff.y) } : null;
     };
     const x = toPx(f.x);
     const y = toPx(f.y);
@@ -641,7 +737,10 @@ export class BattleView {
           once(f.sf >= m.S - 6, () => this.fx.spawn('fang', { x: x + cos * reach * 0.75, y: y + sin * reach * 0.75, size: 2.4 * PX, rot: face, speed: 1.1 }));
           break;
         case 'galePierce':
-          once(f.sf >= m.S, () => this.fx.spawn('gale', { x, y, size: reach * 1.05, rot: face, follow: () => ({ ...pos(), rot: this.sim.s.f[i].facing * ANG_TO_RAD }) }));
+          once(f.sf >= m.S, () => this.fx.spawn('gale', { x, y, size: reach * 1.05, rot: face, follow: () => { const p = pos(); return p && { ...p, rot: (this.fOf(i)?.facing ?? 0) * ANG_TO_RAD }; } }));
+          break;
+        case 'soulRipper':
+          once(f.sf >= m.S - 4, () => this.fx.spawn('reaper', { x: x + cos * reach * 0.55, y: y + sin * reach * 0.55, size: 2.8 * PX, rot: face, speed: 1.1 }));
           break;
         case 'shieldBash':
           once(f.sf >= m.S, () => this.fx.spawn('bash', { x: x + cos * 60, y: y + sin * 60, size: 3.2 * PX, rot: face }));
@@ -658,7 +757,7 @@ export class BattleView {
       }
     };
     const dangerOn = !!m && !!m.gb && f.sf < m.S;
-    loop('danger', dangerOn, () => this.fx.spawn('danger', { x, y, size: 2.6 * PX, rot: face, loop: true, follow: () => ({ ...pos(), rot: this.sim.s.f[i].facing * ANG_TO_RAD }) }));
+    loop('danger', dangerOn, () => this.fx.spawn('danger', { x, y, size: 2.6 * PX, rot: face, loop: true, follow: () => { const p = pos(); return p && { ...p, rot: (this.fOf(i)?.facing ?? 0) * ANG_TO_RAD }; } }));
     loop('stun', f.st === ST_STUN, () => this.fx.spawn('stun', { x, y, size: 2 * PX, loop: true, alpha: 0.85, follow: pos }));
     const casting = !!m && !!m.heal && f.sf < m.heal.frame;
     loop('breeze', casting || f.buff > 0, () => this.fx.spawn('breeze', { x, y, size: 2.9 * PX, loop: true, alpha: casting ? 1 : 0.55, follow: pos }));
@@ -738,8 +837,8 @@ export class BattleView {
   }
 
   private drawTrail(i: number, dt: number, record: boolean): void {
-    const fv = this.fighters[i];
-    const f = this.sim.s.f[i];
+    const fv = this.fvOf(i);
+    const f = this.fOf(i)!;
     const tip = this.sim.hitboxOf(f);
     if (tip && record) {
       const ex = toPx(f.x) + Math.cos(f.facing * ANG_TO_RAD) * 0.5 * PX;
@@ -764,8 +863,8 @@ export class BattleView {
 
   private drawFighter(i: number, dt: number, frozen: boolean): void {
     const s = this.sim.s;
-    const f = s.f[i];
-    const fv = this.fighters[i];
+    const f = this.fOf(i)!;
+    const fv = this.fvOf(i);
     const g = this.bodies;
     const glow = this.glow;
     const x = toPx(f.x);
@@ -777,7 +876,7 @@ export class BattleView {
       fv.lastShape = shape;
     }
     fv.morph.step(SHAPE_RADII[shape]);
-    const char = this.sim.char(i);
+    const char = this.sim.char(i & 1);
 
     let rot = f.facing * ANG_TO_RAD;
     if (f.st === ST_STEP) rot = f.moveDir * ANG_TO_RAD;
@@ -874,7 +973,7 @@ export class BattleView {
 
     // tag label above
     fv.label.position.set(x, y - 0.95 * PX);
-    fv.label.alpha = f.st === ST_KO ? 0 : this.opts.local === -1 || this.opts.local === i ? 1 : 0.75;
+    fv.label.alpha = f.st === ST_KO ? 0 : this.opts.local === -1 || this.opts.local === (i & 1) ? 1 : 0.75;
 
     if (this.showHitboxes) {
       this.overlay.circle(x, y, 0.5 * PX).stroke({ width: 2, color: 0x58f0a0, alpha: 0.8 });
@@ -885,8 +984,8 @@ export class BattleView {
 
   /** Facing arrow; during startup it grows toward the reach, while active it is a bar. */
   private drawDirection(i: number, x: number, y: number): void {
-    const f = this.sim.s.f[i];
-    const fv = this.fighters[i];
+    const f = this.fOf(i)!;
+    const fv = this.fvOf(i);
     if (f.st === ST_KO || f.st === ST_DOWN || f.st === ST_WAKE) return;
     const a = f.facing * ANG_TO_RAD;
     const cos = Math.cos(a);
@@ -1062,8 +1161,10 @@ export class BattleView {
 
   /** In-world resources: cost diamonds + step chevrons under each fighter (read your opponent without looking away). */
   private drawPips(i: number, x: number, y: number): void {
-    const f = this.sim.s.f[i];
+    const f = this.fOf(i)!;
     if (f.st === ST_KO) return;
+    // the decoy shows the cost the real one had before paying for the illusion
+    const cost = this.shownCost(i & 1);
     const g = this.overlay;
     const by = y + 0.86 * PX;
     const n = SYSTEM.cost.max;
@@ -1071,7 +1172,7 @@ export class BattleView {
     const start = x - ((n - 1) * w) / 2 - 14;
     for (let k = 0; k < n; k++) {
       const cx = start + k * w;
-      const fill = Math.max(0, Math.min(1, f.cost / COST_UNIT - k));
+      const fill = Math.max(0, Math.min(1, cost / COST_UNIT - k));
       const r = 7;
       g.poly([cx, by - r, cx + r, by, cx, by + r, cx - r, by]).stroke({ width: 2, color: 0xffc048, alpha: 0.55 });
       if (fill > 0) {

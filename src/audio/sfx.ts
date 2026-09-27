@@ -105,6 +105,13 @@ export const sfx = {
     tone(436 + 120 * k, 0.55, 'triangle', 0.12, 176, 0.02);
     for (let i = 0; i < 4; i++) tone(1600 + i * 420, 0.1, 'square', 0.035, 900, 0.02 + i * 0.035);
   },
+  /** Illusion ends: an airy reversed swell (decoy dissolving) + a glassy chime (real one appearing). */
+  ghostOut() {
+    noise(0.3, 700, 1.2, 0.14, 'bandpass', 5200);
+    tone(1480, 0.3, 'sine', 0.08, 740, 0.12);
+    tone(1976, 0.35, 'triangle', 0.06, 988, 0.15);
+    tone(330, 0.25, 'sine', 0.12, 660, 0.12);
+  },
   /** JA teleport: a zipped-up swish that snaps into place. */
   blink() {
     noise(0.12, 1200, 1.5, 0.22, 'bandpass', 9000);

@@ -56,9 +56,11 @@ export function buildHud(sim: Sim, view: BattleView, tags: [string, string]) {
           [...d.wins.children].forEach((c, k) => c.classList.toggle('on', k < w));
           d.last.win = w;
         }
-        if (f.cost !== d.last.cost) {
-          [...d.pips.children].forEach((c, k) => (c as HTMLElement).style.setProperty('--f', String(Math.max(0, Math.min(1, f.cost / COST_UNIT - k)))));
-          d.last.cost = f.cost;
+        // (the opponent can't see the cost an illusion took — view.shownCost hides it)
+        const cost = view.shownCost(i);
+        if (cost !== d.last.cost) {
+          [...d.pips.children].forEach((c, k) => (c as HTMLElement).style.setProperty('--f', String(Math.max(0, Math.min(1, cost / COST_UNIT - k)))));
+          d.last.cost = cost;
         }
         if (f.steps !== d.last.steps) {
           [...d.steps.children].forEach((c, k) => c.classList.toggle('off', k >= f.steps));

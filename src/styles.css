@@ -374,7 +374,7 @@ button {
 .select-grid {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr));
   gap: 12px;
   margin: 10px 0;
   min-height: 0;
@@ -2173,4 +2173,39 @@ kbd {
   .ms-live {
     grid-template-columns: 1fr;
   }
+}
+
+/* 4+ characters: denser cards */
+.select-grid.dense {
+  gap: 8px;
+}
+.select-grid.dense .char-card .info {
+  padding: 6px 10px 8px;
+  gap: 3px;
+}
+.select-grid.dense .char-card .name b {
+  font-size: 15px;
+  white-space: nowrap;
+}
+.select-grid.dense .char-card .name .en {
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+}
+.select-grid.dense .char-card .theme .blurb {
+  display: none;
+}
+.select-grid.dense .char-card .theme b {
+  font-weight: 500;
+}
+.select-grid.dense .stats {
+  gap: 2px 6px;
+  font-size: 9.5px;
+}
+.select-grid.dense .skills {
+  grid-template-columns: 1fr;
+  gap: 4px;
+  margin: 2px 0 0;
+}
+.select-grid.dense .char-card .preview {
+  min-height: 44px;
 }
