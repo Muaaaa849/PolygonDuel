@@ -2144,3 +2144,33 @@ kbd {
 .le-actions .btn {
   white-space: nowrap;
 }
+
+.ms-tabs {
+  align-self: flex-start;
+  flex-wrap: wrap;
+}
+.ms-live {
+  display: grid;
+  grid-template-columns: minmax(220px, 46%) 1fr;
+  gap: 12px;
+  align-items: start;
+}
+.ms-stage {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: 12px;
+  background: radial-gradient(ellipse at center, rgba(20, 30, 60, 0.7), rgba(5, 8, 16, 0.9));
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.ms-stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+@media (max-width: 600px) {
+  .ms-live {
+    grid-template-columns: 1fr;
+  }
+}

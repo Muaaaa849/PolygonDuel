@@ -1,3 +1,4 @@
+// Dev: screenshots of a wall impact and a just dodge → blink JA (needs the dev server). node tools/impact-shot.mjs <outDir>
 import { chromium } from 'playwright';
 const OUT = process.argv[2];
 const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });

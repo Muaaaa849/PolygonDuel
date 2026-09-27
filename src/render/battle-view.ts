@@ -33,6 +33,8 @@ export interface ViewOptions {
   showHitboxes?: boolean;
   /** Pixi application to draw into (default: the main one). The move-sheet demo uses its own. */
   host?: Application;
+  /** Extra camera zoom (small canvases like the move-sheet demo). */
+  zoom?: number;
 }
 
 export type Quality = 'high' | 'mid' | 'low';
@@ -679,7 +681,7 @@ export class BattleView {
     const top = this.topInset;
     const vh = Math.max(1, sh - top);
     const margin = 0.35 * PX;
-    const fit = Math.min(sw / (VW + margin * 2), (vh - 8) / (VH + margin * 2));
+    const fit = Math.min(sw / (VW + margin * 2), (vh - 8) / (VH + margin * 2)) * (this.opts.zoom ?? 1);
     const minZoom = Math.min(1, Math.min(sw / (FW + margin * 2), vh / (FHt + margin * 2)) / fit);
     // (phones in landscape are wider than the 11:6.2 frame, so zoom 1 may already show the whole width)
     const [a, b] = s.f;
