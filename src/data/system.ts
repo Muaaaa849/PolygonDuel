@@ -33,11 +33,6 @@ export const SYSTEM = {
     /** Block stun inflicted by a blocked GC (→ GC user is -4). */
     blockstun: 21,
     chainHit: [17, 26] as const,
-    /**
-     * Auto lunge toward the opponent. Reaches after blocking any N1 at max range
-     * (+pushback), but not the tip of Zephyr's 3.8u lance (plan §7-2).
-     */
-    lunge: 1.2,
   },
 
   cost: {

@@ -161,7 +161,8 @@ export function createTutorial(onFinish: () => void): TutorialHooks {
         case 1: {
           // walk in, then a slow, readable 1st hit
           if (dm.st === ST_ATTACK) return 0;
-          if (dist() > 2.3) return IN_STICK | toward();
+          // attack from close range so the GC lesson is about timing, not spacing
+          if (dist() > 1.9) return IN_STICK | toward();
           if (cooldown === 0 && dm.st === ST_FREE) {
             cooldown = 110;
             return IN_ATK | IN_STICK | toward();

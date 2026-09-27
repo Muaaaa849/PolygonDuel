@@ -164,7 +164,7 @@ export function compileCharacter(def: CharacterDef, idx: number): CChar {
   const j = SYSTEM.just;
   const gcDef: MoveDef = {
     id: 'gc', name: 'ガード反撃', kind: 'gc', shape: 'circle',
-    S: g.S, A: g.A, T: g.T, reach: n1.reach, lunge: Math.max(n1.lunge, g.lunge), autoAim: true,
+    S: g.S, A: g.A, T: g.T, reach: n1.reach, lunge: n1.lunge, autoAim: true,
     dmg: Math.trunc((n1.dmg * Math.round(g.dmgMul * 100)) / 100),
     hitstun: n1.hitstun, blockstun: g.blockstun, hitstop: 6,
     next: 'n2', chainHit: g.chainHit, cancel: g.chainHit,
