@@ -190,7 +190,7 @@ export class RollbackSession {
     }
     for (let k = 0; k < count; k++) {
       const f = first + k;
-      const w = v.getUint16(o, true); o += 2;
+      const w = v.getUint32(o, true) | 0; o += 4;
       if (f <= this.remoteConfirmed) continue;
       if (f >= this.frame + RING - SNAPS) continue; // absurdly far ahead; ignore
       const idx = f % RING;
@@ -252,7 +252,7 @@ export class RollbackSession {
   private sendInputs(): void {
     const first = Math.max(this.peerAck + 1, this.localHead - MAX_SEND + 1, 0);
     const count = Math.max(0, Math.min(MAX_SEND, this.localHead - first + 1));
-    const buf = new Uint8Array(15 + count * 2 + 8);
+    const buf = new Uint8Array(15 + count * 4 + 8);
     const v = new DataView(buf.buffer);
     let o = 0;
     v.setUint8(o, PKT_INPUT); o += 1;
@@ -263,8 +263,8 @@ export class RollbackSession {
     v.setInt32(o, first, true); o += 4;
     v.setUint8(o, count); o += 1;
     for (let k = 0; k < count; k++) {
-      v.setUint16(o, this.localIn[(first + k) % RING], true);
-      o += 2;
+      v.setUint32(o, this.localIn[(first + k) % RING] >>> 0, true);
+      o += 4;
     }
     v.setInt32(o, this.pendingSum?.frame ?? 0, true); o += 4;
     v.setUint32(o, this.pendingSum?.hash ?? 0, true);

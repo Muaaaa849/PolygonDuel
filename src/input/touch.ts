@@ -1,16 +1,37 @@
 // Touch controls (plan §4): left = floating virtual stick (release = guard),
 // right = 4 buttons whose icons are the SHAPE the move will show.
 // Presses are latched until the next tick reads them so a tap never gets lost.
+//
+// Aiming (Brawl Stars style): when a fresh attack / aimed skill is possible, ATK / S1 / S2
+// become little sticks — drag to aim (direction + how far to lunge), release to fire;
+// a plain tap fires on release with auto-aim; dragging back to the center cancels.
+// Everywhere else (chains, GC in blockstun, cancels) buttons fire the moment they're pressed.
 import { h, shapeIcon } from '../app/ui';
 import { settings } from '../app/settings';
-import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, quantizeDir } from '../core/input';
+import { AIM_DIRS, AIM_LEVELS, IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, aimBits, quantizeDir } from '../core/input';
 import type { Shape } from '../data/types';
 
 const DEADZONE = 0.18;
 /** Frames the last direction is held when the thumb crosses the center (plan §4 hysteresis). */
 const HYSTERESIS_TICKS = 2;
 
-type BtnId = 'atk' | 's1' | 's2' | 'step';
+export type BtnId = 'atk' | 's1' | 's2' | 'step';
+
+/** Live aim while a button is being dragged (screen-space unit vector, 0..1 reach). */
+export interface AimState {
+  id: BtnId;
+  x: number;
+  y: number;
+  /** 0..1 drag distance → reach level. */
+  frac: number;
+  /** Dragged back to the center: releasing will not fire. */
+  cancel: boolean;
+}
+
+/** Drag (css px, × button scale) before a press turns into aiming; also the cancel zone. */
+const AIM_DEAD = 18;
+/** Drag distance for the full reach level. */
+const AIM_RANGE = 78;
 const BTN_BITS: Record<BtnId, number> = { atk: IN_ATK, s1: IN_S1, s2: IN_S2, step: IN_STEP };
 
 export interface ButtonLook {
@@ -37,6 +58,16 @@ export class TouchControls {
   private centerTicks = 0;
   private pointerBtn = new Map<number, BtnId>();
   private homePos = { x: 0, y: 0 };
+  private latchedAim = 0;
+  /** Pointer currently aiming with a button (fires on release). */
+  private aimPtr = -1;
+  private aimStart = { x: 0, y: 0 };
+  private aimPad: HTMLElement;
+  private aimKnob: HTMLElement;
+  /** Current aim (null when not aiming). Read by the battle view to draw the range. */
+  aim: AimState | null = null;
+  /** Should a press of this button aim (fire on release)? Decided at touch-down. */
+  aimPolicy: (id: BtnId) => boolean = () => false;
   /** Anything touched at all (used to hide keyboard hints). */
   used = false;
 
@@ -49,7 +80,9 @@ export class TouchControls {
     const mk = (id: BtnId) => h('button', { class: `cbtn ${id}`, 'aria-label': id });
     this.btns = { atk: mk('atk'), s1: mk('s1'), s2: mk('s2'), step: mk('step') };
     this.btnWrap = h('div', { class: 'buttons' }, this.btns.s2, this.btns.step, this.btns.s1, this.btns.atk);
-    this.el = h('div', { class: `controls${settings.lefty ? ' lefty' : ''}` }, this.zone, this.stickEl, this.stickHint, this.btnWrap);
+    this.aimKnob = h('div', { class: 'aim-knob' });
+    this.aimPad = h('div', { class: 'aim-pad' }, this.aimKnob);
+    this.el = h('div', { class: `controls${settings.lefty ? ' lefty' : ''}` }, this.zone, this.stickEl, this.stickHint, this.btnWrap, this.aimPad);
 
     this.el.addEventListener('pointerdown', this.onDown, { passive: false });
     this.el.addEventListener('pointermove', this.onMove, { passive: false });
@@ -104,7 +137,8 @@ export class TouchControls {
       this.stickHint.style.opacity = '0';
     } else {
       const id = this.nearestButton(x, y);
-      if (id) this.pressBtn(e.pointerId, id);
+      if (id && id !== 'step' && this.aimPtr < 0 && this.aimPolicy(id)) this.beginAim(e.pointerId, id, x, y);
+      else if (id) this.pressBtn(e.pointerId, id);
     }
     try {
       this.el.setPointerCapture(e.pointerId);
@@ -131,6 +165,9 @@ export class TouchControls {
       }
       this.vec = { x: dx / r, y: dy / r };
       this.updateKnob();
+    } else if (e.pointerId === this.aimPtr) {
+      e.preventDefault();
+      this.moveAim(e.clientX, e.clientY);
     } else if (this.pointerBtn.has(e.pointerId)) {
       // slide between buttons
       const id = this.nearestButton(e.clientX, e.clientY, 1.0);
@@ -143,6 +180,7 @@ export class TouchControls {
   };
 
   private onUp = (e: PointerEvent): void => {
+    if (e.pointerId === this.aimPtr) this.endAim(e.type !== 'pointercancel');
     if (e.pointerId === this.stickPointer) {
       this.stickPointer = -1;
       this.vec = { x: 0, y: 0 };
@@ -157,6 +195,54 @@ export class TouchControls {
     this.held[id].add(pid);
     this.latched |= BTN_BITS[id];
     this.btns[id].classList.add('down');
+  }
+
+  private beginAim(pid: number, id: BtnId, x: number, y: number): void {
+    this.aimPtr = pid;
+    this.aimStart = { x, y };
+    this.aim = { id, x: 0, y: 0, frac: 0, cancel: false };
+    this.aiming = false;
+    this.btns[id].classList.add('down');
+    const r = this.btns[id].getBoundingClientRect();
+    const k = settings.buttonScale;
+    this.aimPad.style.left = `${r.left + r.width / 2}px`;
+    this.aimPad.style.top = `${r.top + r.height / 2}px`;
+    this.aimPad.style.width = this.aimPad.style.height = `${AIM_RANGE * 2 * k}px`;
+    this.aimKnob.style.transform = 'translate(-50%, -50%)';
+    this.aimPad.className = 'aim-pad';
+  }
+
+  /** Aim becomes live once the thumb leaves the dead zone. */
+  private aiming = false;
+
+  private moveAim(x: number, y: number): void {
+    if (!this.aim) return;
+    const k = settings.buttonScale;
+    const dx = x - this.aimStart.x;
+    const dy = y - this.aimStart.y;
+    const len = Math.hypot(dx, dy);
+    if (!this.aiming && len < AIM_DEAD * k) return;
+    this.aiming = true;
+    const cancel = len < AIM_DEAD * k;
+    const frac = Math.max(0, Math.min(1, (len - AIM_DEAD * k) / ((AIM_RANGE - AIM_DEAD) * k)));
+    this.aim = { id: this.aim.id, x: len > 0 ? dx / len : 1, y: len > 0 ? dy / len : 0, frac, cancel };
+    const shown = Math.min(len, AIM_RANGE * k);
+    this.aimKnob.style.transform = `translate(calc(-50% + ${(dx / (len || 1)) * shown}px), calc(-50% + ${(dy / (len || 1)) * shown}px))`;
+    this.aimPad.className = `aim-pad on${cancel ? ' cancel' : ''}`;
+  }
+
+  private endAim(fire: boolean): void {
+    const a = this.aim;
+    this.aimPtr = -1;
+    this.aim = null;
+    this.aimPad.className = 'aim-pad';
+    if (!a) return;
+    this.btns[a.id].classList.remove('down');
+    if (!fire || (this.aiming && a.cancel)) return;
+    this.latched |= BTN_BITS[a.id];
+    // a plain tap (never left the dead zone) fires unaimed → auto-target as before
+    if (this.aiming) this.latchedAim = aimBits(quantizeDir(a.x, a.y, AIM_DIRS), Math.round(a.frac * (AIM_LEVELS - 1)));
+    this.aiming = false;
   }
 
   private releaseBtn(pid: number): void {
@@ -231,8 +317,9 @@ export class TouchControls {
       w |= IN_STICK | this.lastDir;
     }
     for (const id of Object.keys(this.held) as BtnId[]) if (this.held[id].size > 0) w |= BTN_BITS[id];
-    w |= this.latched;
+    w |= this.latched | this.latchedAim;
     this.latched = 0;
+    this.latchedAim = 0;
     return w;
   }
 

@@ -4,7 +4,7 @@ import { Sim } from '../src/core/sim';
 import { RollbackSession, CHECKSUM_INTERVAL } from '../src/net/rollback';
 import { hashState, cloneState, saveState, loadState, SNAPSHOT_SIZE } from '../src/core/state';
 import { Rng } from '../src/core/rng';
-import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK } from '../src/core/input';
+import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, aimBits } from '../src/core/input';
 
 /** A plausible, bursty random player. */
 function randomPlayer(seed: number) {
@@ -24,6 +24,8 @@ function randomPlayer(seed: number) {
     else if (r < 10) w |= IN_S1;
     else if (r < 12) w |= IN_S2;
     else if (r < 14) w |= IN_STEP;
+    // half the presses are aimed (bits above 16: exercises the 32-bit input packets)
+    if (r < 12 && rng.int(2)) w |= aimBits(rng.int(64), rng.int(4));
     return w;
   };
 }

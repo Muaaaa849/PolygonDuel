@@ -7,6 +7,8 @@ export interface Settings {
   quality: 'auto' | 'high' | 'mid' | 'low';
   reduceFlash: boolean;
   dynamicCamera: boolean;
+  /** Touch: drag ATK / skill buttons to aim, release to fire. */
+  aimMode: boolean;
   showBrief: boolean;
   tutorialDone: boolean;
   lastChar: string;
@@ -22,6 +24,7 @@ const DEFAULTS: Settings = {
   quality: 'auto',
   reduceFlash: false,
   dynamicCamera: true,
+  aimMode: true,
   showBrief: true,
   tutorialDone: false,
   lastChar: 'blaze',

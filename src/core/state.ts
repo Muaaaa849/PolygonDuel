@@ -91,6 +91,14 @@ export interface FighterState {
   prevIn: number;
   /** Last stick direction (for STEP default). */
   lastDir: number;
+  /** Aim attached to the buffered ATK / S1 / S2 press: 0 = none, else 1 + angle + level*1024. */
+  aimAtk: number;
+  aimS1: number;
+  aimS2: number;
+  /** Current move was aimed (no homing). */
+  aimed: number;
+  /** Lunge / dash distance of the current move in % (reach level). */
+  lungePct: number;
   // stats (for the result screen)
   statDmg: number;
   statGc: number;
@@ -134,6 +142,7 @@ export function newFighter(): FighterState {
     bufAtk: 0, bufS1: 0, bufS2: 0, bufStep: 0, gcQueued: 0, noGc: 0, justWin: 0, jaChain: 0,
     chainResetUsed: 0, otgUsed: 0, comboHits: 0, comboFrames: 0, comboDmg: 0, downAge: 0, kbDist: 0, kbAngle: 0,
     limited: 0, buff: 0, healUses: 0, csHit: 0, prevIn: 0, lastDir: 0,
+    aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, lungePct: 100,
     statDmg: 0, statGc: 0, statJust: 0, statCrush: 0, statMaxCombo: 0, statBlocks: 0, statHitsTaken: 0,
     infGuard: 0, infCost: 0,
   };

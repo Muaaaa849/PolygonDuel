@@ -39,6 +39,7 @@ export function howtoScreen(onBack: () => void): Screen {
       h('div', { class: 'prose', html: `
         <b>左手</b>：スティックで移動。<b>指を離す（中央）とガード</b>（六角）。ガード中は自動で相手を向きます。<br>
         <b>右手</b>：攻撃（1→2→3段。前方70°の横振りで、1段目はキャラごとに右／左から、2段目は逆から、3段目は一回転）／S1・S2（スキル、コスト消費）／STEP（倒した方向へ。中央なら後ろへ）。<br>
+        <b>エイム</b>：攻撃・スキルボタンを<b>押したままドラッグ</b>すると、狙う方向と踏み込む距離を指定できます（範囲が光ります）。離すと発動、中央に戻して離すとキャンセル。タップなら相手を自動で狙います。下がりながら前を斬る・動く相手の先を狙う、ができます。<br>
         ボタンのアイコンは、その技を出したとき自分が変わる<b>形</b>です。` }),
       h('div', { class: 'section-title' }, '基本のじゃんけん'),
       h('div', { class: 'prose', html: `
@@ -111,6 +112,7 @@ export function settingsScreen(onBack: () => void): Screen {
         toggle('haptics', '振動', 'Androidのみ。ヒット/ガード/クラッシュで振動'),
         range('ボタンの大きさ', 'スティックとボタンの大きさ', 0.8, 1.3, 0.05, () => settings.buttonScale, (v) => saveSettings({ buttonScale: v })),
         toggle('lefty', '左右入れ替え', 'スティックを右手、ボタンを左手に'),
+        toggle('aimMode', 'ドラッグでエイム', '攻撃・スキルボタンを押したままドラッグで方向と距離を指定、離して発動。オフ：押した瞬間に発動'),
         toggle('dynamicCamera', 'ダイナミックカメラ', '近づくと寄って、形を大きく見せる'),
         toggle('reduceFlash', 'フラッシュを抑える', '画面の点滅・色収差を弱める（光過敏の方向け）'),
         toggle('showBrief', '開始前の形の確認', '1ラウンド目の前に形と対処を表示'),

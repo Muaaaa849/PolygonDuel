@@ -15,7 +15,7 @@ import {
   MH_NONE, MH_HIT, MH_BLOCK, MH_SPENT,
   PH_INTRO, PH_FIGHT, PH_END, PH_MATCH_OVER,
 } from './state';
-import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, dirAngle } from './input';
+import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, aimAngle, aimLevel, aimLungePct, dirAngle } from './input';
 import {
   type SimEvent,
   EV_MOVE, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN, EV_STEP,
@@ -197,12 +197,22 @@ export class Sim {
     f.prevIn = w;
     if (w & IN_STICK) f.lastDir = w & 31;
     const B = SYSTEM.buffer + 1; // decremented once before use this frame
+    // an aimed press carries its direction + reach level with the buffered press
+    const ang = aimAngle(w);
+    const aim = ang >= 0 ? 1 + ang + aimLevel(w) * ANG : 0;
     if (pressed & IN_ATK) {
       f.bufAtk = B;
+      f.aimAtk = aim;
       if (f.st === ST_BLOCKSTUN && !f.noGc) f.gcQueued = 1;
     }
-    if (pressed & IN_S1) f.bufS1 = B;
-    if (pressed & IN_S2) f.bufS2 = B;
+    if (pressed & IN_S1) {
+      f.bufS1 = B;
+      f.aimS1 = aim;
+    }
+    if (pressed & IN_S2) {
+      f.bufS2 = B;
+      f.aimS2 = aim;
+    }
     if (pressed & IN_STEP) f.bufStep = B;
   }
 
@@ -412,10 +422,11 @@ export class Sim {
       if (!f.infCost) f.cost -= m.cost;
       if (m.usesPerRound > 0) f.healUses++;
     }
-    if (mi === M_N1 || mi === M_JA) f.bufAtk = 0;
-    else if (mi === M_S1) f.bufS1 = 0;
-    else if (mi === M_S2) f.bufS2 = 0;
-    else if (chained) f.bufAtk = 0;
+    const aim = mi === M_N1 ? f.aimAtk : mi === M_S1 ? f.aimS1 : mi === M_S2 ? f.aimS2 : 0;
+    if (mi === M_N1 || mi === M_JA) f.bufAtk = f.aimAtk = 0;
+    else if (mi === M_S1) f.bufS1 = f.aimS1 = 0;
+    else if (mi === M_S2) f.bufS2 = f.aimS2 = 0;
+    else if (chained) f.bufAtk = f.aimAtk = 0;
     f.st = ST_ATTACK;
     f.sf = 1;
     f.move = mi;
@@ -423,10 +434,18 @@ export class Sim {
     f.moveHitAt = 0;
     f.csHit = 0;
     f.guardF = 0;
-    // Direction: auto-aim moves face the opponent; chained moves keep facing;
-    // fresh attacks go where the stick points (plan §4).
+    // Direction: auto-aim moves (GC/JA) face the opponent; an aimed press goes exactly
+    // where it was aimed (fresh attacks and skills, also skill cancels) with no homing
+    // and its reach level scaling the lunge; chained moves keep facing; other fresh
+    // attacks go where the stick points, or at the opponent (plan §4).
+    f.aimed = 0;
+    f.lungePct = 100;
     if (m.autoAim) f.facing = this.angleTo(i);
-    else if (!chained) f.facing = w & IN_STICK ? dirAngle(w) : this.angleTo(i);
+    else if (aim && (!chained || m.kind === KIND_SKILL)) {
+      f.facing = (aim - 1) & (ANG - 1);
+      f.aimed = 1;
+      f.lungePct = aimLungePct((aim - 1) >> 10);
+    } else if (!chained) f.facing = w & IN_STICK ? dirAngle(w) : this.angleTo(i);
     this.emit(EV_MOVE, i, mi, 0, f.x, f.y);
     this.attackFrame(i);
   }
@@ -480,10 +499,11 @@ export class Sim {
     const f = this.s.f[i];
     const m = this.moveOf(f)!;
     const mf = f.sf;
-    if (mf < m.S && mf <= SYSTEM.homingFrames && m.hasHitbox) {
+    if (mf < m.S && mf <= SYSTEM.homingFrames && m.hasHitbox && !f.aimed) {
       f.facing = turnToward(f.facing, this.angleTo(i), HOMING_STEP);
     }
-    const lunge = mf < m.lungeAt.length ? m.lungeAt[mf] : 0;
+    let lunge = mf < m.lungeAt.length ? m.lungeAt[mf] : 0;
+    if (f.lungePct !== 100) lunge = idiv(lunge * f.lungePct, 100);
     if (lunge > 0 && f.moveHit === MH_NONE) {
       f.x += offX(f.facing, lunge);
       f.y += offY(f.facing, lunge);

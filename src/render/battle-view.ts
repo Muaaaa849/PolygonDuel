@@ -102,6 +102,8 @@ export class BattleView {
   showHitboxes: boolean;
   /** Top inset reserved for the DOM HUD (css px). */
   topInset = 58;
+  /** Touch aim in progress (drawn as a highlighted range from the fighter). */
+  aim: { who: number; slot: number; x: number; y: number; frac: number; cancel: boolean } | null = null;
   private t = 0;
   private lastFrame = -1;
 
@@ -398,6 +400,7 @@ export class BattleView {
     for (let i = 0; i < 2; i++) this.drawTrail(i, dtFrames, newFrame && !frozen);
     for (let i = 0; i < 2; i++) this.drawFighter(i, dtFrames, frozen);
     for (let i = 0; i < 2; i++) this.stateFx(i, newFrame && !frozen);
+    this.drawAim();
 
     this.vfx.update(dtFrames);
     this.fx.update(dtFrames);
@@ -794,6 +797,94 @@ export class BattleView {
     // idle facing chevron
     const d = 0.82 * PX;
     this.arrowHead(g, x + cos * d, y + sin * d, a, 13, mix(fv.color, 0xffffff, 0.5), 0.85);
+  }
+
+  /**
+   * Aim preview: the exact area the aimed move will cover — lunge / dash path, then the
+   * swing fan (or thrust bar) from where the lunge ends. The opponent lights up when
+   * they stand inside it right now.
+   */
+  private drawAim(): void {
+    const a = this.aim;
+    if (!a) return;
+    const f = this.sim.s.f[a.who];
+    const o = this.sim.s.f[1 - a.who];
+    if (f.st === ST_KO || f.st === ST_ATTACK) return;
+    const m = this.sim.char(a.who).moves[a.slot];
+    if (!m) return;
+    // show what the sim will get: 64 directions, 4 reach levels
+    const q = (Math.round((Math.atan2(a.y, a.x) / (Math.PI * 2)) * 64) / 64) * Math.PI * 2;
+    const pct = 40 + Math.round(a.frac * 3) * 20;
+    const c = Math.cos(q);
+    const sn = Math.sin(q);
+    const x = toPx(f.x);
+    const y = toPx(f.y);
+    const lunge = (toPx(m.lunge) * pct) / 100;
+    const reach = toPx(m.reach);
+    const ex = x + c * lunge;
+    const ey = y + sn * lunge;
+    const col = a.cancel ? 0x8b97b9 : this.fighters[a.who].color;
+    const pulse = 0.8 + 0.2 * Math.sin(this.t * 0.3);
+    const gl = this.glow;
+    const ov = this.overlay;
+    const hurt = 0.5 * PX;
+    let inside = false;
+    // lunge / dash path
+    if (lunge > 4) {
+      const dashes = Math.max(2, Math.round(lunge / 22));
+      for (let k = 0; k < dashes; k++) {
+        const t0 = k / dashes;
+        const t1 = t0 + 0.55 / dashes;
+        ov.moveTo(x + c * lunge * t0, y + sn * lunge * t0).lineTo(x + c * lunge * t1, y + sn * lunge * t1);
+      }
+      ov.stroke({ width: 4, color: col, alpha: 0.7 * pulse, cap: 'round' });
+      ov.circle(ex, ey, 0.5 * PX).stroke({ width: 2, color: col, alpha: 0.45 });
+    }
+    const ox = toPx(o.x);
+    const oy = toPx(o.y);
+    if (m.isSweep) {
+      const spin = Math.abs(m.sweepTo - m.sweepFrom) >= 1024;
+      const lo = q + Math.min(m.sweepFrom, m.sweepTo) * ANG_TO_RAD;
+      const hi = q + Math.max(m.sweepFrom, m.sweepTo) * ANG_TO_RAD;
+      const pts: number[] = [ex, ey];
+      const steps = spin ? 48 : 18;
+      for (let k = 0; k <= steps; k++) {
+        const t = spin ? (k / steps) * Math.PI * 2 : lo + ((hi - lo) * k) / steps;
+        pts.push(ex + Math.cos(t) * reach, ey + Math.sin(t) * reach);
+      }
+      gl.poly(pts).fill({ color: col, alpha: 0.2 * pulse });
+      ov.poly(pts).stroke({ width: 3, color: col, alpha: 0.85, join: 'round' });
+      const d = Math.hypot(ox - ex, oy - ey);
+      if (d <= reach + hurt) {
+        if (spin || d <= hurt) inside = true;
+        else {
+          const rel = Math.atan2(oy - ey, ox - ex) - q;
+          const r = Math.atan2(Math.sin(rel), Math.cos(rel));
+          const half = Math.asin(Math.min(1, hurt / d));
+          inside = r >= (lo - q) - half && r <= (hi - q) + half;
+        }
+      }
+    } else {
+      const w = 0.32 * PX;
+      const tx = ex + c * reach;
+      const ty = ey + sn * reach;
+      const px = -sn * w;
+      const py = c * w;
+      const bar = [ex + px, ey + py, tx + px, ty + py, tx - px, ty - py, ex - px, ey - py];
+      gl.poly(bar).fill({ color: col, alpha: 0.28 * pulse });
+      ov.poly(bar).stroke({ width: 3, color: col, alpha: 0.85, join: 'round' });
+      this.arrowHead(ov, tx + c * 10, ty + sn * 10, q, 18, col, 0.9);
+      // distance from the opponent to the thrust segment (body → tip, lunge included)
+      const vx = tx - x;
+      const vy = ty - y;
+      const t = Math.max(0, Math.min(1, ((ox - x) * vx + (oy - y) * vy) / (vx * vx + vy * vy || 1)));
+      inside = Math.hypot(ox - (x + vx * t), oy - (y + vy * t)) <= hurt;
+    }
+    if (inside && !a.cancel && o.st !== ST_KO) {
+      const r = 0.72 * PX + Math.sin(this.t * 0.4) * 4;
+      ov.circle(ox, oy, r).stroke({ width: 4, color: 0xffffff, alpha: 0.9 });
+      gl.circle(ox, oy, r).stroke({ width: 14, color: col, alpha: 0.35 });
+    }
   }
 
   /** The active hitbox bar (white core + colored body + glow). */

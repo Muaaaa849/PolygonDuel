@@ -2,7 +2,7 @@
 import { Sim } from '../../core/sim';
 import { CHARACTERS } from '../../data/characters';
 import { SYSTEM } from '../../data/system';
-import { M_S1, M_S2, SH, SHAPES } from '../../core/compile';
+import { M_N1, M_S1, M_S2, SH, SHAPES } from '../../core/compile';
 import {
   type SimEvent, eventKey, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE,
   EV_KNOCKDOWN, EV_STEP, EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_MOVE,
@@ -71,6 +71,15 @@ export function battleScreen(cfg: BattleConfig): Screen {
   root.append(hud.el);
   const touch = new TouchControls();
   root.append(touch.el);
+  // aim (drag-to-aim) only when a fresh attack / aimable skill would start
+  touch.aimPolicy = (id) => {
+    if (!settings.aimMode || id === 'step') return false;
+    const f = sim.s.f[cfg.local];
+    if (f.st !== ST_FREE && f.st !== ST_STEP) return false;
+    if (id === 'atk' && f.justWin > 0) return false; // just attack auto-targets
+    const m = sim.char(cfg.local).moves[id === 'atk' ? M_N1 : id === 's1' ? M_S1 : M_S2];
+    return m.hasHitbox && !m.autoAim;
+  };
   const localDef = defs[cfg.local];
   const skillLook = (i: number) => ({ shape: localDef.skills[i].shape, label: `S${i + 1}`, cost: localDef.skills[i].cost });
   touch.setButtons({ atk: { shape: 'circle', label: 'ATTACK' }, s1: skillLook(0), s2: skillLook(1), step: { shape: 'arrow', label: 'STEP' } });
@@ -509,6 +518,8 @@ export function battleScreen(cfg: BattleConfig): Screen {
     // render in the same frame as the input/sim update (Pixi's own ticker is stopped in battle).
     // A render error must never stop the game loop (the sim and HUD keep going either way).
     try {
+      const a = touch.aim;
+      view.aim = a ? { slot: a.id === 'atk' ? M_N1 : a.id === 's1' ? M_S1 : M_S2, x: a.x, y: a.y, frac: a.frac, cancel: a.cancel, who: cfg.local } : null;
       view.render(dt / TICK_MS);
       app.render();
     } catch (err) {

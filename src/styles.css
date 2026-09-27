@@ -1593,3 +1593,48 @@ kbd {
   z-index: 30;
   pointer-events: none;
 }
+
+/* aim pad: appears around an ATK / skill button while it is dragged */
+.aim-pad {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  background: radial-gradient(circle, rgba(111, 243, 255, 0.1), rgba(111, 243, 255, 0.03) 70%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.08s;
+}
+.aim-pad.on {
+  opacity: 1;
+}
+.aim-pad .aim-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(40px * var(--btn-scale));
+  height: calc(40px * var(--btn-scale));
+  border-radius: 50%;
+  background: rgba(111, 243, 255, 0.35);
+  border: 2px solid rgba(180, 250, 255, 0.9);
+  box-shadow: 0 0 18px rgba(111, 243, 255, 0.5);
+}
+.aim-pad.cancel {
+  border-color: rgba(255, 90, 110, 0.6);
+  background: radial-gradient(circle, rgba(255, 90, 110, 0.14), rgba(255, 90, 110, 0.03) 70%);
+}
+.aim-pad.cancel .aim-knob {
+  background: rgba(255, 90, 110, 0.35);
+  border-color: rgba(255, 150, 160, 0.9);
+  box-shadow: none;
+}
+.aim-pad.cancel::after {
+  content: 'キャンセル';
+  position: absolute;
+  left: 50%;
+  bottom: 12%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: #ff9aa6;
+  white-space: nowrap;
+}
