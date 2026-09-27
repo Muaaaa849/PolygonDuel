@@ -9,6 +9,7 @@
 // Everywhere else (chains, GC in blockstun, cancels) buttons fire the moment they're pressed.
 import { h, shapeIcon } from '../app/ui';
 import { settings } from '../app/settings';
+import { placePx } from './layout';
 import { AIM_DIRS, AIM_LEVELS, IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, aimBits, quantizeDir } from '../core/input';
 import type { Shape } from '../data/types';
 
@@ -99,6 +100,7 @@ export class TouchControls {
     this.el.addEventListener('contextmenu', (e) => e.preventDefault());
     requestAnimationFrame(() => this.resetStick());
     window.addEventListener('resize', this.resetStick);
+    this.applyLayout();
   }
 
   setButtons(look: Record<BtnId, ButtonLook>): void {
@@ -131,9 +133,30 @@ export class TouchControls {
     }
   }
 
+  /** Custom layout (settings → ボタン配置): place every control where the player put it. */
+  private applyLayout(): void {
+    const L = settings.layout;
+    this.el.classList.toggle('custom', !!L);
+    for (const id of Object.keys(this.btns) as BtnId[]) {
+      const st = this.btns[id].style;
+      if (!L) {
+        st.left = st.top = st.width = st.height = '';
+        continue;
+      }
+      const { cx, cy, size } = placePx(L[id], id, window.innerWidth, window.innerHeight, settings.buttonScale);
+      st.left = `${cx - size / 2}px`;
+      st.top = `${cy - size / 2}px`;
+      st.width = st.height = `${size}px`;
+    }
+    this.stickEl.style.setProperty('--stick-s', String(L?.stick.s ?? 1));
+  }
+
   private isStickSide(x: number): boolean {
     const w = window.innerWidth;
-    return settings.lefty ? x > w * 0.52 : x < w * 0.48;
+    const L = settings.layout;
+    // with a custom layout the stick owns the half of the screen its home is on
+    const left = L ? L.stick.x < 0.5 : !settings.lefty;
+    return left ? x < w * 0.48 : x > w * 0.52;
   }
 
   private onDown = (e: PointerEvent): void => {
@@ -297,7 +320,7 @@ export class TouchControls {
   }
 
   private radius(): number {
-    return 54 * settings.buttonScale;
+    return 54 * settings.buttonScale * (settings.layout?.stick.s ?? 1);
   }
 
   private placeStick(x: number, y: number): void {
@@ -309,12 +332,17 @@ export class TouchControls {
     const w = window.innerWidth;
     const hgt = window.innerHeight;
     const s = settings.buttonScale;
-    this.homePos = { x: settings.lefty ? w - 110 * s : 110 * s, y: hgt - 100 * s };
+    const L = settings.layout;
+    if (L) {
+      const p = placePx(L.stick, 'stick', w, hgt, s);
+      this.homePos = { x: p.cx, y: p.cy };
+    } else this.homePos = { x: settings.lefty ? w - 110 * s : 110 * s, y: hgt - 100 * s };
+    this.applyLayout();
     if (this.stickPointer >= 0) return;
     this.placeStick(this.homePos.x, this.homePos.y);
     this.stickEl.style.opacity = '0.55';
     this.stickHint.style.left = `${this.homePos.x}px`;
-    this.stickHint.style.top = `${this.homePos.y + 70 * s}px`;
+    this.stickHint.style.top = `${this.homePos.y + 70 * s * (L?.stick.s ?? 1)}px`;
     this.stickHint.style.opacity = this.used ? '0' : '1';
     this.vec = { x: 0, y: 0 };
     this.updateKnob();

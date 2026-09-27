@@ -4,7 +4,8 @@ import { SYSTEM } from '../../data/system';
 import { backButton, h, hex, shapeIcon, SHAPE_INFO } from '../ui';
 import { settings, saveSettings } from '../settings';
 import { sfx, setVolume } from '../../audio/sfx';
-import type { Screen } from '../router';
+import { show, type Screen } from '../router';
+import { layoutEditorScreen, exportSettingsFile, openImport } from './layout-editor';
 
 export function howtoScreen(onBack: () => void): Screen {
   const legend = h('div', { class: 'legend-grid' });
@@ -113,7 +114,18 @@ export function settingsScreen(onBack: () => void): Screen {
         range('音量', '効果音はすべてその場で合成しています', 0, 1, 0.05, () => settings.volume, (v) => { saveSettings({ volume: v }); setVolume(v); }),
         toggle('haptics', '振動', 'Androidのみ。ヒット/ガード/クラッシュで振動'),
         range('ボタンの大きさ', 'スティックとボタンの大きさ', 0.8, 1.3, 0.05, () => settings.buttonScale, (v) => saveSettings({ buttonScale: v })),
-        toggle('lefty', '左右入れ替え', 'スティックを右手、ボタンを左手に'),
+        toggle('lefty', '左右入れ替え', 'スティックを右手、ボタンを左手に（ボタン配置を編集していない時）'),
+        h('div', { class: 'row-set' },
+          h('div', { class: 't' }, h('b', null, 'ボタン配置'), h('small', null, settings.layout ? 'カスタム配置を使用中' : '好きな位置・大きさにドラッグで変更できます')),
+          h('button', { class: 'btn small primary', onclick: () => { sfx.ui(); show(layoutEditorScreen(() => show(settingsScreen(onBack)))); } }, '編集'),
+        ),
+        h('div', { class: 'row-set' },
+          h('div', { class: 't' }, h('b', null, '設定ファイル'), h('small', null, '設定はこのブラウザに自動保存されます。別のブラウザ・端末へは書き出し→読み込みで移せます')),
+          h('div', { style: 'display:flex;gap:6px' },
+            h('button', { class: 'btn small', onclick: () => exportSettingsFile() }, '書き出し'),
+            h('button', { class: 'btn small', onclick: () => openImport(() => show(settingsScreen(onBack))) }, '読み込み'),
+          ),
+        ),
         toggle('aimMode', 'ドラッグでエイム', '攻撃・スキルボタンを押したままドラッグで方向と距離を指定、離して発動。オフ：押した瞬間に発動'),
         toggle('dynamicCamera', 'ダイナミックカメラ', '近づくと寄って、形を大きく見せる'),
         toggle('reduceFlash', 'フラッシュを抑える', '画面の点滅・色収差を弱める（光過敏の方向け）'),

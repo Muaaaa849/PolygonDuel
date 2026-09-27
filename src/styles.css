@@ -1039,9 +1039,10 @@ button {
 }
 .stick {
   position: absolute;
-  width: calc(128px * var(--btn-scale));
-  height: calc(128px * var(--btn-scale));
-  margin: calc(-64px * var(--btn-scale)) 0 0 calc(-64px * var(--btn-scale));
+  --ss: calc(var(--btn-scale) * var(--stick-s, 1));
+  width: calc(128px * var(--ss));
+  height: calc(128px * var(--ss));
+  margin: calc(-64px * var(--ss)) 0 0 calc(-64px * var(--ss));
   border-radius: 50%;
   border: 1.5px solid rgba(255, 255, 255, 0.14);
   background: radial-gradient(circle, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015) 70%);
@@ -1052,9 +1053,9 @@ button {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: calc(54px * var(--btn-scale));
-  height: calc(54px * var(--btn-scale));
-  margin: calc(-27px * var(--btn-scale)) 0 0 calc(-27px * var(--btn-scale));
+  width: calc(54px * var(--ss));
+  height: calc(54px * var(--ss));
+  margin: calc(-27px * var(--ss)) 0 0 calc(-27px * var(--ss));
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.22);
   border: 1.5px solid rgba(255, 255, 255, 0.4);
@@ -2001,4 +2002,145 @@ kbd {
     transform: scale(1.1);
     box-shadow: 0 0 0 8px rgba(111, 243, 255, 0.15), 0 0 44px rgba(111, 243, 255, 0.9);
   }
+}
+
+/* custom control layout: buttons are placed in viewport coordinates */
+.controls.custom .buttons {
+  left: 0;
+  top: 0;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  height: 100%;
+  transform: none;
+}
+.controls.custom .buttons .cbtn {
+  right: auto;
+  bottom: auto;
+}
+.controls.custom.lefty .buttons .cbtn > * {
+  transform: none;
+}
+.controls.custom.lefty .buttons .cbtn .lbl {
+  transform: translateX(-50%);
+}
+.controls.custom .stick-zone {
+  display: none;
+}
+
+/* ───────────── touch layout editor ───────────── */
+.layout-edit {
+  padding: 0;
+  background:
+    linear-gradient(rgba(111, 140, 255, 0.06) 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(90deg, rgba(111, 140, 255, 0.06) 1px, transparent 1px) 0 0 / 40px 40px,
+    rgba(5, 8, 16, 0.85);
+}
+.le-stage {
+  position: absolute;
+  inset: 0;
+}
+.le-item {
+  position: absolute;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+.le-item .ic svg {
+  width: 40%;
+  height: 40%;
+  display: block;
+  margin: auto;
+}
+.le-item .ic {
+  position: absolute;
+  inset: 0;
+  display: grid;
+}
+.le-item .lbl {
+  position: absolute;
+  bottom: -16px;
+  font: 700 9px/1 var(--display);
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.le-item.le-stick {
+  background: radial-gradient(circle, rgba(90, 160, 255, 0.18), rgba(255, 255, 255, 0.03) 70%);
+}
+.le-item.sel {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(111, 243, 255, 0.25), 0 0 24px rgba(111, 243, 255, 0.35);
+}
+.le-item.sel .lbl {
+  color: var(--accent);
+}
+.le-bar {
+  position: absolute;
+  left: 50%;
+  top: calc(8px + var(--safe-t));
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 14px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: rgba(10, 14, 26, 0.92);
+  border: 1px solid var(--line-hi);
+  max-width: calc(100% - 24px);
+  z-index: 2;
+}
+.le-sel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.le-size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.le-size input {
+  width: 120px;
+}
+.le-val {
+  font-family: var(--display);
+  min-width: 3em;
+}
+.le-actions {
+  display: flex;
+  gap: 6px;
+}
+.le-hint {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  font-size: 12px;
+  color: var(--dim);
+  pointer-events: none;
+  text-align: center;
+  max-width: 60%;
+}
+.modal textarea {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  font: 11px/1.4 ui-monospace, monospace;
+  padding: 8px;
+  resize: vertical;
+}
+.le-actions .btn {
+  white-space: nowrap;
 }
