@@ -13,6 +13,7 @@ export const blaze: CharacterDef = {
   walk: 5.6,
   step: { dist: 2.4, regen: 50 },
   guardMax: 240,
+  swing: 'right',
   normals: {
     n1: {
       id: 'n1', name: '1段目', kind: 'normal', shape: 'circle',

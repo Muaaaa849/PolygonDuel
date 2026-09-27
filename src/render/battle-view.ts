@@ -2,7 +2,7 @@
 import { Container, Graphics, Text } from 'pixi.js';
 import { AdvancedBloomFilter, RGBSplitFilter, ShockwaveFilter } from 'pixi-filters';
 import type { Sim } from '../core/sim';
-import { SH, M_STRIKE } from '../core/compile';
+import { SH, M_STRIKE, COST_UNIT } from '../core/compile';
 import { SYSTEM } from '../data/system';
 import {
   ST_FREE, ST_ATTACK, ST_BLOCKSTUN, ST_HITSTUN, ST_STEP, ST_DOWN, ST_WAKE, ST_STUN, ST_KO, PH_INTRO,
@@ -646,7 +646,7 @@ export class BattleView {
     const start = x - ((n - 1) * w) / 2 - 14;
     for (let k = 0; k < n; k++) {
       const cx = start + k * w;
-      const fill = Math.max(0, Math.min(1, f.cost / 2 - k));
+      const fill = Math.max(0, Math.min(1, f.cost / COST_UNIT - k));
       const r = 7;
       g.poly([cx, by - r, cx + r, by, cx, by + r, cx - r, by]).stroke({ width: 2, color: 0xffc048, alpha: 0.55 });
       if (fill > 0) {

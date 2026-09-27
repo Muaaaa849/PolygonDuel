@@ -30,6 +30,9 @@ export const KIND_GC = 1;
 export const KIND_JA = 2;
 export const KIND_SKILL = 3;
 
+/** Cost is stored in quarters (1.0 cost = 4) so the hurt side can gain 0.25. */
+export const COST_UNIT = 4;
+
 /** Bit in cancelFrom mask meaning "from the free state". */
 export const CANCEL_NEUTRAL = 1 << 15;
 
@@ -52,6 +55,10 @@ export interface CMove {
   /** Per-frame lunge distance, index = move frame. */
   lungeAt: Int32Array;
   autoAim: boolean;
+  /** Swing arc relative to facing, in angle units (0/0 = thrust). */
+  sweepFrom: number;
+  sweepTo: number;
+  isSweep: boolean;
   dmg: number;
   hitstun: number;
   blockstun: number;
@@ -107,8 +114,12 @@ function lungeTable(S: number, T: number, lunge: number, from?: number): Int32Ar
   return table;
 }
 
+const degToAng = (d: number): number => Math.round((d * 1024) / 360);
+
 function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): CMove {
   const lunge = u(m.lunge);
+  const sweepFrom = m.sweep ? degToAng(m.sweep[0]) : 0;
+  const sweepTo = m.sweep ? degToAng(m.sweep[1]) : 0;
   let cancelFrom = 0;
   for (const src of m.cancelFrom ?? []) {
     if (src === 'neutral') cancelFrom |= CANCEL_NEUTRAL;
@@ -131,6 +142,9 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     lunge,
     lungeAt: lungeTable(m.S, m.T, lunge, m.lungeFrom),
     autoAim: !!m.autoAim,
+    sweepFrom,
+    sweepTo,
+    isSweep: sweepFrom !== sweepTo,
     dmg: m.dmg,
     hitstun: m.hitstun,
     blockstun: m.blockstun,
@@ -142,7 +156,7 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     knockdown: !!m.knockdown,
     knockback: u(m.knockback ?? 0),
     pushback: u(m.pushback ?? 0),
-    cost: Math.round((m.cost ?? 0) * 2),
+    cost: Math.round((m.cost ?? 0) * COST_UNIT),
     cancelFrom,
     usesPerRound: m.usesPerRound ?? 0,
     gb: m.guardBreak ? { ...m.guardBreak } : null,
@@ -183,7 +197,17 @@ export function compileCharacter(def: CharacterDef, idx: number): CChar {
     S: 1, A: 0, T: cs?.strikeT ?? 20, reach: 0, lunge: 0,
     dmg: 0, hitstun: 0, blockstun: 0, hitstop: 0,
   };
-  const src: MoveDef[] = [n1, def.normals.n2, def.normals.n3, gcDef, jaDef, def.skills[0], def.skills[1], strikeDef];
+  // Swings (fan attacks): N1 from the character's side, N2 back, N3 a full spin.
+  const w = SYSTEM.swingHalfDeg;
+  const sgn = def.swing === 'right' ? 1 : -1;
+  const first = [sgn * w, -sgn * w] as const;
+  const second = [-sgn * w, sgn * w] as const;
+  const spin = [sgn * 180, sgn * 180 - sgn * 360] as const;
+  const withSweep = (m: MoveDef, sw: readonly [number, number]): MoveDef => (m.sweep ? m : { ...m, sweep: sw });
+  const src: MoveDef[] = [
+    withSweep(n1, first), withSweep(def.normals.n2, second), withSweep(def.normals.n3, spin),
+    withSweep(gcDef, first), withSweep(jaDef, first), def.skills[0], def.skills[1], strikeDef,
+  ];
   const moves = src.map((m, i) => compileMove(i, m, slotIds));
   return {
     idx,

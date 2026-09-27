@@ -1,7 +1,7 @@
 // CPU opponent (plan §12/§13): it reads the opponent's SHAPE with a human-like
 // reaction delay and a chance to react correctly. Difficulty = those two numbers.
 import type { Sim } from '../core/sim';
-import { SH, M_N1, M_N2, M_N3, M_S1, M_S2, KIND_GC } from '../core/compile';
+import { SH, M_N1, M_N2, M_N3, M_S1, M_S2, KIND_GC, COST_UNIT } from '../core/compile';
 import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK } from '../core/input';
 import {
   ST_FREE, ST_ATTACK, ST_BLOCKSTUN, ST_STEP, ST_STUN, ST_DOWN, ST_WAKE, ST_HITSTUN,
@@ -113,16 +113,16 @@ export class CpuPlayer {
       const m = this.sim.moveOf(me)!;
       if (me.moveHit === MH_HIT && m.next >= 0 && this.rng.chance(this.level.confirm)) {
         // blaze sometimes extends with S1 after N2
-        if (me.move === M_N2 && c.def.id === 'blaze' && me.cost >= 2 && !me.chainResetUsed && this.rng.chance(0.5)) return IN_S1;
+        if (me.move === M_N2 && c.def.id === 'blaze' && me.cost >= COST_UNIT && !me.chainResetUsed && this.rng.chance(0.5)) return IN_S1;
         return mash();
       }
-      if (me.moveHit === MH_HIT && me.move === M_N3 && c.def.id === 'zephyr' && me.cost >= 2) return IN_S1;
+      if (me.moveHit === MH_HIT && me.move === M_N3 && c.def.id === 'zephyr' && me.cost >= COST_UNIT) return IN_S1;
       if (me.moveHit === MH_HIT && m.chainReset && !me.chainResetUsed) return mash();
       if (me.moveHit === MH_BLOCK && me.move === M_N1) {
         // mixup after a blocked N1: mostly stop, sometimes a read
         const r = this.rng.next();
-        if (c.def.id === 'bastion' && me.cost >= 2 && r < 0.05) return IN_S1;
-        if (c.def.id === 'blaze' && me.cost >= 2 && r < 0.03) return IN_S1;
+        if (c.def.id === 'bastion' && me.cost >= COST_UNIT && r < 0.05) return IN_S1;
+        if (c.def.id === 'blaze' && me.cost >= COST_UNIT && r < 0.03) return IN_S1;
         return 0;
       }
       if (m.kind === KIND_GC && me.moveHit === MH_HIT) return mash();
@@ -176,7 +176,7 @@ export class CpuPlayer {
       if (s1.gb && me.cost >= s1.cost && this.rng.chance(0.08)) return IN_S1 | IN_STICK | toward;
     }
     // zephyr heal when far
-    if (c.def.id === 'zephyr' && dist > 6 && me.cost >= 6 && me.hp < c.hp * 0.8 && this.rng.chance(0.02)) return IN_S2;
+    if (c.def.id === 'zephyr' && dist > 6 && me.cost >= 3 * COST_UNIT && me.hp < c.hp * 0.8 && this.rng.chance(0.02)) return IN_S2;
 
     // standing guard for a moment (bait GC) — but don't burn the gauge
     if (this.holdGuard > 0) {

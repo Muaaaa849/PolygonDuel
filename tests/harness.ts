@@ -2,6 +2,7 @@
 import { Sim } from '../src/core/sim';
 import { charIndex } from '../src/data/characters';
 import { u } from '../src/core/fixed';
+import { SYSTEM } from '../src/data/system';
 import { type SimEvent, EV_HIT, EV_BLOCK, EV_MOVE } from '../src/core/events';
 import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK } from '../src/core/input';
 import type { FighterState, GameState } from '../src/core/state';
@@ -28,9 +29,9 @@ export class Scenario {
     this.sim.skipIntro();
     const s = this.sim.s;
     s.noTimer = 1;
-    s.f[0].x = u(8) - Math.round((dist * 1000) / 2);
+    s.f[0].x = u(SYSTEM.field.w / 2) - Math.round((dist * 1000) / 2);
     s.f[1].x = s.f[0].x + Math.round(dist * 1000);
-    s.f[0].y = s.f[1].y = u(4.5);
+    s.f[0].y = s.f[1].y = u(SYSTEM.field.h / 2);
     s.f[0].facing = 0;
     s.f[1].facing = 512;
   }

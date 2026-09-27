@@ -58,6 +58,12 @@ export interface MoveDef {
   lunge: number;
   /** Frame lunge travel starts (default: max(1, S - 8)). Travel ends at S - 1. */
   lungeFrom?: number;
+  /**
+   * Swing arc in degrees relative to facing (+ = clockwise = the piece's right).
+   * Normals/GC/JA derive it from the character's `swing`; omit for a straight thrust.
+   * |to - from| >= 360 is a full spin.
+   */
+  sweep?: readonly [number, number];
   /** Auto-aim toward the opponent at start (GC / JA). */
   autoAim?: boolean;
   dmg: number;
@@ -107,6 +113,8 @@ export interface CharacterDef {
   step: { dist: number; regen: number };
   /** Guard gauge in frames. */
   guardMax: number;
+  /** Which side the 1st swing starts from (N1 right→left, N2 back, N3 spin). */
+  swing: 'right' | 'left';
   normals: { n1: MoveDef; n2: MoveDef; n3: MoveDef };
   skills: [MoveDef, MoveDef];
   /** Suggested combos for tutorial / move list. */

@@ -1,7 +1,11 @@
 // Shared system numbers (plan §5). Frames at 60 ticks/sec, distances in u.
 export const SYSTEM = {
   fps: 60,
-  field: { w: 16, h: 9 },
+  /**
+   * 11u×6.2u (was 16×9 in the plan): pieces read ~1.45× larger on screen with every
+   * distance relationship (reach, lunge, step) unchanged.
+   */
+  field: { w: 11, h: 6.2 },
   bodyRadius: 0.5,
   hurtRadius: 0.5,
 
@@ -40,6 +44,9 @@ export const SYSTEM = {
     max: 4,
     gainOnContact: 0.5,
     maxGainPerCombo: 1.5,
+    /** The side taking damage gains half of what the attacker gains. */
+    gainOnHurt: 0.25,
+    maxHurtGainPerCombo: 0.75,
   },
 
   step: {
@@ -63,6 +70,9 @@ export const SYSTEM = {
     jaLunge: 2.0,
     mul: 1.5,
   },
+
+  /** Normal swings: a fan in front (half-width in degrees). */
+  swingHalfDeg: 35,
 
   guardBreakOpenHitstop: 4,
   crushHitstop: 14,

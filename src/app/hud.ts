@@ -3,6 +3,7 @@
 import type { Sim } from '../core/sim';
 import type { BattleView } from '../render/battle-view';
 import { SYSTEM } from '../data/system';
+import { COST_UNIT } from '../core/compile';
 import { h, hex } from './ui';
 
 export function buildHud(sim: Sim, view: BattleView, tags: [string, string]) {
@@ -56,7 +57,7 @@ export function buildHud(sim: Sim, view: BattleView, tags: [string, string]) {
           d.last.win = w;
         }
         if (f.cost !== d.last.cost) {
-          [...d.pips.children].forEach((c, k) => (c as HTMLElement).style.setProperty('--f', String(Math.max(0, Math.min(1, f.cost / 2 - k)))));
+          [...d.pips.children].forEach((c, k) => (c as HTMLElement).style.setProperty('--f', String(Math.max(0, Math.min(1, f.cost / COST_UNIT - k)))));
           d.last.cost = f.cost;
         }
         if (f.steps !== d.last.steps) {

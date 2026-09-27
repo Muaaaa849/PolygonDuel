@@ -4,10 +4,10 @@ import { SYSTEM } from '../data/system';
 import { CHARACTERS } from '../data/characters';
 import {
   compileCharacter, type CChar, type CMove,
-  M_N1, M_GC, M_JA, M_S1, M_S2, M_STRIKE, KIND_GC, KIND_JA, KIND_NORMAL, KIND_SKILL, CANCEL_NEUTRAL, SH,
+  M_N1, M_GC, M_JA, M_S1, M_S2, M_STRIKE, KIND_GC, KIND_JA, KIND_NORMAL, KIND_SKILL, CANCEL_NEUTRAL, SH, COST_UNIT,
 } from './compile';
 import {
-  ANG, U, atan2A, clamp, idiv, isqrt, offX, offY, segPointDist2, turnToward, u,
+  ANG, U, angDiff, atan2A, clamp, idiv, isqrt, offX, offY, segPointDist2, turnToward, u,
 } from './fixed';
 import {
   type FighterState, type GameState, newGameState,
@@ -34,9 +34,11 @@ const HURT_R = u(SYSTEM.hurtRadius);
 const HURT_R2 = HURT_R * HURT_R;
 const FAR_D2 = u(SYSTEM.guard.farDist) * u(SYSTEM.guard.farDist);
 const HOMING_STEP = Math.round((SYSTEM.homingDeg * ANG) / 360);
-const COST_MAX = SYSTEM.cost.max * 2;
-const COST_GAIN = Math.round(SYSTEM.cost.gainOnContact * 2);
-const COST_COMBO_CAP = Math.round(SYSTEM.cost.maxGainPerCombo * 2);
+const COST_MAX = SYSTEM.cost.max * COST_UNIT;
+const COST_GAIN = Math.round(SYSTEM.cost.gainOnContact * COST_UNIT);
+const COST_COMBO_CAP = Math.round(SYSTEM.cost.maxGainPerCombo * COST_UNIT);
+const COST_HURT = Math.round(SYSTEM.cost.gainOnHurt * COST_UNIT);
+const COST_HURT_CAP = Math.round(SYSTEM.cost.maxHurtGainPerCombo * COST_UNIT);
 const ROLL_DIST = u(SYSTEM.down.rollDist);
 const LAUNCH = u(SYSTEM.down.launch);
 const STEP_W = [16, 15, 14, 12, 11, 9, 8, 7, 5, 3]; // ease-out profile, sums to 100
@@ -109,10 +111,10 @@ export class Sim {
       const keepStats = [f.statDmg, f.statGc, f.statJust, f.statCrush, f.statMaxCombo, f.statBlocks, f.statHitsTaken];
       const keepTraining = [f.infGuard, f.infCost];
       Object.assign(f, {
-        x: i === 0 ? u(5) : u(11), y: u(4.5), facing: i === 0 ? 0 : ANG / 2,
+        x: FIELD_W / 2 + (i === 0 ? -u(2.5) : u(2.5)), y: FIELD_H / 2, facing: i === 0 ? 0 : ANG / 2,
         hp: c.hp, st: ST_FREE, sf: 0, len: 0, move: -1, moveHit: 0, moveHitAt: 0,
         guardF: 0, guardQ: c.guardMaxQ, guardIdle: 0,
-        cost: SYSTEM.cost.start * 2, comboGain: 0,
+        cost: SYSTEM.cost.start * COST_UNIT, comboGain: 0, hurtGain: 0,
         steps: SYSTEM.step.maxStock, stepTimer: 0, moveDir: 0, stepChain: 0,
         bufAtk: 0, bufS1: 0, bufS2: 0, bufStep: 0, gcQueued: 0, noGc: 0, justWin: 0, jaChain: 0,
         chainResetUsed: 0, otgUsed: 0, comboHits: 0, comboFrames: 0, comboDmg: 0, downAge: 0,
@@ -532,12 +534,51 @@ export class Sim {
 
   // ───────────────────────────── contact ─────────────────────────────
 
-  /** Current hitbox tip of an attacking fighter, or null. */
+  /**
+   * Swing progress on active frame k (1..A): the 1st active frame already reaches
+   * the center line, so a target straight ahead is hit on frame S exactly like a
+   * thrust (plan §6 frame math is unchanged); the rest of the fan follows.
+   * Returns the current swing angle relative to facing.
+   */
+  swingAngle(m: CMove, sf: number): number {
+    const k = sf - m.S + 1;
+    const span = m.sweepTo - m.sweepFrom;
+    if (m.A <= 1) return m.sweepTo;
+    const kk = Math.max(1, Math.min(m.A, k));
+    return m.sweepFrom + idiv(span * (m.A - 1 + kk - 1), 2 * (m.A - 1));
+  }
+
+  /** Current hitbox tip (bar end) of an attacking fighter, or null. */
   hitboxOf(f: FighterState): { x: number; y: number } | null {
     if (f.st !== ST_ATTACK) return null;
     const m = this.moveOf(f)!;
     if (!m.hasHitbox || f.sf < m.S || f.sf >= m.S + m.A) return null;
-    return { x: f.x + offX(f.facing, m.reach), y: f.y + offY(f.facing, m.reach) };
+    const a = m.isSweep ? (f.facing + this.swingAngle(m, f.sf)) & (ANG - 1) : f.facing;
+    return { x: f.x + offX(a, m.reach), y: f.y + offY(a, m.reach) };
+  }
+
+  /** Does the move's hitbox (thrust bar or swept fan so far) touch the defender? */
+  private touches(a: FighterState, d: FighterState, m: CMove): boolean {
+    if (!m.isSweep) {
+      const tx = a.x + offX(a.facing, m.reach);
+      const ty = a.y + offY(a.facing, m.reach);
+      return segPointDist2(a.x, a.y, tx, ty, d.x, d.y) <= HURT_R2;
+    }
+    const dx = d.x - a.x;
+    const dy = d.y - a.y;
+    const d2 = dx * dx + dy * dy;
+    const maxR = m.reach + HURT_R;
+    if (d2 > maxR * maxR) return false;
+    if (d2 <= HURT_R2) return true;
+    const cur = this.swingAngle(m, a.sf);
+    const lo = Math.min(m.sweepFrom, cur);
+    const hi = Math.max(m.sweepFrom, cur);
+    if (hi - lo >= ANG) return true;
+    // angular half-width of the hurt circle as seen from the attacker
+    const half = atan2A(HURT_R, isqrt(d2 - HURT_R2));
+    const rel = angDiff(a.facing, atan2A(dy, dx));
+    for (const r of [rel, rel + ANG, rel - ANG]) if (r >= lo - half && r <= hi + half) return true;
+    return false;
   }
 
   isGuarding(f: FighterState): boolean {
@@ -555,9 +596,7 @@ export class Sim {
       if (!m.hasHitbox || a.sf < m.S || a.sf >= m.S + m.A) continue;
       if (d.st === ST_KO || d.st === ST_WAKE) continue;
       if (d.st === ST_DOWN && !(m.otg && !a.otgUsed && d.downAge <= SYSTEM.down.otgWindow)) continue;
-      const tx = a.x + offX(a.facing, m.reach);
-      const ty = a.y + offY(a.facing, m.reach);
-      if (segPointDist2(a.x, a.y, tx, ty, d.x, d.y) <= HURT_R2) touching[i] = true;
+      if (this.touches(a, d, m)) touching[i] = true;
     }
     if (!touching[0] && !touching[1]) return;
     // Classify both contacts against the pre-contact state, then apply (trades are symmetric).
@@ -636,6 +675,7 @@ export class Sim {
         a.moveHit = MH_HIT;
         a.moveHitAt = a.sf;
         const dmg = this.damage(a, d, m.gb!.dmgGuard, false);
+        this.gainHurtCost(d);
         d.st = ST_STUN;
         d.sf = 1;
         d.len = m.gb!.crush;
@@ -684,6 +724,7 @@ export class Sim {
           d.kbAngle = away;
         }
         this.gainCost(a, m);
+        this.gainHurtCost(d);
         s.hitstop = Math.max(s.hitstop, m.hitstop);
         this.emit(EV_HIT, i, dmg, flags | (d.comboHits << 8), ex, ey);
         return;
@@ -720,6 +761,14 @@ export class Sim {
     d.statHitsTaken++;
     if (d.comboHits > a.statMaxCombo) a.statMaxCombo = d.comboHits;
     return dmg;
+  }
+
+  /** The side taking damage gains a little cost too (half of the attacker's rate). */
+  private gainHurtCost(d: FighterState): void {
+    const g = Math.min(COST_HURT, COST_HURT_CAP - d.hurtGain);
+    if (g <= 0) return;
+    d.hurtGain += g;
+    d.cost = Math.min(COST_MAX, d.cost + g);
   }
 
   private gainCost(a: FighterState, m: CMove): void {
@@ -791,6 +840,7 @@ export class Sim {
           d.hp = COMPILED[d.char].hp;
         }
         d.comboHits = 0;
+        d.hurtGain = 0;
         d.comboFrames = 0;
         d.comboDmg = 0;
         a.comboGain = 0;

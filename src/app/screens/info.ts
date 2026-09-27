@@ -49,7 +49,7 @@ export function howtoScreen(onBack: () => void): Screen {
       h('div', { class: 'section-title' }, 'システム'),
       h('div', { class: 'prose', html: `
         ・<b>ガードゲージ</b>：ガード中だけ減る（${SYSTEM.guard.farDist}u以上離れていれば1/4）。0で自壊してスタン。六角の大きさがゲージです。<br>
-        ・<b>コスト</b>：開始${SYSTEM.cost.start}・最大${SYSTEM.cost.max}。通常攻撃がヒット/ガードされると+0.5（1コンボ最大+1.5）。キャラの足元の◆で相手のコストも読めます。<br>
+        ・<b>コスト</b>：開始${SYSTEM.cost.start}・最大${SYSTEM.cost.max}。通常攻撃がヒット/ガードされると+0.5（1コンボ最大+1.5）、攻撃を受けた側も+0.25（最大+0.75）。キャラの足元の◆で相手のコストも読めます。<br>
         ・<b>ジャスト回避</b>：ステップの出始め（${SYSTEM.step.justFrames}F）に攻撃が触れると成立。直後の攻撃は1.5倍の<b>ジャスト攻撃</b>。<br>
         ・<b>カウンター</b>：相手の技の発生前に当てると威力+20%。<br>
         ・<b>起き上がり</b>：無敵中にスティック方向へ転がれます。<br>

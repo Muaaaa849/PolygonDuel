@@ -13,6 +13,7 @@ export const zephyr: CharacterDef = {
   walk: 5.2,
   step: { dist: 2.8, regen: 40 },
   guardMax: 240,
+  swing: 'left',
   normals: {
     n1: {
       id: 'n1', name: '1段目', kind: 'normal', shape: 'circle',

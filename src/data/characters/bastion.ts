@@ -13,6 +13,7 @@ export const bastion: CharacterDef = {
   walk: 4.4,
   step: { dist: 2.2, regen: 60 },
   guardMax: 300,
+  swing: 'right',
   normals: {
     n1: {
       id: 'n1', name: '1段目', kind: 'normal', shape: 'circle',

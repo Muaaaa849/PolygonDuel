@@ -50,6 +50,8 @@ export interface FighterState {
   cost: number;
   /** Cost gained (halves) during the current combo as attacker. */
   comboGain: number;
+  /** Cost gained (quarters) from taking damage during the current combo as defender. */
+  hurtGain: number;
   steps: number;
   stepTimer: number;
   /** Direction of the current step / roll. */
@@ -128,7 +130,7 @@ export interface GameState {
 export function newFighter(): FighterState {
   return {
     char: 0, x: 0, y: 0, facing: 0, hp: 0, st: 0, sf: 0, len: 0, move: -1, moveHit: 0, moveHitAt: 0,
-    guardF: 0, guardQ: 0, guardIdle: 0, cost: 0, comboGain: 0, steps: 0, stepTimer: 0, moveDir: 0, stepChain: 0,
+    guardF: 0, guardQ: 0, guardIdle: 0, cost: 0, comboGain: 0, hurtGain: 0, steps: 0, stepTimer: 0, moveDir: 0, stepChain: 0,
     bufAtk: 0, bufS1: 0, bufS2: 0, bufStep: 0, gcQueued: 0, noGc: 0, justWin: 0, jaChain: 0,
     chainResetUsed: 0, otgUsed: 0, comboHits: 0, comboFrames: 0, comboDmg: 0, downAge: 0, kbDist: 0, kbAngle: 0,
     limited: 0, buff: 0, healUses: 0, csHit: 0, prevIn: 0, lastDir: 0,
