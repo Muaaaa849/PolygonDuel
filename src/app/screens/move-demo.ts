@@ -43,6 +43,10 @@ function scriptFor(c: CharacterDef, kind: DemoKind): Script {
       input: (t, sim) => [press(t) || (t > 60 && t % 5 === 0 && sim.s.f[1].st !== ST_FREE ? IN_ATK : 0), 0],
     };
   }
+  if (m.ghost) {
+    // out of range: the decoy steps in while the real one slips sideways, then shows itself
+    return { dist: 4.2, input: (t) => [t === 20 ? btn : t > 26 && t < 48 ? IN_STICK | 8 : 0, 0] };
+  }
   if (m.heal) {
     return {
       dist: 4,
@@ -115,7 +119,9 @@ export class MoveDemo {
     s.f[1].infGuard = 1;
     sc.setup?.(sim);
     sim.events.length = 0;
-    const view = new BattleView(sim, { local: -1, tags: [this.c.name, 'DUMMY'], host: this.app, zoom: 1.7 });
+    // an illusion is shown from its owner's side: the decoy translucent, the real one marked
+    const ghostDemo = this.kind !== 'normals' && !!this.c.skills[this.kind === 's1' ? 0 : 1].ghost;
+    const view = new BattleView(sim, { local: ghostDemo ? 0 : -1, tags: [this.c.name, 'DUMMY'], host: this.app, zoom: 1.7 });
     view.topInset = 0;
     view.setQuality('mid');
     view.mount();

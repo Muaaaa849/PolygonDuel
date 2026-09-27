@@ -12,6 +12,15 @@ const cancelNames: Record<string, string> = { n1: '1段目', n2: '2段目', n3: 
 
 function facts(m: MoveDef): [string, string][] {
   const rows: [string, string][] = [];
+  if (m.ghost) {
+    rows.push(['フレーム', `本体の硬直${m.T}F（その後は自由に動ける）`]);
+    rows.push(['離れて使う', '幻影がステップで迫り、斬りかかる直前に消える（約0.5秒）']);
+    rows.push(['近くで使う', '幻影が1段目を振り、刃が相手をすり抜けた所で消える（約0.4秒）']);
+    rows.push(['本体', '幻影の間は相手から見えない（コスト表示もごまかす）。攻撃・ステップ・被弾で姿を現す']);
+    rows.push(['消える', '時間切れ／相手の攻撃が幻影に触れる／本体が動く']);
+    rows.push(['使い方', '幻影にガードさせてS2で崩す。幻影を無視する相手には本物の1段目']);
+    return rows;
+  }
   if (m.counterStance) rows.push(['構え', `${m.counterStance.from}〜${m.counterStance.to}F（全体${m.T}F）`]);
   else if (m.heal) rows.push(['発動', `${m.heal.frame}F（全体${m.T}F）`]);
   else rows.push(['フレーム', `発生${m.S}F／持続${m.A}F／全体${m.T}F`]);

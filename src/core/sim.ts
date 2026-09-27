@@ -42,6 +42,8 @@ const COST_HURT_CAP = Math.round(SYSTEM.cost.maxHurtGainPerCombo * COST_UNIT);
 const ROLL_DIST = u(SYSTEM.down.rollDist);
 const LAUNCH = u(SYSTEM.down.launch);
 const BLINK_DIST = u(SYSTEM.just.blinkDist);
+/** Cost refunded when an opponent's attack is baited into an illusion (1.0). */
+const GHOST_REFUND = COST_UNIT;
 const STEP_W = [16, 15, 14, 12, 11, 9, 8, 7, 5, 3]; // ease-out profile, sums to 100
 
 /** Per-character step distance for each move frame (1-based). */
@@ -611,6 +613,8 @@ export class Sim {
   private endGhost(i: number, reason: number): void {
     const f = this.s.f[i];
     if (f.ghostT <= 0) return;
+    // baited: the opponent swung at the decoy → half the illusion's cost comes back
+    if (reason === 2) f.cost = Math.min(COST_MAX, f.cost + GHOST_REFUND);
     this.emit(EV_GHOST_END, i, reason, f.ghostMode, f.ghostX, f.ghostY);
     f.ghostT = 0;
     f.ghostMode = 0;

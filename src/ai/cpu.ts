@@ -28,7 +28,7 @@ export const CPU_LEVELS: CpuLevel[] = [
   { name: 'HARD', react: 13, accuracy: 0.85, gc: 0.9, confirm: 1, aggression: 0.03 },
 ];
 
-const PREFERRED: Record<string, number> = { blaze: 2.6, zephyr: 3.3, bastion: 2.6 };
+const PREFERRED: Record<string, number> = { blaze: 2.6, zephyr: 3.3, bastion: 2.6, phantom: 3.0 };
 
 function dirIndex(dx: number, dy: number): number {
   const a = Math.atan2(dy, dx);
@@ -75,7 +75,8 @@ export class CpuPlayer {
   input(): number {
     const s = this.sim.s;
     const me = s.f[this.me];
-    const op = s.f[1 - this.me];
+    // the CPU is fooled by an illusion exactly like a player: it perceives the decoy
+    const op = this.sim.decoyOf(1 - this.me) ?? s.f[1 - this.me];
     this.t++;
     // perception with delay
     this.seen.push({ shape: this.shapeOf(op), sf: op.sf, st: op.st, move: op.move, moveHit: op.moveHit });
@@ -174,6 +175,33 @@ export class CpuPlayer {
       if (s2.gb && me.cost >= s2.cost && this.rng.chance(0.08)) return IN_S2 | IN_STICK | toward;
       const s1 = c.moves[M_S1];
       if (s1.gb && me.cost >= s1.cost && this.rng.chance(0.08)) return IN_S1 | IN_STICK | toward;
+    }
+    // phantom: send an illusion to bait a guard / an attack, then break the guard,
+    // punish the whiff, or walk in and hit for real while invisible
+    if (c.def.id === 'phantom') {
+      const s1 = c.moves[M_S1];
+      const s2 = c.moves[M_S2];
+      const real = s.f[1 - this.me];
+      const rdx = (real.x - me.x) / 1000;
+      const rdy = (real.y - me.y) / 1000;
+      const rdist = Math.hypot(rdx, rdy);
+      const rtoward = dirIndex(rdx, rdy);
+      if (me.ghostT > 0) {
+        const guarding = real.st === ST_FREE && real.guardF >= 2;
+        // the fake swing keeps a fooled opponent guarding for a while: break it right away
+        if ((guarding || me.ghostMode === 2) && rdist < 2.8 && me.cost >= s2.cost) return IN_S2 | IN_STICK | rtoward;
+        if (real.st === ST_ATTACK && real.moveHit === MH_NONE && rdist < myReach + 0.3) return IN_ATK | IN_STICK | rtoward;
+        if (!guarding && rdist < myReach - 0.2 && this.rng.chance(0.3)) return IN_ATK | IN_STICK | rtoward;
+        // slip in from the side while invisible
+        return IN_STICK | ((rtoward + this.strafe * 3 + 32) % 32);
+      }
+      // illusion only with the guard break in reserve (the bait → crush plan): mostly the
+      // in-range fake swing (a circle the opponent will guard), sometimes a step-in from afar
+      if (me.cost >= s1.cost + s2.cost) {
+        if (rdist <= myReach && op.st === ST_FREE && this.rng.chance(0.08)) return IN_S1;
+        if (rdist > 3.2 && rdist < 5.5 && this.rng.chance(0.01)) return IN_S1;
+      }
+      if (this.hexFrames > 20 && rdist < 2.6 && me.cost >= s2.cost && this.rng.chance(0.1)) return IN_S2 | IN_STICK | rtoward;
     }
     // zephyr heal when far
     if (c.def.id === 'zephyr' && dist > 6 && me.cost >= 3 * COST_UNIT && me.hp < c.hp * 0.8 && this.rng.chance(0.02)) return IN_S2;

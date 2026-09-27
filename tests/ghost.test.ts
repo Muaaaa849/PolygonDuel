@@ -75,6 +75,8 @@ describe('ghost (illusion)', () => {
     const end = sc.events(EV_GHOST_END, 0)[0];
     expect(end.a).toBe(2);
     expect(sc.hits(1).length).toBe(0);
+    // baited: half the cost (1.0) comes back
+    expect(sc.s.f[0].cost).toBe(COST_UNIT);
   });
 
   it('bait → guard → soul ripper crush (the intended combo, cost 4)', () => {
