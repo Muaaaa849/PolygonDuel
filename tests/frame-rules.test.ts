@@ -181,7 +181,7 @@ describe('skill & system rules (plan §6-9 table 2)', () => {
     expect(sc.hits(1).length).toBeGreaterThanOrEqual(1);
   });
 
-  it.each(['blaze', 'bastion'])('%s: GB crush → full 1→2→3', (id) => {
+  it.each(['blaze', 'bastion', 'phantom'])('%s: GB crush → full 1→2→3', (id) => {
     const sc = new Scenario(id, 'zephyr', 2.2).run(400, sequence('2AAA'), guard);
     expect(sc.events(EV_CRUSH, 0).length).toBe(1);
     expect(sc.hits(0).length).toBe(3);

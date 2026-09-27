@@ -79,6 +79,8 @@ export interface CMove {
   chainReset: CWindow | null;
   otg: boolean;
   heal: { frame: number; hp: number; buffFrames: number; walkPct: number; stepRegenMul: number } | null;
+  /** Illusion (stopDist in milli-u). */
+  ghost: { approach: number; stopDist: number; frames: number } | null;
   /** Hitbox exists at all. */
   hasHitbox: boolean;
   def: MoveDef | null;
@@ -164,6 +166,7 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     chainReset: win(m.chainReset),
     otg: !!m.otg,
     heal: m.heal ? { ...m.heal } : null,
+    ghost: m.ghost ? { approach: m.ghost.approach, stopDist: u(m.ghost.stopDist), frames: m.ghost.frames } : null,
     hasHitbox: m.A > 0 && m.reach > 0,
     def: m,
   };

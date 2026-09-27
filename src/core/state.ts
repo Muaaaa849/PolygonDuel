@@ -99,6 +99,18 @@ export interface FighterState {
   aimed: number;
   /** Wall impacts taken during the current combo. */
   wallHits: number;
+  /** Illusion (ghost) decoy: frames since start (0 = none), mode (1 step-in, 2 fake swing),
+   *  current / start / target position, facing, and the frame its fake N1 starts. */
+  ghostT: number;
+  ghostMode: number;
+  ghostX: number;
+  ghostY: number;
+  ghostSx: number;
+  ghostSy: number;
+  ghostTx: number;
+  ghostTy: number;
+  ghostFace: number;
+  ghostAtk: number;
   /** Lunge / dash distance of the current move in % (reach level). */
   lungePct: number;
   // stats (for the result screen)
@@ -148,6 +160,7 @@ export function newFighter(): FighterState {
     chainResetUsed: 0, otgUsed: 0, comboHits: 0, comboFrames: 0, comboDmg: 0, downAge: 0, kbDist: 0, kbAngle: 0,
     limited: 0, buff: 0, healUses: 0, csHit: 0, prevIn: 0, lastDir: 0,
     aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, wallHits: 0, lungePct: 100,
+    ghostT: 0, ghostMode: 0, ghostX: 0, ghostY: 0, ghostSx: 0, ghostSy: 0, ghostTx: 0, ghostTy: 0, ghostFace: 0, ghostAtk: 0,
     statDmg: 0, statGc: 0, statJust: 0, statCrush: 0, statMaxCombo: 0, statBlocks: 0, statHitsTaken: 0,
     infGuard: 0, infCost: 0,
   };

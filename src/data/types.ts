@@ -41,6 +41,22 @@ export interface HealSpec {
   stepRegenMul: number;
 }
 
+/**
+ * Illusion (ファントムの「ゴースト」): a decoy of yourself that the OPPONENT sees as you,
+ * while the real you turns invisible to them and may act freely. Out of range the decoy
+ * steps in and starts a swing; in range it swings N1 right away. It has no hitbox and
+ * dissolves when its fake swing passes through, when an attack touches it, or when the
+ * real you attacks / steps / gets hit.
+ */
+export interface GhostSpec {
+  /** Frames the decoy's step-in takes (out-of-range mode). */
+  approach: number;
+  /** The decoy stops this far from the opponent (u). */
+  stopDist: number;
+  /** Total lifetime of the out-of-range decoy (frames). */
+  frames: number;
+}
+
 export interface MoveDef {
   id: string;
   name: string;
@@ -93,6 +109,7 @@ export interface MoveDef {
   /** Can hit a downed opponent within `otgWindow` frames of the knockdown (once per combo). */
   otg?: boolean;
   heal?: HealSpec;
+  ghost?: GhostSpec;
   /** Short description for UI. */
   desc?: string;
 }

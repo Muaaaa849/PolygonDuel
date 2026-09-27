@@ -24,12 +24,16 @@ export const EV_GUARD = 20;
 export const EV_WALL = 21;
 /** JA teleport: x/y = destination, a/b = origin x/y. */
 export const EV_BLINK = 22;
+/** Illusion started: a = mode (1 step-in, 2 fake swing), x/y = decoy start. */
+export const EV_GHOST = 23;
+/** Illusion ended: a = reason (0 timed out, 1 real revealed itself, 2 an attack touched the decoy), x/y = decoy position. */
+export const EV_GHOST_END = 24;
 
 export const EV_NAMES: Record<number, string> = {
   [EV_MOVE]: 'move', [EV_HIT]: 'hit', [EV_BLOCK]: 'block', [EV_CRUSH]: 'crush', [EV_GUARD_BREAK]: 'guardBreak',
   [EV_GB_OPEN]: 'gbOpen', [EV_JUST]: 'just', [EV_RIPOSTE]: 'riposte', [EV_KNOCKDOWN]: 'knockdown', [EV_STEP]: 'step',
   [EV_HEAL]: 'heal', [EV_KO]: 'ko', [EV_ROUND]: 'round', [EV_FIGHT]: 'fight', [EV_TIMEUP]: 'timeup',
-  [EV_ROUND_END]: 'roundEnd', [EV_MATCH_END]: 'matchEnd', [EV_WAKE]: 'wake', [EV_WHIFF]: 'whiff', [EV_GUARD]: 'guard', [EV_WALL]: 'wall', [EV_BLINK]: 'blink',
+  [EV_ROUND_END]: 'roundEnd', [EV_MATCH_END]: 'matchEnd', [EV_WAKE]: 'wake', [EV_WHIFF]: 'whiff', [EV_GUARD]: 'guard', [EV_WALL]: 'wall', [EV_BLINK]: 'blink', [EV_GHOST]: 'ghost', [EV_GHOST_END]: 'ghostEnd',
 };
 
 // HIT flags

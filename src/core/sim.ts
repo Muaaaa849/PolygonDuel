@@ -19,7 +19,7 @@ import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, aimAngle, aimLevel, aimLungePc
 import {
   type SimEvent,
   EV_MOVE, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN, EV_STEP,
-  EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_WAKE, EV_GUARD, EV_WALL, EV_BLINK,
+  EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_WAKE, EV_GUARD, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END,
   HF_COUNTER, HF_JA, HF_OTG, HF_KNOCKDOWN, HF_FORCED_DOWN,
 } from './events';
 
@@ -122,6 +122,8 @@ export class Sim {
         chainResetUsed: 0, otgUsed: 0, comboHits: 0, comboFrames: 0, comboDmg: 0, downAge: 0,
         kbDist: 0, kbAngle: 0, limited: 0, buff: 0, healUses: 0, csHit: 0,
         lastDir: i === 0 ? 0 : 16,
+        aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, lungePct: 100, wallHits: 0,
+        ghostT: 0, ghostMode: 0,
       });
       f.char = keepChar;
       if (!first) {
@@ -191,6 +193,7 @@ export class Sim {
     this.updateFighter(1, ins1);
     this.resolveBodies();
     this.detectHits();
+    this.updateGhosts();
     this.updateGauges();
     this.updateCombos();
 
@@ -369,6 +372,7 @@ export class Sim {
   }
 
   private canAfford(f: FighterState, m: CMove): boolean {
+    if (m.ghost && f.ghostT > 0) return false;
     if (!f.infCost && f.cost < m.cost) return false;
     if (m.usesPerRound > 0 && f.healUses >= m.usesPerRound) return false;
     return true;
@@ -502,7 +506,114 @@ export class Sim {
       f.lungePct = aimLungePct((aim - 1) >> 10);
     } else if (!chained) f.facing = w & IN_STICK ? dirAngle(w) : this.angleTo(i);
     this.emit(EV_MOVE, i, mi, 0, f.x, f.y);
+    if (m.ghost) this.startGhost(i, m);
     this.attackFrame(i);
+  }
+
+  // ───────────────────────────── illusion (ghost) ─────────────────────────────
+
+  private startGhost(i: number, m: CMove): void {
+    const f = this.s.f[i];
+    const o = this.s.f[1 - i];
+    const g = m.ghost!;
+    const n1 = COMPILED[f.char].moves[M_N1];
+    const face = this.angleTo(i);
+    const dx = o.x - f.x;
+    const dy = o.y - f.y;
+    const d = isqrt(dx * dx + dy * dy);
+    f.ghostT = 1;
+    f.ghostFace = face;
+    f.ghostX = f.ghostSx = f.x;
+    f.ghostY = f.ghostSy = f.y;
+    if (d <= n1.reach + n1.lunge + HURT_R) {
+      // in range: the decoy swings N1 on the spot
+      f.ghostMode = 2;
+      f.ghostAtk = 1;
+      f.ghostTx = f.x;
+      f.ghostTy = f.y;
+    } else {
+      // out of range: the decoy steps in, then starts a swing and vanishes before it lands
+      f.ghostMode = 1;
+      const travel = Math.max(0, d - g.stopDist);
+      f.ghostTx = clamp(f.x + offX(face, travel), BODY_R, FIELD_W - BODY_R);
+      f.ghostTy = clamp(f.y + offY(face, travel), BODY_R, FIELD_H - BODY_R);
+      f.ghostAtk = g.approach + 1;
+    }
+    this.emit(EV_GHOST, i, f.ghostMode, 0, f.x, f.y);
+  }
+
+  /** Decoy lifetime in frames for its mode. */
+  private ghostLife(f: FighterState): number {
+    const n1 = COMPILED[f.char].moves[M_N1];
+    const g = COMPILED[f.char].moves.find((m) => m.ghost)?.ghost;
+    // fake swing: until the blade has passed through (S + A); step-in: fixed length
+    return f.ghostMode === 2 ? n1.S + n1.A : (g?.frames ?? 30);
+  }
+
+  /**
+   * The decoy as a fighter-like state (for rendering and for what the opponent — and
+   * the CPU — perceive), or null when there is none. Pure: not part of the state.
+   */
+  decoyOf(i: number): FighterState | null {
+    const f = this.s.f[i];
+    if (f.ghostT <= 0) return null;
+    const fsf = f.ghostT - f.ghostAtk + 1;
+    const attacking = fsf >= 1;
+    return {
+      ...f,
+      x: f.ghostX,
+      y: f.ghostY,
+      facing: f.ghostFace,
+      moveDir: f.ghostFace,
+      st: attacking ? ST_ATTACK : ST_STEP,
+      sf: attacking ? fsf : f.ghostT,
+      move: attacking ? M_N1 : -1,
+      moveHit: MH_NONE,
+      guardF: 0,
+      kbDist: 0,
+    };
+  }
+
+  private updateGhosts(): void {
+    for (let i = 0; i < 2; i++) {
+      const f = this.s.f[i];
+      if (f.ghostT <= 0) continue;
+      const o = this.s.f[1 - i];
+      // the real one revealing itself ends the illusion
+      const acting = (f.st === ST_ATTACK && !this.moveOf(f)?.ghost) || f.st === ST_STEP;
+      const hurt = f.st === ST_HITSTUN || f.st === ST_STUN || f.st === ST_DOWN || f.st === ST_BLOCKSTUN || f.st === ST_KO;
+      if (acting || hurt || this.s.phase !== PH_FIGHT) {
+        this.endGhost(i, 1);
+        continue;
+      }
+      // an attack touching the decoy passes through it and dissolves it
+      if (o.st === ST_ATTACK) {
+        const m = this.moveOf(o);
+        if (m && m.hasHitbox && o.sf >= m.S && o.sf < m.S + m.A && this.touches(o, this.decoyOf(i)!, m)) {
+          this.endGhost(i, 2);
+          continue;
+        }
+      }
+      f.ghostT++;
+      if (f.ghostMode === 1) {
+        // step-in with an ease-out, like a real step
+        const n = COMPILED[f.char].moves.find((m) => m.ghost)?.ghost?.approach ?? 18;
+        const k = Math.min(f.ghostT, n);
+        const e = n * n - (n - k) * (n - k);
+        f.ghostX = f.ghostSx + idiv((f.ghostTx - f.ghostSx) * e, n * n);
+        f.ghostY = f.ghostSy + idiv((f.ghostTy - f.ghostSy) * e, n * n);
+        f.ghostFace = atan2A(o.y - f.ghostY, o.x - f.ghostX);
+      }
+      if (f.ghostT > this.ghostLife(f)) this.endGhost(i, 0);
+    }
+  }
+
+  private endGhost(i: number, reason: number): void {
+    const f = this.s.f[i];
+    if (f.ghostT <= 0) return;
+    this.emit(EV_GHOST_END, i, reason, f.ghostMode, f.ghostX, f.ghostY);
+    f.ghostT = 0;
+    f.ghostMode = 0;
   }
 
   private inWin(win: { a: number; b: number } | null, f: number): boolean {

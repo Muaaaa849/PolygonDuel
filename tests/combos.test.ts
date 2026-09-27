@@ -34,6 +34,7 @@ describe('combo damage table (plan §7)', () => {
     ['zephyr', 'AAA1', 195],
     ['zephyr', 'AA1', 142],
     ['bastion', 'AAA', 195],
+    ['phantom', 'AAA', 138],
   ];
   it.each(plain)('%s %s = %i', (id, seq, dmg) => {
     const sc = new Scenario(id, 'bastion', 1.6).run(500, sequence(seq), hitThenGuard);
@@ -45,6 +46,7 @@ describe('combo damage table (plan §7)', () => {
     ['blaze', '2AAA', 171],
     ['blaze', '2AA1AAA', 260],
     ['bastion', '2AAA', 217],
+    ['phantom', '2AAA', 155],
   ];
   it.each(crush)('%s %s (crush) = %i', (id, seq, dmg) => {
     const sc = new Scenario(id, 'zephyr', 2.2).run(600, sequence(seq), guard);
@@ -55,6 +57,7 @@ describe('combo damage table (plan §7)', () => {
     ['blaze', 'AAA', 232],
     ['zephyr', 'AAA1', 268],
     ['bastion', 'AAA', 292],
+    ['phantom', 'AAA', 207],
   ];
   it.each(ja)('%s JA route %s = %i', (id, seq, dmg) => {
     const sc = new Scenario('blaze', id, 1.6).run(500, (_m, _o, _s, t) => (t === 0 ? IN_ATK : 0), justThen(seq, 'blaze'));
