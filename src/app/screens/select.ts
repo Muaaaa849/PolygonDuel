@@ -6,13 +6,14 @@ import { CPU_LEVELS } from '../../ai/cpu';
 import { settings, saveSettings } from '../settings';
 import { backButton, h, hex, shapeIcon } from '../ui';
 import { sfx } from '../../audio/sfx';
+import { openMoveSheet } from './move-sheet';
 import type { Screen } from '../router';
 
 function statRows(c: CharacterDef): [string, number][] {
   const n1 = c.normals.n1;
   return [
     ['体力', (c.hp - 800) / 400],
-    ['速さ', (c.walk - 3.8) / 2.2],
+    ['速さ', (c.walk - 3.6) / 1.8],
     ['リーチ', (n1.reach + n1.lunge - 2.0) / 1.0],
     ['円の速さ', (28 - n1.S) / 9],
     ['ガード', (c.guardMax - 180) / 140],
@@ -163,8 +164,22 @@ export function charCards(onSelect: (i: number) => void, initial = 0): CardsApi 
     for (const [label, v] of statRows(c)) {
       stats.append(h('span', null, label), h('div', { class: 'bar' }, h('i', { style: `width:${Math.round(Math.max(0.08, Math.min(1, v)) * 100)}%` })));
     }
+    // skill chips: always one row of two; tap one for the full move sheet
     const skills = h('div', { class: 'skills' },
-      ...c.skills.map((s, k) => h('span', { class: 'skill-tag' }, h('span', { html: shapeIcon(s.shape, hex(c.color)) }), `S${k + 1} ${s.name}`)),
+      ...c.skills.map((s, k) => {
+        const tag = h('span', { class: 'skill-tag', role: 'button', 'aria-label': `S${k + 1} ${s.name}の詳細` },
+          h('span', { class: 'ic', html: shapeIcon(s.shape, hex(c.color)) }, h('small', null, `S${k + 1}`)),
+          h('span', { class: 'nm' }, s.name),
+          h('span', { class: 'more' }, 'i'),
+        );
+        tag.addEventListener('click', (e) => {
+          e.stopPropagation();
+          api.select(i);
+          onSelect(i);
+          openMoveSheet(c, k);
+        });
+        return tag;
+      }),
     );
     const card = h('button', { class: 'char-card', style: `--c:${hex(c.color)}` },
       h('div', { class: 'preview' }, pv.canvas),
