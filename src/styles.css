@@ -974,6 +974,21 @@ button {
   background: var(--dim);
   opacity: 0.4;
 }
+.mode-badge {
+  display: none;
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #f5c518;
+  border: 1px solid rgba(245, 197, 24, 0.6);
+  border-radius: 3px;
+  padding: 0 4px;
+  line-height: 13px;
+}
+.mode-badge.on {
+  display: inline-block;
+}
 .clock {
   font-family: var(--display);
   font-weight: 700;
@@ -2196,6 +2211,26 @@ kbd {
 }
 .select-grid.dense .char-card .theme b {
   font-weight: 500;
+}
+.step-pips {
+  display: flex;
+  gap: 2px;
+}
+.step-pips i {
+  width: 9px;
+  height: 7px;
+  background: var(--c);
+  clip-path: polygon(0 0, 55% 0, 100% 50%, 55% 100%, 0 100%, 45% 50%);
+}
+.segmented.compact button {
+  padding-left: 7px;
+  padding-right: 7px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.select-footer > span,
+.select-footer .btn {
+  white-space: nowrap;
 }
 .select-grid.dense .stats {
   gap: 2px 6px;

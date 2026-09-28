@@ -66,6 +66,9 @@ export function shapeIcon(shape: Shape | 'none', fill = 'currentColor', extra = 
     case 'pentagon':
       body = `<polygon points="${ngon(5, 42)}" ${common}/>`;
       break;
+    case 'diamond':
+      body = `<polygon points="92,50 50,26 12,50 50,74" ${common}/><polygon points="92,50 50,26 12,50 50,74" fill="none" stroke="#fff3a0" stroke-width="2" opacity=".7" transform="translate(50 50) scale(.5) translate(-50 -50)"/>`;
+      break;
     case 'star':
       body = `<rect x="24" y="30" width="52" height="52" rx="4" ${common}/><polygon points="${ngon(3, 9, -90, 24, 14)}" fill="#ffd060"/><polygon points="${ngon(3, 9, -90, 50, 9)}" fill="#ffd060"/><polygon points="${ngon(3, 9, -90, 76, 14)}" fill="#ffd060"/>`;
       break;
@@ -80,6 +83,7 @@ export const SHAPE_INFO: { shape: Shape; name: string; state: string; act: strin
   { shape: 'circle', name: '円＋棒', state: '攻撃（ガード可）', act: '止まってガード', color: '#ff6a5a' },
   { shape: 'triangle', name: '三角', state: 'ガードブレイク', act: '動く・ステップで避ける', color: '#ffb020' },
   { shape: 'hexagon', name: '六角', state: 'ガード中', act: '三角(GB)で崩せ', color: '#5aa0ff' },
+  { shape: 'diamond', name: '菱形', state: '射撃（弾）', act: 'ステップで弾に飛び込め', color: '#f5c518' },
   { shape: 'arrow', name: '矢印', state: 'ステップ', act: '硬直を狩れ', color: '#58f0a0' },
   { shape: 'square', name: '四角', state: '通常・移動中', act: '何でもできる', color: '#c7d0ea' },
   { shape: 'star', name: '星つき四角', state: 'スタン', act: 'フルコンボ！', color: '#ffd060' },

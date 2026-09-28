@@ -3,7 +3,7 @@ import { u, U } from './fixed';
 import { SYSTEM } from '../data/system';
 import type { CharacterDef, MoveDef, Shape, Window } from '../data/types';
 
-export const SHAPES: readonly Shape[] = ['square', 'hexagon', 'circle', 'triangle', 'arrow', 'pentagon', 'star'];
+export const SHAPES: readonly Shape[] = ['square', 'hexagon', 'circle', 'triangle', 'arrow', 'pentagon', 'star', 'diamond'];
 export const SH = {
   square: 0,
   hexagon: 1,
@@ -12,6 +12,7 @@ export const SH = {
   arrow: 4,
   pentagon: 5,
   star: 6,
+  diamond: 7,
 } as const;
 
 // Move slots per character
@@ -23,7 +24,8 @@ export const M_JA = 4;
 export const M_S1 = 5;
 export const M_S2 = 6;
 export const M_STRIKE = 7;
-export const MOVE_SLOTS = 8;
+/** Character-specific extra moves start here (`CharacterDef.extraMoves`). */
+export const M_EX = 8;
 
 export const KIND_NORMAL = 0;
 export const KIND_GC = 1;
@@ -35,6 +37,8 @@ export const COST_UNIT = 4;
 
 /** Bit in cancelFrom mask meaning "from the free state". */
 export const CANCEL_NEUTRAL = 1 << 15;
+/** Bit in cancelFrom mask meaning "from a step (its attack-cancel frames)". */
+export const CANCEL_STEP = 1 << 14;
 
 export interface CWindow {
   a: number;
@@ -83,6 +87,21 @@ export interface CMove {
   heal: { frame: number; hp: number; buffFrames: number; walkPct: number; stepRegenMul: number } | null;
   /** Illusion (stopDist in milli-u). */
   ghost: { approach: number; stopDist: number; frames: number } | null;
+  /** ATK chains to `next` on these frames even without contact (連射). */
+  chainAny: CWindow | null;
+  /** Skill cancel on these frames even without contact. */
+  cancelAny: CWindow | null;
+  /** Bullet (milli-u; speed per frame; costGain in cost quarters). */
+  proj: { at: number; speed: number; range: number; radius: number; dmg: number; hitstun: number; blockstun: number; hitPush: number; guardPush: number; costGain: number } | null;
+  /** Floor field (milli-u). */
+  field: { at: number; radius: number; frames: number; maxDist: number; dmg: number; stun: number } | null;
+  /** Dash: travel per active frame (milli-u), frame advantage on hit / block. */
+  dash: { per: number; advHit: number; advBlock: number } | null;
+  /** Knockdown launch distance (milli-u), 0 = system default. */
+  launch: number;
+  wallOnGuard: boolean;
+  /** Shooting mode set on the 1st frame (-1 = unchanged). */
+  mode: number;
   /** Hitbox exists at all. */
   hasHitbox: boolean;
   def: MoveDef | null;
@@ -98,6 +117,9 @@ export interface CChar {
   stepRegen: number;
   /** Guard gauge max, quarter-frames */
   guardMaxQ: number;
+  stepStock: number;
+  /** Shooting-mode character: walk in the mode (milli-u / tick) and move slots. */
+  shooter: { walk: number; shots: number[]; off: number; blast: number } | null;
   moves: CMove[];
 }
 
@@ -127,6 +149,7 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
   let cancelFrom = 0;
   for (const src of m.cancelFrom ?? []) {
     if (src === 'neutral') cancelFrom |= CANCEL_NEUTRAL;
+    else if (src === 'step') cancelFrom |= CANCEL_STEP;
     else if (src in slotIds) {
       cancelFrom |= 1 << slotIds[src];
       // GC and JA behave as a 1st hit for cancel purposes
@@ -172,6 +195,22 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     otg: !!m.otg,
     heal: m.heal ? { ...m.heal } : null,
     ghost: m.ghost ? { approach: m.ghost.approach, stopDist: u(m.ghost.stopDist), frames: m.ghost.frames } : null,
+    chainAny: win(m.chainAny),
+    cancelAny: win(m.cancelAny),
+    proj: m.projectile
+      ? {
+          at: m.projectile.at, speed: u(m.projectile.speed), range: u(m.projectile.range), radius: u(m.projectile.radius),
+          dmg: m.projectile.dmg, hitstun: m.projectile.hitstun, blockstun: m.projectile.blockstun,
+          hitPush: u(m.projectile.hitPush), guardPush: u(m.projectile.guardPush), costGain: Math.round(m.projectile.costGain * COST_UNIT),
+        }
+      : null,
+    field: m.field
+      ? { at: m.field.at, radius: u(m.field.radius), frames: m.field.frames, maxDist: u(m.field.maxDist), dmg: m.field.dmg, stun: m.field.stun }
+      : null,
+    dash: m.dash ? { per: Math.trunc(u(m.dash.dist) / Math.max(1, m.A)), advHit: m.dash.advHit, advBlock: m.dash.advBlock } : null,
+    launch: m.launch ? u(m.launch) : 0,
+    wallOnGuard: !!m.wallOnGuard,
+    mode: m.mode ?? -1,
     hasHitbox: m.A > 0 && m.reach > 0,
     def: m,
   };
@@ -181,6 +220,8 @@ export function compileCharacter(def: CharacterDef, idx: number): CChar {
   const slotIds: Record<string, number> = { n1: M_N1, n2: M_N2, n3: M_N3, gc: M_GC, ja: M_JA };
   slotIds[def.skills[0].id] = M_S1;
   slotIds[def.skills[1].id] = M_S2;
+  const extras = def.extraMoves ?? [];
+  extras.forEach((m, k) => (slotIds[m.id] = M_EX + k));
   const n1 = def.normals.n1;
   const g = SYSTEM.gc;
   const j = SYSTEM.just;
@@ -217,7 +258,7 @@ export function compileCharacter(def: CharacterDef, idx: number): CChar {
   const withSweep = (m: MoveDef, sw: readonly [number, number]): MoveDef => (m.sweep ? m : { ...m, sweep: sw });
   const src: MoveDef[] = [
     withSweep(n1, first), withSweep(def.normals.n2, second), withSweep(def.normals.n3, spin),
-    withSweep(gcDef, first), withSweep(jaDef, first), def.skills[0], def.skills[1], strikeDef,
+    withSweep(gcDef, first), withSweep(jaDef, first), def.skills[0], def.skills[1], strikeDef, ...extras,
   ];
   const moves = src.map((m, i) => compileMove(i, m, slotIds));
   return {
@@ -228,6 +269,15 @@ export function compileCharacter(def: CharacterDef, idx: number): CChar {
     stepDist: u(def.step.dist),
     stepRegen: def.step.regen,
     guardMaxQ: def.guardMax * 4,
+    stepStock: def.step.stock ?? SYSTEM.step.maxStock,
+    shooter: def.shooter
+      ? {
+          walk: Math.round((def.shooter.walk * U) / SYSTEM.fps),
+          shots: def.shooter.shots.map((id) => slotIds[id]),
+          off: slotIds[def.shooter.off],
+          blast: slotIds[def.shooter.blast],
+        }
+      : null,
     moves,
   };
 }

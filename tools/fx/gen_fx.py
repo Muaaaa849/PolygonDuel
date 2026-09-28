@@ -715,8 +715,111 @@ def danger_violet():
     danger(name='danger_p', color=(0.8, 0.45, 1.0))
 
 
+YELLOW = (1.0, 0.82, 0.25)
+CYAN = (0.35, 0.9, 1.0)
+
+
+def blast(size=320, n=14):
+    """Ray's switch blast: a point-blank fan of diamond pellets toward +x, a muzzle cone
+    and a shock front (the sprite center = the shooter)."""
+    x, y, r, th = grid(size)
+    frames = []
+    g = np.random.default_rng(4242)
+    pel = [(g.uniform(-0.8, 0.8), g.uniform(0.55, 1.0)) for _ in range(16)]
+    cone = (np.abs(th) < 0.9) * (x > 0)
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(t)
+        inten = gauss(r, 0.12 + 0.1 * e) * (1 - t) ** 2 * 2.2  # muzzle flash
+        front = 0.15 + 0.8 * e
+        inten += cone * gauss(r - front, 0.03 + 0.05 * t) * gauss(th, 0.55) * (1 - t) ** 1.2 * 1.6
+        inten += cone * gauss(np.sin(th * 14), 0.2) * (r < front) * smooth(0.08, 0.25, r) * (1 - t) ** 1.5 * 0.45
+        for a, sp in pel:
+            d = 0.12 + 0.85 * e * sp
+            cx, cy = math.cos(a) * d, math.sin(a) * d
+            u = (x - cx) * math.cos(a) + (y - cy) * math.sin(a)
+            v = -(x - cx) * math.sin(a) + (y - cy) * math.cos(a)
+            dia = np.abs(u) / 0.035 + np.abs(v) / 0.018  # little diamonds pointing outward
+            inten += np.exp(-dia ** 2) * (1 - t) * 1.8
+            inten += gauss(v, 0.008) * (u < 0) * (u > -0.18 * e) * (1 - t) * 0.8  # tails
+        frames.append(rgba(glowify(inten, 3, 0.5), YELLOW, white_core=0.85))
+    save('blast', frames)
+
+
+def shock(size=256, n=12):
+    """Static-field shock: jagged lightning striking down into the target + crackle ring."""
+    x, y, r, th = grid(size)
+    frames = []
+    g = np.random.default_rng(777)
+    for k in range(n):
+        t = k / (n - 1)
+        inten = np.zeros_like(r)
+        flick = 1.0 if k % 3 != 2 else 0.45
+        for b in range(5):
+            a0 = -math.pi / 2 + (b - 2) * 0.5 + g.uniform(-0.15, 0.15)
+            # polyline from the rim toward the center, re-jittered every frame
+            pts = []
+            for j in range(9):
+                d = 1.0 - j / 8 * 0.95
+                a = a0 + g.uniform(-0.18, 0.18) * (1 if j and j < 8 else 0)
+                pts.append((math.cos(a) * d, math.sin(a) * d))
+            best = np.full(r.shape, 9.0, np.float32)
+            for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+                ex, ey = x2 - x1, y2 - y1
+                L2 = ex * ex + ey * ey + 1e-9
+                tt = np.clip(((x - x1) * ex + (y - y1) * ey) / L2, 0, 1)
+                d = np.sqrt((x - (x1 + ex * tt)) ** 2 + (y - (y1 + ey * tt)) ** 2)
+                best = np.minimum(best, d)
+            inten += (np.exp(-(best / 0.012) ** 2) * 1.6 + np.exp(-(best / 0.05) ** 2) * 0.4) * flick
+        inten *= (1 - t) ** 0.7
+        inten += gauss(r, 0.2) * (1 - t) ** 2 * 1.6
+        inten += gauss(r - (0.3 + 0.6 * ease_out(t)), 0.02) * (0.5 + 0.5 * np.sin(th * 23 + k)) * (1 - t) * 1.2
+        frames.append(rgba(glowify(inten, 3, 0.55), YELLOW, white_core=0.9))
+    save('shock', frames)
+
+
+def turnback(size=320, n=14):
+    """Volt's turnback: a 180° whirl arc (from behind to +x) ending in a triangle flash."""
+    x, y, r, th = grid(size)
+    frames = []
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(min(1.0, t * 1.6))
+        # arc sweeping from th = pi (behind) through -pi/2 to 0 (front)
+        head = math.pi * (1 - e)
+        rel = np.mod(-th - 0.0, 2 * math.pi)  # 0 at front, increasing counter-clockwise (up side)
+        on = (rel >= head - 0.05) * (rel <= math.pi + 0.05)
+        tail = np.clip(1 - (rel - head) / math.pi, 0, 1) ** 1.5
+        band = gauss(r - 0.62, 0.05 + 0.03 * t) * on * (0.3 + 0.9 * tail) * (1 - max(0, t - 0.6) * 2.5) * 1.8
+        inten = band
+        # triangle flash at the front after the whirl
+        if t > 0.35:
+            tt = (t - 0.35) / 0.65
+            tri = np.maximum.reduce([x, x * math.cos(2.094) + y * math.sin(2.094), x * math.cos(-2.094) + y * math.sin(-2.094)])
+            s = 0.14 + 0.3 * ease_out(tt)
+            inten += gauss(tri - s, 0.025 + 0.025 * tt) * (1 - tt) * 2.0
+            inten += gauss(r, 0.18) * (1 - tt) ** 3 * 1.4
+        frames.append(rgba(glowify(inten, 4, 0.6), CYAN, white_core=0.85))
+    save('turnback', frames)
+
+
+def danger_cyan():
+    """Volt's guard-break (turnback) warning aura, in cyan."""
+    danger(name='danger_c', color=CYAN)
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
+    if '--only' in sys.argv:
+        # regenerate just the named sheets (keeps the others' files and manifest entries)
+        names = sys.argv[sys.argv.index('--only') + 1].split(',')
+        with open(os.path.join(OUT, 'fx.json')) as f:
+            MANIFEST.update(json.load(f))
+        for nm in names:
+            globals()[nm]()
+        with open(os.path.join(OUT, 'fx.json'), 'w') as f:
+            json.dump(MANIFEST, f, indent=1)
+        sys.exit(0)
     slash()
     spin()
     burst()
@@ -742,6 +845,10 @@ if __name__ == '__main__':
     ghost_appear()
     reaper()
     danger_violet()
+    blast()
+    shock()
+    turnback()
+    danger_cyan()
     with open(os.path.join(OUT, 'fx.json'), 'w') as f:
         json.dump(MANIFEST, f, indent=1)
     total = sum(os.path.getsize(os.path.join(OUT, m['file'])) for m in MANIFEST.values())

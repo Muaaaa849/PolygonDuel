@@ -4,9 +4,9 @@
 import { Application } from 'pixi.js';
 import { Sim, getChar } from '../../core/sim';
 import { u } from '../../core/fixed';
-import { IN_ATK, IN_S1, IN_S2, IN_STICK } from '../../core/input';
+import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK } from '../../core/input';
 import { ST_FREE } from '../../core/state';
-import { M_N2, M_STRIKE } from '../../core/compile';
+import { M_N2, M_S1, M_STRIKE } from '../../core/compile';
 import { SYSTEM } from '../../data/system';
 import { CHARACTERS, charIndex } from '../../data/characters';
 import type { CharacterDef, MoveDef } from '../../data/types';
@@ -34,6 +34,37 @@ function scriptFor(c: CharacterDef, kind: DemoKind): Script {
   const m: MoveDef = c.skills[slot];
   const btn = kind === 's1' ? IN_S1 : IN_S2;
   const press = (t: number) => (t === 20 ? btn | IN_STICK : 0); // stick 0 = toward the dummy (right)
+  if (m.mode === 1) {
+    // shooting mode: three bullets into a guard at the wall (each one slams it), then back to melee
+    return {
+      dist: 4.4,
+      setup: (sim) => {
+        const d = u(SYSTEM.field.w) - u(1.2) - sim.s.f[1].x;
+        sim.s.f[0].x += d;
+        sim.s.f[1].x += d;
+      },
+      input: (t) => [t === 16 ? btn : t === 34 || t === 48 || t === 62 ? IN_ATK : t === 120 ? btn : 0, 0],
+    };
+  }
+  if (m.field) {
+    // a field at the dummy's feet; the dummy tries to step out → shocked
+    return { dist: 3.6, input: (t) => [t === 16 ? btn : 0, t === 56 ? IN_STEP | IN_STICK | 8 : 0] };
+  }
+  if (m.dash || m.cancelFrom?.includes('dashThrust')) {
+    // step → dash through the guarding dummy (→ turnback crush → combo)
+    const turn = !m.dash;
+    return {
+      dist: 3.8,
+      input: (t, sim) => {
+        const me = sim.s.f[0];
+        if (t === 20) return [IN_STEP | IN_STICK, 0];
+        if (t === 23) return [IN_S1 | IN_STICK, 0];
+        if (turn && me.move === M_S1 && me.sf === 12) return [IN_S2, 0];
+        if (turn && t > 70 && t % 5 === 0 && sim.s.f[1].st !== ST_FREE) return [IN_ATK, 0];
+        return [0, 0];
+      },
+    };
+  }
   if (m.counterStance) {
     // the dummy swings into the stance → reversal → the strike chains into 2 → 3
     return {

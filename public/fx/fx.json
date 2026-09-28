@@ -349,5 +349,57 @@
    0.5
   ],
   "scale": 1.0
+ },
+ "blast": {
+  "file": "blast.webp",
+  "size": 320,
+  "count": 14,
+  "cols": 4,
+  "fps": 60,
+  "tint": false,
+  "anchor": [
+   0.5,
+   0.5
+  ],
+  "scale": 1.0
+ },
+ "shock": {
+  "file": "shock.webp",
+  "size": 256,
+  "count": 12,
+  "cols": 4,
+  "fps": 60,
+  "tint": false,
+  "anchor": [
+   0.5,
+   0.5
+  ],
+  "scale": 1.0
+ },
+ "turnback": {
+  "file": "turnback.webp",
+  "size": 320,
+  "count": 14,
+  "cols": 4,
+  "fps": 60,
+  "tint": false,
+  "anchor": [
+   0.5,
+   0.5
+  ],
+  "scale": 1.0
+ },
+ "danger_c": {
+  "file": "danger_c.webp",
+  "size": 256,
+  "count": 16,
+  "cols": 4,
+  "fps": 30,
+  "tint": false,
+  "anchor": [
+   0.5,
+   0.5
+  ],
+  "scale": 1.0
  }
 }

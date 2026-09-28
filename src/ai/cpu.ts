@@ -5,8 +5,9 @@ import { SH, M_N1, M_N2, M_N3, M_S1, M_S2, KIND_GC, COST_UNIT } from '../core/co
 import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK } from '../core/input';
 import {
   ST_FREE, ST_ATTACK, ST_BLOCKSTUN, ST_STEP, ST_STUN, ST_DOWN, ST_WAKE, ST_HITSTUN,
-  MH_HIT, MH_BLOCK, MH_NONE, PH_FIGHT, type FighterState,
+  MH_HIT, MH_BLOCK, MH_NONE, PH_FIGHT, type FighterState, getShot, MAX_SHOTS,
 } from '../core/state';
+import { SYSTEM } from '../data/system';
 import { Rng } from '../core/rng';
 
 export interface CpuLevel {
@@ -28,7 +29,9 @@ export const CPU_LEVELS: CpuLevel[] = [
   { name: 'HARD', react: 13, accuracy: 0.85, gc: 0.9, confirm: 1, aggression: 0.03 },
 ];
 
-const PREFERRED: Record<string, number> = { blaze: 2.6, zephyr: 3.3, bastion: 2.6, phantom: 3.0 };
+const PREFERRED: Record<string, number> = { blaze: 2.6, zephyr: 3.3, bastion: 2.6, phantom: 3.0, ray: 2.5, volt: 2.9 };
+const FIELD_W = SYSTEM.field.w;
+const FIELD_H = SYSTEM.field.h;
 
 function dirIndex(dx: number, dy: number): number {
   const a = Math.atan2(dy, dx);
@@ -51,6 +54,17 @@ export class CpuPlayer {
   private lastOpMove = -1;
   private lastOpSf = 0;
   private stepIn = false;
+  /** Bullets already reacted to (slot:number:direction). */
+  private shotSeen = '';
+  private shotReaction: 'guard' | 'step' | 'take' | null = null;
+  /** Ray: the frame of the current shot to fire the next one on (-1 = stop). */
+  private nextShotAt = -1;
+  private shotFor = -1;
+  /** Volt: plan after a dash (0 none, 1 N1, 2 turnback, 3 guard). */
+  private dashPlan = 0;
+  private dashFor = -1;
+  private stepSeenFor = -1;
+  private shotAware = 0;
 
   constructor(private sim: Sim, private me: 0 | 1, public level: CpuLevel, seed = 1) {
     this.rng = new Rng(seed * 7919 + 17);
@@ -71,6 +85,39 @@ export class CpuPlayer {
       default:
         return SH.square;
     }
+  }
+
+  /** Standing in the opponent's static field (stepping there gets shocked). */
+  private inField(me: FighterState, op: FighterState): boolean {
+    if (op.fieldT <= 0) return false;
+    const F = this.sim.char(1 - this.me).moves.find((m) => m.field)?.field;
+    if (!F) return false;
+    return Math.hypot(me.x - op.fieldX, me.y - op.fieldY) <= F.radius + 300;
+  }
+
+  /** The nearest bullet flying at us: distance (u), its direction and a key, or null. */
+  private incoming(me: FighterState, op: FighterState): { d: number; a: number; key: string } | null {
+    let best: { d: number; a: number; key: string } | null = null;
+    for (let j = 0; j < MAX_SHOTS; j++) {
+      const b = getShot(op, j);
+      if (!b) continue;
+      const a = (b.a / 1024) * Math.PI * 2;
+      const rx = (me.x - b.x) / 1000;
+      const ry = (me.y - b.y) / 1000;
+      const along = rx * Math.cos(a) + ry * Math.sin(a);
+      const side = Math.abs(-rx * Math.sin(a) + ry * Math.cos(a));
+      if (along < -0.3 || side > 0.9) continue;
+      if (!best || along < best.d) best = { d: along, a: b.a, key: `${j}:${b.n}:${b.a}` };
+    }
+    return best;
+  }
+
+  /** Near the wall the bullet would push us into (guarding there costs 30 per bullet). */
+  private wallBehind(me: FighterState, ang: number): boolean {
+    const a = (ang / 1024) * Math.PI * 2;
+    const x = me.x / 1000 + Math.cos(a) * 2.2;
+    const y = me.y / 1000 + Math.sin(a) * 2.2;
+    return x < 0.6 || x > FIELD_W - 0.6 || y < 0.6 || y > FIELD_H - 0.6;
   }
 
   input(): number {
@@ -113,6 +160,35 @@ export class CpuPlayer {
     // ── my attack: chain / confirm
     if (me.st === ST_ATTACK) {
       const m = this.sim.moveOf(me)!;
+      const id = c.def.id;
+      // ray: a volley — one shot and watch, or all three at a wall / into a field; the
+      // next shot on a random frame of its window (the rhythm is harder to step into)
+      if (m.proj && m.chainAny && m.next >= 0) {
+        if (this.shotFor !== this.t - me.sf) {
+          this.shotFor = this.t - me.sf;
+          const pinned = this.wallBehind(op, me.facing) || this.inField(op, me);
+          const hitLast = op.st === ST_HITSTUN;
+          const go = pinned ? 0.9 : hitLast ? 0.2 : 0.45;
+          this.nextShotAt = this.rng.chance(go) ? m.chainAny.a + this.rng.int(m.chainAny.b - m.chainAny.a + 1) : -1;
+        }
+        return me.sf === this.nextShotAt - 1 ? IN_ATK : 0;
+      }
+      // ray: 1 → 2 → switch blast (sends them far, into shooting range / the wall)
+      if (id === 'ray' && me.move === M_N2 && me.moveHit === MH_HIT && me.cost >= COST_UNIT && this.wallBehind(op, me.facing) && this.rng.chance(0.6)) return IN_S1;
+      // volt: after a guarded dash, rock-paper-scissors (N1 / turnback / guard)
+      if (m.dash) {
+        if (this.dashFor !== this.t - me.sf) {
+          this.dashFor = this.t - me.sf;
+          this.dashPlan = 0;
+        }
+        if (me.moveHit === MH_BLOCK && this.dashPlan === 0) {
+          const r = this.rng.next();
+          this.dashPlan = r < 0.4 ? 1 : r < 0.7 && me.cost >= c.moves[M_S2].cost ? 2 : 3;
+        }
+        if (this.dashPlan === 2 && me.sf >= m.S + m.A) return IN_S2;
+        if (this.dashPlan === 1 && me.sf >= m.T - 4) return IN_ATK;
+        return 0;
+      }
       if (me.moveHit === MH_HIT && m.next >= 0 && this.rng.chance(this.level.confirm)) {
         // blaze sometimes extends with S1 after N2
         if (me.move === M_N2 && c.def.id === 'blaze' && me.cost >= COST_UNIT && !me.chainResetUsed && this.rng.chance(0.5)) return IN_S1;
@@ -133,6 +209,18 @@ export class CpuPlayer {
 
     if (me.st === ST_STEP) {
       if (me.justWin > 0) return mash();
+      // volt: a step turns into the dash — into a startup (before it becomes active), or
+      // through a guard (then the turnback). Not into a riposte stance.
+      if (c.def.id === 'volt' && me.sf >= SYSTEM.step.attackCancelFrom && me.cost >= c.moves[M_S1].cost && dist < 4) {
+        const om = op.st === ST_ATTACK ? this.sim.moveOf(op) : null;
+        const riposte = !!om?.cs || (op.st === ST_FREE && this.sim.char(1 - this.me).moves[M_S1].cs && op.cost >= COST_UNIT && op.guardF > 0);
+        const startup = !!om && om.hasHitbox && op.sf < om.S - 4;
+        const guarding = op.st === ST_FREE && op.guardF >= 2;
+        if (!riposte && ((startup && this.rng.chance(0.5)) || (guarding && me.cost >= 2 * COST_UNIT && this.rng.chance(0.35)) || (this.stepIn && this.rng.chance(0.3)))) {
+          this.stepIn = false;
+          return IN_S1 | IN_STICK | toward;
+        }
+      }
       // a step in toward the opponent turns into an attack with the step's momentum
       if (this.stepIn && dist < myReach + 1.2) {
         this.stepIn = false;
@@ -146,6 +234,37 @@ export class CpuPlayer {
     if (me.st === ST_HITSTUN || me.st === ST_STUN || me.st === ST_DOWN) return 0;
     if (me.st === ST_WAKE) return this.rng.chance(0.5) ? IN_STICK | ((away + (this.rng.chance(0.5) ? 8 : -8) + 32) % 32) : 0;
     if (me.justWin > 0) return mash();
+
+    const fielded = this.inField(me, op);
+    const canStep = me.steps > 0 && !fielded;
+
+    // ── a bullet coming: step INTO it (bullet just) / guard in the open / take it at a wall
+    // (only once the shot's startup has been perceived, with the usual reaction delay:
+    // a first bullet from afar is a surprise, a volley's rhythm is not)
+    const sawShot = seen.st === ST_ATTACK && !!this.sim.char(1 - this.me).moves[seen.move]?.proj;
+    if (sawShot) this.shotAware = 40;
+    else if (this.shotAware > 0) this.shotAware--;
+    const inc = this.shotAware > 0 ? this.incoming(me, op) : null;
+    if (inc && inc.d < 2.4) {
+      if (this.shotSeen !== inc.key) {
+        this.shotSeen = inc.key;
+        // stepping into a bullet is a timing read (harder than seeing a triangle)
+        const correct = this.rng.chance(this.level.accuracy * 0.5);
+        const wall = this.wallBehind(me, inc.a);
+        this.shotReaction = correct && canStep ? 'step' : wall ? 'take' : 'guard';
+      }
+      const back = (dirIndex(-Math.cos((inc.a / 1024) * Math.PI * 2), -Math.sin((inc.a / 1024) * Math.PI * 2)) + 32) % 32;
+      if (this.shotReaction === 'step' && inc.d < 1.7 && canStep) return IN_STEP | IN_STICK | back;
+      if (this.shotReaction === 'take') return IN_STICK | ((back + 8) % 32);
+      if (this.shotReaction === 'guard') return 0;
+    }
+    // ── a volt stepping in: put an attack out (a dash loses to anything touching it)
+    if (op.st === ST_STEP && seen.st === ST_STEP && this.sim.char(1 - this.me).def.id === 'volt' && op.cost >= COST_UNIT && dist < myReach + 2.2) {
+      if (this.stepSeenFor !== this.opInstance + op.steps * 1000 + this.t - op.sf) {
+        this.stepSeenFor = this.opInstance + op.steps * 1000 + this.t - op.sf;
+        if (this.rng.chance(this.level.accuracy * 0.6)) return IN_ATK | IN_STICK | toward;
+      }
+    }
 
     // ── free: react to what we see
     const opAttacking = seen.st === ST_ATTACK && op.st === ST_ATTACK;
@@ -167,7 +286,7 @@ export class CpuPlayer {
           if (this.rng.chance(0.4)) return IN_S1;
         }
       }
-      if (this.reaction === 'step') return me.steps > 0 ? IN_STEP | IN_STICK | ((away + (this.rng.chance(0.5) ? 6 : -6) + 32) % 32) : IN_STICK | away;
+      if (this.reaction === 'step') return canStep ? IN_STEP | IN_STICK | ((away + (this.rng.chance(0.5) ? 6 : -6) + 32) % 32) : IN_STICK | away;
       // guard — unless the gauge is about to run out (idle guarding breaks in ~1.5s)
       if (this.reaction === 'guard') return me.guardQ < c.guardMaxQ * 0.2 ? IN_STICK | ((away + this.strafe * 8 + 32) % 32) : 0;
     }
@@ -178,6 +297,33 @@ export class CpuPlayer {
       const om = this.sim.moveOf(op)!;
       const end = op.moveHit === MH_NONE ? om.whiffT : om.T;
       if (op.sf > om.S + om.A && end - op.sf > n1.S && dist < myReach) return IN_ATK;
+    }
+
+    // ── ray: modes, shots, field
+    if (c.def.id === 'ray') {
+      if (me.shootMode) {
+        // too close: slip back out with a step, or give up the gun
+        if (dist < 3.2 && canStep && op.st !== ST_DOWN && this.rng.chance(0.04)) {
+          const nearWall = (d: number) => {
+            const a = (d / 32) * Math.PI * 2;
+            const x = me.x / 1000 + Math.cos(a) * 2.4;
+            const y = me.y / 1000 + Math.sin(a) * 2.4;
+            return x < 0.8 || x > FIELD_W - 0.8 || y < 0.8 || y > FIELD_H - 0.8;
+          };
+          let d = (away + this.strafe * 3 + 32) % 32;
+          if (nearWall(d)) d = (away + this.strafe * 9 + 32) % 32;
+          if (!nearWall(d)) return IN_STEP | IN_STICK | d;
+        }
+        // the gun is useless up close: back to melee before they arrive
+        if (dist < 3.4 && op.st !== ST_DOWN && this.rng.chance(0.2)) return IN_S1;
+        // shoot when a step-in can't answer it (no steps, in the field, pinned, busy guarding);
+        // into a fresh opponent with steps in stock only now and then
+        const pinned = this.inField(op, me) || this.wallBehind(op, (toward * 32) & 1023);
+        const safe = pinned || op.steps === 0 || (op.st === ST_FREE && op.guardF > 0) || op.st === ST_BLOCKSTUN || op.st === ST_HITSTUN;
+        if (dist > 2.6 && op.st !== ST_DOWN && op.st !== ST_STEP && this.rng.chance(safe ? 0.1 : 0.015)) return IN_ATK | IN_STICK | toward;
+      } else if (me.cost >= COST_UNIT && ((op.st === ST_DOWN && dist >= 3.4) || dist >= 6) && this.rng.chance(0.05)) return IN_S1;
+      const s2 = c.moves[M_S2];
+      if (me.shootMode && me.cost >= s2.cost && me.fieldT === 0 && dist > 4 && dist < 5.2 && this.rng.chance(0.008)) return IN_S2;
     }
 
     // break a long guard
@@ -225,15 +371,16 @@ export class CpuPlayer {
     if (dist < myReach + 0.4 && me.guardQ > c.guardMaxQ * 0.5 && this.rng.chance(0.01)) this.holdGuard = 20 + this.rng.int(30);
 
     // spacing
-    const pref = PREFERRED[c.def.id] ?? 2.8;
+    const pref = c.def.id === 'ray' && me.shootMode ? 5.2 : PREFERRED[c.def.id] ?? 2.8;
     if (--this.strafeT <= 0) {
       this.strafeT = 30 + this.rng.int(60);
       this.strafe = this.rng.chance(0.5) ? 1 : -1;
     }
     if (dist <= myReach && this.rng.chance(this.level.aggression * 3)) return IN_ATK | IN_STICK | toward;
-    if (dist > pref + 1.6 && me.steps > 1 && this.rng.chance(0.01)) return IN_STEP | IN_STICK | toward;
-    // step in and attack out of the step (the step's momentum carries the attack)
-    if (dist > myReach && dist < myReach + 2.4 && me.steps > 0 && this.rng.chance(this.level.aggression)) {
+    if (dist > pref + 1.6 && me.steps > 1 && canStep && this.rng.chance(0.01)) return IN_STEP | IN_STICK | toward;
+    // step in and attack out of the step (the step's momentum carries the attack); volt lives on steps
+    const stepRate = c.def.id === 'volt' ? this.level.aggression * 2.5 : this.level.aggression;
+    if (dist > myReach && dist < myReach + (c.def.id === 'volt' ? 3.2 : 2.4) && canStep && this.rng.chance(stepRate)) {
       this.stepIn = true;
       return IN_STEP | IN_STICK | toward;
     }
@@ -293,6 +440,13 @@ export class Dummy {
         const c = this.sim.char(this.me);
         const gbSlot = c.moves[M_S2].gb ? IN_S2 : c.moves[M_S1].gb ? IN_S1 : IN_ATK;
         me.infCost = 1;
+        if (c.moves[M_S2].def?.cancelFrom?.includes('dashThrust')) {
+          // ヴォルト: its guard break only comes out of a dash (step → dash → turnback)
+          if (dist > 3.6) return IN_STICK | toward;
+          if (this.t % 60 === 0) return IN_STEP | IN_STICK | toward;
+          if (this.t % 60 === 3) return IN_S1 | IN_STICK | toward;
+          return me.move === M_S1 && me.sf === 12 ? IN_S2 : 0;
+        }
         if (dist > 2.8) return IN_STICK | toward;
         return this.t % 50 === 0 ? gbSlot | IN_STICK | toward : 0;
       }

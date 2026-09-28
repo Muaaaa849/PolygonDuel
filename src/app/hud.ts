@@ -19,13 +19,15 @@ export function buildHud(sim: Sim, view: BattleView, tags: [string, string]) {
     const pips = h('span', { class: 'pips' });
     for (let k = 0; k < SYSTEM.cost.max; k++) pips.append(h('i'));
     const steps = h('span', { class: 'steps-pips' });
-    for (let k = 0; k < SYSTEM.step.maxStock; k++) steps.append(h('i'));
+    for (let k = 0; k < sim.char(i).stepStock; k++) steps.append(h('i'));
+    // shooters: a badge while the shooting mode is on (both players can see it)
+    const mode = h('span', { class: 'mode-badge' }, '◆ SHOT');
     const side = h('div', { class: `side ${i === 0 ? 'left' : 'right'}`, style: `--c:${color}` },
       h('div', { class: 'nameline' }, h('span', { class: 'tag' }, tags[i]), h('span', null, def.name), h('span', { class: 'spacer' }), wins),
       hp,
-      h('div', { class: 'res' }, pips, steps),
+      h('div', { class: 'res' }, pips, steps, mode),
     );
-    return { side, fill, lag, hp, wins, pips, steps, last: { hp: -1, win: -1, cost: -1, steps: -1 } };
+    return { side, fill, lag, hp, wins, pips, steps, mode, last: { hp: -1, win: -1, cost: -1, steps: -1, mode: -1 } };
   });
   const clock = h('div', { class: 'clock' }, '60');
   const clockSub = h('small', null, 'ROUND 1');
@@ -65,6 +67,10 @@ export function buildHud(sim: Sim, view: BattleView, tags: [string, string]) {
         if (f.steps !== d.last.steps) {
           [...d.steps.children].forEach((c, k) => c.classList.toggle('off', k >= f.steps));
           d.last.steps = f.steps;
+        }
+        if (f.shootMode !== d.last.mode) {
+          d.mode.classList.toggle('on', f.shootMode === 1);
+          d.last.mode = f.shootMode;
         }
       }
       const t = s.noTimer ? -2 : Math.ceil(s.timer / 60);

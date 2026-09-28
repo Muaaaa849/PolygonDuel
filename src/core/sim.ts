@@ -4,14 +4,14 @@ import { SYSTEM } from '../data/system';
 import { CHARACTERS } from '../data/characters';
 import {
   compileCharacter, type CChar, type CMove,
-  M_N1, M_GC, M_JA, M_S1, M_S2, M_STRIKE, KIND_GC, KIND_JA, KIND_NORMAL, KIND_SKILL, CANCEL_NEUTRAL, SH, COST_UNIT,
+  M_N1, M_N2, M_GC, M_JA, M_S1, M_S2, M_STRIKE, KIND_GC, KIND_JA, KIND_NORMAL, KIND_SKILL, CANCEL_NEUTRAL, CANCEL_STEP, SH, COST_UNIT,
 } from './compile';
 import {
   ANG, U, angDiff, atan2A, clamp, idiv, isqrt, offX, offY, segPointDist2, turnToward, u,
 } from './fixed';
 import {
-  type FighterState, type GameState, newGameState,
-  ST_FREE, ST_ATTACK, ST_BLOCKSTUN, ST_HITSTUN, ST_STEP, ST_DOWN, ST_WAKE, ST_STUN, ST_KO,
+  type FighterState, type GameState, newGameState, getShot, setShot, MAX_SHOTS,
+  ST_FREE, ST_ATTACK, ST_BLOCKSTUN, ST_HITSTUN, ST_STEP, ST_DOWN, ST_WAKE, ST_STUN, ST_KO, ST_JAM,
   MH_NONE, MH_HIT, MH_BLOCK, MH_SPENT,
   PH_INTRO, PH_FIGHT, PH_END, PH_MATCH_OVER,
 } from './state';
@@ -20,7 +20,8 @@ import {
   type SimEvent,
   EV_MOVE, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN, EV_STEP,
   EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_WAKE, EV_GUARD, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END,
-  HF_COUNTER, HF_JA, HF_OTG, HF_KNOCKDOWN, HF_FORCED_DOWN,
+  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM,
+  HF_COUNTER, HF_JA, HF_OTG, HF_KNOCKDOWN, HF_FORCED_DOWN, HF_SHOT, HF_PUNISH,
 } from './events';
 
 const COMPILED: CChar[] = CHARACTERS.map((c, i) => compileCharacter(c, i));
@@ -57,6 +58,9 @@ const STEP_TABLE: Int32Array[] = COMPILED.map((c) => {
   t[1] += c.stepDist - sum;
   return t;
 });
+
+/** Per-character floor field spec (レイのS2), or null. */
+const FIELD_OF = COMPILED.map((c) => c.moves.find((m) => m.field)?.field ?? null);
 
 export interface SimOptions {
   /** Training: no timer, refill HP after combos, no KO. */
@@ -119,14 +123,15 @@ export class Sim {
         hp: c.hp, st: ST_FREE, sf: 0, len: 0, move: -1, moveHit: 0, moveHitAt: 0,
         guardF: 0, guardQ: c.guardMaxQ, guardIdle: 0,
         cost: SYSTEM.cost.start * COST_UNIT, comboGain: 0, hurtGain: 0,
-        steps: SYSTEM.step.maxStock, stepTimer: 0, moveDir: 0, stepChain: 0,
+        steps: c.stepStock, stepTimer: 0, moveDir: 0, stepChain: 0,
         bufAtk: 0, bufS1: 0, bufS2: 0, bufStep: 0, gcQueued: 0, noGc: 0, justWin: 0, jaChain: 0,
         chainResetUsed: 0, otgUsed: 0, comboHits: 0, comboFrames: 0, comboDmg: 0, downAge: 0,
         kbDist: 0, kbAngle: 0, limited: 0, buff: 0, healUses: 0, csHit: 0,
         lastDir: i === 0 ? 0 : 16,
         aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, lungePct: 100, wallHits: 0, momStep: 0, momDir: 0,
-        ghostT: 0, ghostMode: 0,
+        ghostT: 0, ghostMode: 0, shootMode: 0, justNoMul: 0, wallGuard: 0, fieldT: 0,
       });
+      for (let j = 0; j < MAX_SHOTS; j++) setShot(f, j, null);
       f.char = keepChar;
       if (!first) {
         [f.statDmg, f.statGc, f.statJust, f.statCrush, f.statMaxCombo, f.statBlocks, f.statHitsTaken] = keepStats;
@@ -195,6 +200,8 @@ export class Sim {
     this.updateFighter(1, ins1);
     this.resolveBodies();
     this.detectHits();
+    this.updateFields();
+    this.updateShots();
     this.updateGhosts();
     this.updateGauges();
     this.updateCombos();
@@ -254,6 +261,7 @@ export class Sim {
     if (f.buff > 0) f.buff--;
     f.sf++;
     if (f.st !== ST_ATTACK) f.momStep = 0;
+    if (f.st !== ST_BLOCKSTUN) f.wallGuard = 0;
 
     this.slide(f);
 
@@ -289,6 +297,7 @@ export class Sim {
         break;
       case ST_HITSTUN:
       case ST_STUN:
+      case ST_JAM:
         if (f.sf > f.len) {
           this.toFree(f);
           this.freeLogic(i, w);
@@ -362,6 +371,19 @@ export class Sim {
     const hurt = f.st === ST_HITSTUN || f.st === ST_DOWN || f.st === ST_STUN;
     f.x = clamp(f.x, BODY_R, FIELD_W - BODY_R);
     f.y = clamp(f.y, BODY_R, FIELD_H - BODY_R);
+    if (f.st === ST_BLOCKSTUN && f.wallGuard) {
+      // a bullet / blast guarded into the wall: flat damage, apart from the combo's wall limit;
+      // the slide stops here, so the next bullet slams again
+      f.wallGuard = 0;
+      f.kbDist = 0;
+      const who = s.f[0] === f ? 0 : 1;
+      const dmg = this.rawDamage(s.f[1 - who], f, GUARD_WALL_DMG);
+      s.hitstop = Math.max(s.hitstop, SYSTEM.wall.hitstop);
+      const px = side === 0 ? 0 : side === 1 ? FIELD_W : f.x;
+      const py = side === 2 ? 0 : side === 3 ? FIELD_H : f.y;
+      this.emit(EV_WALL, who, dmg, side | 4, px, py);
+      return;
+    }
     if (!hurt || f.wallHits >= SYSTEM.wall.perCombo) return;
     f.kbDist = 0;
     f.wallHits++;
@@ -395,6 +417,34 @@ export class Sim {
     return true;
   }
 
+  /**
+   * The move a skill button actually starts. Shooters (レイ): S1 turns the shooting mode on,
+   * off while it is on, and out of N2 it is the switch blast. Everyone else: the slot itself.
+   */
+  skillSlot(f: FighterState, slot: number, from = -1): number {
+    const sh = COMPILED[f.char].shooter;
+    if (!sh || slot !== M_S1) return slot;
+    if (from === M_N2) return sh.blast;
+    return f.shootMode ? sh.off : slot;
+  }
+
+  /** The move ATK starts from neutral / a step: N1, or the 1st shot in shooting mode. */
+  atkSlot(f: FighterState): number {
+    const sh = COMPILED[f.char].shooter;
+    return sh && f.shootMode ? sh.shots[0] : M_N1;
+  }
+
+  /** Skill press out of neutral (`from` mask: CANCEL_NEUTRAL, or | CANCEL_STEP in a step). */
+  private freeSkill(f: FighterState, mask: number): number {
+    const c = COMPILED[f.char];
+    if (f.bufS1 && c.moves[M_S1].cancelFrom & mask) {
+      const r = this.skillSlot(f, M_S1);
+      if (this.canAfford(f, c.moves[r])) return r;
+    }
+    if (f.bufS2 && c.moves[M_S2].cancelFrom & mask && this.canAfford(f, c.moves[M_S2])) return M_S2;
+    return -1;
+  }
+
   private freeLogic(i: number, w: number): void {
     const f = this.s.f[i];
     const c = COMPILED[f.char];
@@ -402,18 +452,16 @@ export class Sim {
       f.limited--;
     } else {
       if (f.justWin > 0 && f.bufAtk) return this.startMove(i, M_JA, w);
-      const s1 = c.moves[M_S1];
-      const s2 = c.moves[M_S2];
-      if (f.bufS1 && s1.cancelFrom & CANCEL_NEUTRAL && this.canAfford(f, s1)) return this.startMove(i, M_S1, w);
-      if (f.bufS2 && s2.cancelFrom & CANCEL_NEUTRAL && this.canAfford(f, s2)) return this.startMove(i, M_S2, w);
-      if (f.bufAtk) return this.startMove(i, M_N1, w);
+      const sk = this.freeSkill(f, CANCEL_NEUTRAL);
+      if (sk >= 0) return this.startMove(i, sk, w);
+      if (f.bufAtk) return this.startMove(i, this.atkSlot(f), w);
       if (f.bufStep && f.steps > 0) return this.startStep(i, w);
     }
     if (w & IN_STICK) {
       // walk
       const a = dirAngle(w);
       f.facing = a;
-      let sp = c.walk;
+      let sp = f.shootMode && c.shooter ? c.shooter.walk : c.walk;
       if (f.buff > 0) {
         const heal = this.healSpec(f);
         if (heal) sp = idiv(sp * (100 + heal.walkPct), 100);
@@ -438,7 +486,7 @@ export class Sim {
     const f = this.s.f[i];
     f.bufStep = 0;
     f.moveDir = w & IN_STICK ? dirAngle(w) : (this.angleTo(i) + ANG / 2) & (ANG - 1);
-    if (f.steps === SYSTEM.step.maxStock) f.stepTimer = 0;
+    if (f.steps === COMPILED[f.char].stepStock) f.stepTimer = 0;
     f.steps--;
     f.st = ST_STEP;
     f.sf = 1;
@@ -466,20 +514,20 @@ export class Sim {
     }
     if (f.sf >= SYSTEM.step.chainFrom && f.bufStep && f.steps > 0) return this.startStep(i, w);
     if (f.sf >= SYSTEM.step.attackCancelFrom) {
-      const s1 = c.moves[M_S1];
-      const s2 = c.moves[M_S2];
-      let mi = -1;
-      if (f.bufS1 && s1.cancelFrom & CANCEL_NEUTRAL && this.canAfford(f, s1)) mi = M_S1;
-      else if (f.bufS2 && s2.cancelFrom & CANCEL_NEUTRAL && this.canAfford(f, s2)) mi = M_S2;
-      else if (f.bufAtk) mi = M_N1;
+      let mi = this.freeSkill(f, CANCEL_NEUTRAL | CANCEL_STEP);
+      if (mi < 0 && f.bufAtk) mi = this.atkSlot(f);
       if (mi >= 0) {
         // seamless: this frame's step travel still happens, the rest rides on the attack
+        // (not on bullets / dashes: they have their own travel)
         this.stepMove(f);
         const next = f.sf + 1;
         const dir = f.moveDir;
         this.startMove(i, mi, w);
-        f.momStep = next;
-        f.momDir = dir;
+        const m = c.moves[mi];
+        if (!m.proj && !m.dash) {
+          f.momStep = next;
+          f.momDir = dir;
+        }
         return;
       }
     }
@@ -492,7 +540,9 @@ export class Sim {
     const m = c.moves[mi];
     if (mi === M_JA) {
       f.justWin = 0;
-      f.jaChain = 1;
+      // a bullet just gives the blink + a guaranteed combo, but no ×1.5
+      f.jaChain = f.justNoMul ? 0 : 1;
+      f.justNoMul = 0;
       // blink: reappear right in front of the opponent (on our side) so the JA always connects
       const o = this.s.f[1 - i];
       const back = atan2A(f.y - o.y, f.x - o.x);
@@ -509,10 +559,13 @@ export class Sim {
       if (!f.infCost) f.cost -= m.cost;
       if (m.usesPerRound > 0) f.healUses++;
     }
-    const aim = mi === M_N1 ? f.aimAtk : mi === M_S1 ? f.aimS1 : mi === M_S2 ? f.aimS2 : 0;
-    if (mi === M_N1 || mi === M_JA) f.bufAtk = f.aimAtk = 0;
-    else if (mi === M_S1) f.bufS1 = f.aimS1 = 0;
-    else if (mi === M_S2) f.bufS2 = f.aimS2 = 0;
+    // which button started it (shots = ATK; mode off / blast = S1)
+    const sh = c.shooter;
+    const btn = mi === M_N1 || mi === M_JA || m.proj ? 1 : mi === M_S1 || (sh && (mi === sh.off || mi === sh.blast)) ? 2 : mi === M_S2 ? 3 : 0;
+    const aim = btn === 1 ? f.aimAtk : btn === 2 ? f.aimS1 : btn === 3 ? f.aimS2 : 0;
+    if (btn === 1) f.bufAtk = f.aimAtk = 0;
+    else if (btn === 2) f.bufS1 = f.aimS1 = 0;
+    else if (btn === 3) f.bufS2 = f.aimS2 = 0;
     else if (chained) f.bufAtk = f.aimAtk = 0;
     f.st = ST_ATTACK;
     f.sf = 1;
@@ -529,12 +582,22 @@ export class Sim {
     f.aimed = 0;
     f.lungePct = 100;
     if (m.autoAim) f.facing = this.angleTo(i);
-    else if (aim && (!chained || m.kind === KIND_SKILL)) {
+    else if (m.proj) {
+      // every shot re-aims: where it was aimed, or at the opponent
+      if (aim) {
+        f.facing = (aim - 1) & (ANG - 1);
+        f.aimed = 1;
+      } else f.facing = this.angleTo(i);
+    } else if (aim && (!chained || m.kind === KIND_SKILL)) {
       f.facing = (aim - 1) & (ANG - 1);
       f.aimed = 1;
       f.lungePct = aimLungePct((aim - 1) >> 10);
     } else if (!chained) f.facing = w & IN_STICK ? dirAngle(w) : this.angleTo(i);
     this.emit(EV_MOVE, i, mi, 0, f.x, f.y);
+    if (m.mode >= 0 && m.mode !== f.shootMode) {
+      f.shootMode = m.mode;
+      this.emit(EV_MODE, i, m.mode, 0, f.x, f.y);
+    }
     if (m.ghost) this.startGhost(i, m);
     this.attackFrame(i);
   }
@@ -647,8 +710,241 @@ export class Sim {
     f.ghostMode = 0;
   }
 
+  // ───────────────────────────── bullets / fields ─────────────────────────────
+
+  /** Fires the move's bullet from the muzzle (a free slot; the oldest bullet is replaced if full). */
+  private fire(i: number, m: CMove): void {
+    const f = this.s.f[i];
+    const c = COMPILED[f.char];
+    const p = m.proj!;
+    let slot = -1;
+    let oldest = 1 << 30;
+    for (let j = 0; j < MAX_SHOTS; j++) {
+      const sh = getShot(f, j);
+      if (!sh) {
+        slot = j;
+        break;
+      }
+      if (sh.r < oldest) {
+        oldest = sh.r;
+        slot = j;
+      }
+    }
+    const n = c.shooter ? c.shooter.shots.indexOf(m.idx) + 1 : 1;
+    const x = f.x + offX(f.facing, MUZZLE);
+    const y = f.y + offY(f.facing, MUZZLE);
+    setShot(f, slot, { n: Math.max(1, n), x, y, a: f.facing, r: p.range });
+    this.emit(EV_SHOT, i, n, f.facing, x, y);
+  }
+
+  private shotSpec(f: FighterState, n: number): NonNullable<CMove['proj']> {
+    const c = COMPILED[f.char];
+    return c.moves[c.shooter ? c.shooter.shots[n - 1] : M_N1].proj!;
+  }
+
+  private clearShots(f: FighterState): void {
+    for (let j = 0; j < MAX_SHOTS; j++) setShot(f, j, null);
+  }
+
+  /**
+   * Moves bullets and resolves their contact (swept segment vs the hurt circle, no tunnelling):
+   * a step still travelling (1–10F) = bullet just; a dash = punish; guard = slide (walls hurt);
+   * otherwise a small flat hit.
+   */
+  private updateShots(): void {
+    const s = this.s;
+    const HR = HURT_R;
+    for (let i = 0; i < 2; i++) {
+      const f = s.f[i];
+      if (!f.sh0n && !f.sh1n && !f.sh2n) continue;
+      const o = s.f[1 - i];
+      for (let j = 0; j < MAX_SHOTS; j++) {
+        const sh = getShot(f, j);
+        if (!sh) continue;
+        const p = this.shotSpec(f, sh.n);
+        const d = Math.min(p.speed, sh.r);
+        const nx = sh.x + offX(sh.a, d);
+        const ny = sh.y + offY(sh.a, d);
+        const reach = HR + p.radius;
+        const open = o.st !== ST_KO && o.st !== ST_DOWN && o.st !== ST_WAKE;
+        // a decoy the bullet passes through dissolves (baited)
+        if (o.ghostT > 0) {
+          const g = this.decoyOf(1 - i)!;
+          if (segPointDist2(sh.x, sh.y, nx, ny, g.x, g.y) <= reach * reach) this.endGhost(1 - i, 2);
+        }
+        if (open && segPointDist2(sh.x, sh.y, nx, ny, o.x, o.y) <= reach * reach) {
+          setShot(f, j, null);
+          if (o.st === ST_STEP && o.sf <= SYSTEM.step.moveFrames) {
+            this.bulletJust(i);
+            break; // every bullet is gone
+          }
+          this.shotContact(i, p, sh.a, nx, ny);
+          continue;
+        }
+        const out = nx < 0 || nx > FIELD_W || ny < 0 || ny > FIELD_H;
+        if (out || sh.r - d <= 0) setShot(f, j, null);
+        else setShot(f, j, { n: sh.n, x: nx, y: ny, a: sh.a, r: sh.r - d });
+      }
+    }
+  }
+
+  /** Stepped into a bullet: slow motion + blink JA (no ×1.5); the shooter jams, bullets vanish. */
+  private bulletJust(i: number): void {
+    const s = this.s;
+    const f = s.f[i];
+    const o = s.f[1 - i];
+    o.justWin = SYSTEM.just.window;
+    o.justNoMul = 1;
+    o.statJust++;
+    s.slow = SYSTEM.just.slow;
+    s.slowWho = 1 - i;
+    this.clearShots(f);
+    if (f.st !== ST_KO) {
+      f.st = ST_JAM;
+      f.sf = 1;
+      f.len = JAM_LEN;
+      f.move = -1;
+      f.guardF = 0;
+      f.gcQueued = 0;
+      f.momStep = 0;
+      this.emit(EV_JAM, i, 0, 0, f.x, f.y);
+    }
+    this.emit(EV_JUST, 1 - i, 0, 1, o.x, o.y);
+  }
+
+  private shotContact(i: number, p: NonNullable<CMove['proj']>, ang: number, x: number, y: number): void {
+    const s = this.s;
+    const f = s.f[i];
+    const o = s.f[1 - i];
+    if (this.isDashing(o)) {
+      // a bullet catches a dash too (×1.5)
+      const dmg = this.rawDamage(f, o, idiv(p.dmg * Math.round(SYSTEM.just.mul * 100), 100));
+      this.stagger(o, p.hitstun + SYSTEM.counterHit.stunBonus, p.hitPush, ang);
+      this.gainHurtCost(o);
+      this.shotCost(f, p);
+      s.hitstop = Math.max(s.hitstop, SHOT_HITSTOP + PUNISH_STOP);
+      this.emit(EV_HIT, i, dmg, HF_SHOT | HF_PUNISH | HF_JA, x, y);
+      return;
+    }
+    if (this.isGuarding(o)) {
+      const left = o.st === ST_BLOCKSTUN ? o.len - o.sf + 1 : 0;
+      o.st = ST_BLOCKSTUN;
+      o.sf = 1;
+      o.len = Math.max(left, p.blockstun);
+      o.gcQueued = 0;
+      o.move = -1;
+      if (o.guardF < SYSTEM.guard.startup) o.guardF = SYSTEM.guard.startup;
+      o.kbDist = p.guardPush;
+      o.kbAngle = ang;
+      o.wallGuard = 1;
+      o.statBlocks++;
+      if (SYSTEM.guard.refillOnBlock) o.guardQ = COMPILED[o.char].guardMaxQ;
+      this.shotCost(f, p);
+      s.hitstop = Math.max(s.hitstop, SHOT_BLOCKSTOP);
+      this.emit(EV_BLOCK, i, -1, 1, x, y);
+      return;
+    }
+    // hit: flat damage (outside the combo scaling), a short flinch
+    const dmg = this.rawDamage(f, o, p.dmg);
+    if (o.st === ST_HITSTUN || o.st === ST_STUN || o.st === ST_JAM) {
+      o.len = Math.max(o.len, o.sf - 1 + p.hitstun);
+    } else this.stagger(o, p.hitstun, p.hitPush, ang);
+    this.gainHurtCost(o);
+    this.shotCost(f, p);
+    s.hitstop = Math.max(s.hitstop, SHOT_HITSTOP);
+    this.emit(EV_HIT, i, dmg, HF_SHOT | (o.comboHits << 8), x, y);
+  }
+
+  /** Bullets gain half a melee hit's cost (within the same per-combo cap). */
+  private shotCost(f: FighterState, p: NonNullable<CMove['proj']>): void {
+    const g = Math.min(p.costGain, COST_COMBO_CAP - f.comboGain);
+    if (g <= 0) return;
+    f.comboGain += g;
+    f.cost = Math.min(COST_MAX, f.cost + g);
+  }
+
+  /** Places the move's field: at the aimed distance, or at the opponent's feet (within reach). */
+  private placeField(i: number, m: CMove): void {
+    const f = this.s.f[i];
+    const o = this.s.f[1 - i];
+    const F = m.field!;
+    let x: number;
+    let y: number;
+    if (f.aimed) {
+      const dist = idiv(F.maxDist * f.lungePct, 100);
+      x = f.x + offX(f.facing, dist);
+      y = f.y + offY(f.facing, dist);
+    } else {
+      const dx = o.x - f.x;
+      const dy = o.y - f.y;
+      const d = isqrt(dx * dx + dy * dy);
+      if (d > F.maxDist) {
+        x = f.x + idiv(dx * idiv(F.maxDist, 10), idiv(d, 10));
+        y = f.y + idiv(dy * idiv(F.maxDist, 10), idiv(d, 10));
+      } else {
+        x = o.x;
+        y = o.y;
+      }
+    }
+    f.fieldX = clamp(x, 0, FIELD_W);
+    f.fieldY = clamp(y, 0, FIELD_H);
+    f.fieldT = F.frames;
+    this.emit(EV_FIELD, i, F.radius, 0, f.fieldX, f.fieldY);
+  }
+
+  /** Fields tick down; the opponent stepping inside (starting or entering) is shocked. */
+  private updateFields(): void {
+    const s = this.s;
+    for (let i = 0; i < 2; i++) {
+      const f = s.f[i];
+      if (f.fieldT <= 0) continue;
+      f.fieldT--;
+      const F = FIELD_OF[f.char];
+      if (!F) continue;
+      const o = s.f[1 - i];
+      if (o.st !== ST_STEP || o.sf > SYSTEM.step.moveFrames) continue;
+      const r2 = F.radius * F.radius;
+      const dx = o.x - f.fieldX;
+      const dy = o.y - f.fieldY;
+      let inside = dx * dx + dy * dy <= r2;
+      if (!inside && o.sf === 1) {
+        // started inside (the 1st frame's travel may already have carried it out)
+        const d1 = STEP_TABLE[o.char][1];
+        const sx = dx - offX(o.moveDir, d1);
+        const sy = dy - offY(o.moveDir, d1);
+        inside = sx * sx + sy * sy <= r2;
+      }
+      if (!inside) continue;
+      const dmg = this.rawDamage(f, o, F.dmg);
+      this.stagger(o, F.stun, 0, 0);
+      o.justWin = 0;
+      this.gainHurtCost(o);
+      s.hitstop = Math.max(s.hitstop, SHOCK_HITSTOP);
+      this.emit(EV_SHOCK, 1 - i, dmg, 0, o.x, o.y);
+    }
+  }
+
   private inWin(win: { a: number; b: number } | null, f: number): boolean {
     return !!win && f >= win.a && f <= win.b;
+  }
+
+  /** S1 / S2 pressed during a cancel window of the current move. */
+  private trySkillCancel(i: number, w: number): boolean {
+    const f = this.s.f[i];
+    const c = COMPILED[f.char];
+    const bit = 1 << f.move;
+    if (f.bufS1 && c.moves[M_S1].cancelFrom & bit) {
+      const r = this.skillSlot(f, M_S1, f.move);
+      if (this.canAfford(f, c.moves[r])) {
+        this.startMove(i, r, w, true);
+        return true;
+      }
+    }
+    if (f.bufS2 && c.moves[M_S2].cancelFrom & bit && this.canAfford(f, c.moves[M_S2])) {
+      this.startMove(i, M_S2, w, true);
+      return true;
+    }
+    return false;
   }
 
   /** Chains and cancels out of a move that made contact. */
@@ -659,22 +955,16 @@ export class Sim {
     const mf = f.sf;
     const hit = f.moveHit === MH_HIT;
     const blocked = f.moveHit === MH_BLOCK;
+    // contact-free chains / cancels: a shot's next shot, a dash's turnback
+    if (f.bufAtk && m.next >= 0 && this.inWin(m.chainAny, mf)) {
+      this.startMove(i, m.next, w, true);
+      return true;
+    }
+    if (this.inWin(m.cancelAny, mf) && this.trySkillCancel(i, w)) return true;
     if (!hit && !blocked) return false;
 
     // skill cancel (GC may only cancel on hit)
-    if ((hit || m.kind !== KIND_GC) && this.inWin(m.cancel, mf)) {
-      const bit = 1 << f.move;
-      const s1 = c.moves[M_S1];
-      const s2 = c.moves[M_S2];
-      if (f.bufS1 && s1.cancelFrom & bit && this.canAfford(f, s1)) {
-        this.startMove(i, M_S1, w, true);
-        return true;
-      }
-      if (f.bufS2 && s2.cancelFrom & bit && this.canAfford(f, s2)) {
-        this.startMove(i, M_S2, w, true);
-        return true;
-      }
-    }
+    if ((hit || m.kind !== KIND_GC) && this.inWin(m.cancel, mf) && this.trySkillCancel(i, w)) return true;
     if (!f.bufAtk) return false;
     // chain reset: skill hit → N1 (once per combo)
     if (hit && m.chainReset && !f.chainResetUsed && this.inWin(m.chainReset, mf)) {
@@ -705,6 +995,13 @@ export class Sim {
       f.x += offX(f.facing, lunge);
       f.y += offY(f.facing, lunge);
     }
+    // dash: fixed travel on the active frames, through the opponent (no stop on contact)
+    if (m.dash && mf >= m.S && mf < m.S + m.A) {
+      f.x += offX(f.facing, m.dash.per);
+      f.y += offY(f.facing, m.dash.per);
+    }
+    if (m.proj && mf === m.proj.at) this.fire(i, m);
+    if (m.field && mf === m.field.at) this.placeField(i, m);
     if (m.heal && mf === m.heal.frame) {
       const c = COMPILED[f.char];
       f.hp = Math.min(c.hp, f.hp + m.heal.hp);
@@ -715,10 +1012,37 @@ export class Sim {
 
   // ───────────────────────────── bodies ─────────────────────────────
 
+  /** A dash in its startup or active frames (it loses to any attack touching it). */
+  isDashing(f: FighterState): boolean {
+    if (f.st !== ST_ATTACK) return false;
+    const m = this.moveOf(f);
+    return !!m?.dash && f.sf < m.S + m.A;
+  }
+
+  /** A dash on its active frames: goes through the opponent's body. */
+  private dashThrough(f: FighterState): boolean {
+    if (f.st !== ST_ATTACK) return false;
+    const m = this.moveOf(f);
+    return !!m?.dash && f.sf >= m.S && f.sf < m.S + m.A;
+  }
+
   private resolveBodies(): void {
     const [a, b] = this.s.f;
     const solid = (f: FighterState) => f.st !== ST_DOWN && f.st !== ST_KO;
-    if (solid(a) && solid(b)) {
+    // a dash that ends inside the opponent comes out in front of them (forward, never back)
+    for (const [f, o] of [[a, b], [b, a]] as const) {
+      const m = f.st === ST_ATTACK ? this.moveOf(f) : null;
+      if (!m?.dash || f.sf !== m.S + m.A || !solid(o)) continue;
+      const min = BODY_R * 2;
+      for (let k = 0; k < 30; k++) {
+        const dx = o.x - f.x;
+        const dy = o.y - f.y;
+        if (dx * dx + dy * dy >= min * min) break;
+        f.x += offX(f.facing, 100);
+        f.y += offY(f.facing, 100);
+      }
+    }
+    if (solid(a) && solid(b) && !this.dashThrough(a) && !this.dashThrough(b)) {
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const d2 = dx * dx + dy * dy;
@@ -816,10 +1140,17 @@ export class Sim {
       if (this.touches(a, d, m)) touching[i] = true;
     }
     if (!touching[0] && !touching[1]) return;
+    // A dash loses to any attack touching it (never a trade): its own contact is void and
+    // the attack lands as a punish (×1.5). Two dashes into each other trade normally.
+    const punish = [false, false];
+    for (let i = 0; i < 2; i++) {
+      punish[i] = touching[i] && this.isDashing(s.f[1 - i]) && !this.isDashing(s.f[i]);
+    }
+    for (let i = 0; i < 2; i++) if (punish[i]) touching[1 - i] = false;
     // Classify both contacts against the pre-contact state, then apply (trades are symmetric).
     const kinds = [0, 0];
     const moves = [this.moveOf(s.f[0]), this.moveOf(s.f[1])];
-    for (let i = 0; i < 2; i++) if (touching[i]) kinds[i] = this.classify(i);
+    for (let i = 0; i < 2; i++) if (touching[i]) kinds[i] = punish[i] ? C_PUNISH : this.classify(i);
     for (let i = 0; i < 2; i++) if (touching[i]) this.applyContact(i, kinds[i], moves[i]!, moves[1 - i]);
   }
 
@@ -850,6 +1181,7 @@ export class Sim {
       case C_JUST: {
         a.moveHit = MH_SPENT;
         d.justWin = SYSTEM.just.window;
+        d.justNoMul = 0;
         d.statJust++;
         s.slow = SYSTEM.just.slow;
         s.slowWho = 1 - i;
@@ -893,13 +1225,15 @@ export class Sim {
         a.moveHitAt = a.sf;
         d.st = ST_BLOCKSTUN;
         d.sf = 1;
-        d.len = m.blockstun;
+        // a dash keeps its advantage wherever on its active frames it was guarded
+        d.len = m.dash ? Math.max(1, m.T + 1 + m.dash.advBlock - a.sf) : m.blockstun;
         d.noGc = m.kind === KIND_GC ? 1 : 0;
         d.gcQueued = 0;
         d.move = -1;
         if (d.guardF < SYSTEM.guard.startup) d.guardF = SYSTEM.guard.startup;
         d.kbDist = m.pushback;
         d.kbAngle = away;
+        d.wallGuard = m.wallOnGuard ? 1 : 0;
         d.statBlocks++;
         // a blocked attack refills the guard gauge: only idle guarding breaks
         if (SYSTEM.guard.refillOnBlock) d.guardQ = COMPILED[d.char].guardMaxQ;
@@ -949,11 +1283,12 @@ export class Sim {
         } else if (m.knockdown || forced) {
           flags |= HF_KNOCKDOWN;
           if (forced) flags |= HF_FORCED_DOWN;
-          this.knockDown(d, away);
+          this.knockDown(d, away, m.launch);
         } else {
           d.st = ST_HITSTUN;
           d.sf = 1;
-          d.len = m.hitstun + (counter ? SYSTEM.counterHit.stunBonus : 0);
+          const base = m.dash ? Math.max(1, m.T + 1 + m.dash.advHit - a.sf) : m.hitstun;
+          d.len = base + (counter ? SYSTEM.counterHit.stunBonus : 0);
           d.move = -1;
           d.guardF = 0;
           d.gcQueued = 0;
@@ -966,10 +1301,49 @@ export class Sim {
         this.emit(EV_HIT, i, dmg, flags | (d.comboHits << 8), ex, ey);
         return;
       }
+      case C_PUNISH: {
+        // caught a dash: the attack lands ×1.5 (JA rules, also its chain), even a guard break
+        // flinches; a short impact freeze tells "you ran into it"
+        a.moveHit = MH_HIT;
+        a.moveHitAt = a.sf;
+        a.jaChain = 1;
+        const dmg = this.damage(a, d, m.gb ? m.gb.dmgGuard : m.dmg, false);
+        let flags = HF_JA | HF_PUNISH;
+        if (m.knockdown) {
+          flags |= HF_KNOCKDOWN;
+          this.knockDown(d, away, m.launch);
+        } else this.stagger(d, m.hitstun > 0 ? m.hitstun : PUNISH_STUN, m.knockback, away);
+        this.gainCost(a, m);
+        this.gainHurtCost(d);
+        s.hitstop = Math.max(s.hitstop, m.hitstop + PUNISH_STOP);
+        this.emit(EV_HIT, i, dmg, flags | (d.comboHits << 8), ex, ey);
+        return;
+      }
     }
   }
 
-  private knockDown(d: FighterState, angle: number): void {
+  /** Puts d into hit stun (interrupting whatever it was doing). */
+  private stagger(d: FighterState, len: number, kb: number, angle: number): void {
+    d.st = ST_HITSTUN;
+    d.sf = 1;
+    d.len = len;
+    d.move = -1;
+    d.guardF = 0;
+    d.gcQueued = 0;
+    d.momStep = 0;
+    d.kbDist = kb;
+    d.kbAngle = angle;
+  }
+
+  /** Flat damage outside the combo count / scaling (bullets, shocks, guard walls). */
+  private rawDamage(a: FighterState, d: FighterState, dmg: number): number {
+    d.hp = this.s.trainingRefill ? Math.max(1, d.hp - dmg) : Math.max(0, d.hp - dmg);
+    d.comboDmg += dmg;
+    a.statDmg += dmg;
+    return dmg;
+  }
+
+  private knockDown(d: FighterState, angle: number, launch = 0): void {
     d.st = ST_DOWN;
     d.sf = 1;
     d.len = SYSTEM.down.lying;
@@ -977,7 +1351,7 @@ export class Sim {
     d.move = -1;
     d.guardF = 0;
     d.gcQueued = 0;
-    d.kbDist = LAUNCH;
+    d.kbDist = launch > 0 ? launch : LAUNCH;
     d.kbAngle = angle;
     const who = this.s.f[0] === d ? 0 : 1;
     this.emit(EV_KNOCKDOWN, who, 0, 0, d.x, d.y);
@@ -1020,6 +1394,8 @@ export class Sim {
 
   private updateGauges(): void {
     const s = this.s;
+    // (not after the round is decided: the winner idling in guard must not "break")
+    if (s.phase !== PH_FIGHT) return;
     const [a, b] = s.f;
     const dx = a.x - b.x;
     const dy = a.y - b.y;
@@ -1049,7 +1425,7 @@ export class Sim {
         }
       }
       // steps regenerate one at a time
-      if (f.steps < SYSTEM.step.maxStock && f.st !== ST_STEP) {
+      if (f.steps < c.stepStock && f.st !== ST_STEP) {
         f.stepTimer++;
         let regen = c.stepRegen;
         if (f.buff > 0) {
@@ -1150,5 +1526,19 @@ const C_CRUSH = 3;
 const C_GB_OPEN = 4;
 const C_JUST = 5;
 const C_RIPOSTE = 6;
+const C_PUNISH = 7;
+/** Stagger when a guard break (no hitstun of its own) catches a dash. */
+const PUNISH_STUN = 30;
+/** Extra freeze on a dash punish. */
+const PUNISH_STOP = 4;
+/** Guarding a bullet / blast into the wall. */
+const GUARD_WALL_DMG = 30;
+/** Bullets leave this far in front of the shooter. */
+const MUZZLE = u(0.6);
+const SHOT_HITSTOP = 3;
+const SHOT_BLOCKSTOP = 2;
+const SHOCK_HITSTOP = 6;
+/** Jammed shooter: the whole JA window (it also runs during the slow motion) + the JA's startup. */
+const JAM_LEN = SYSTEM.just.window + SYSTEM.just.jaS + 2;
 
 export { U };

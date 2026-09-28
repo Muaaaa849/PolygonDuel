@@ -2,11 +2,11 @@
 import { Sim } from '../../core/sim';
 import { CHARACTERS } from '../../data/characters';
 import { SYSTEM } from '../../data/system';
-import { M_N1, M_S1, M_S2, SH, SHAPES } from '../../core/compile';
+import { M_S1, M_S2, SH, SHAPES } from '../../core/compile';
 import {
   type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE,
   EV_KNOCKDOWN, EV_STEP, EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END,
-  HF_COUNTER, HF_KNOCKDOWN,
+  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, HF_COUNTER, HF_KNOCKDOWN, HF_PUNISH, HF_SHOT,
 } from '../../core/events';
 import { PH_FIGHT, PH_INTRO, ST_FREE, ST_STEP, ST_ATTACK, type FighterState } from '../../core/state';
 import { BattleView } from '../../render/battle-view';
@@ -77,12 +77,27 @@ export function battleScreen(cfg: BattleConfig): Screen {
     const f = sim.s.f[cfg.local];
     if (f.st !== ST_FREE && f.st !== ST_STEP) return false;
     if (id === 'atk' && f.justWin > 0) return false; // just attack auto-targets
-    const m = sim.char(cfg.local).moves[id === 'atk' ? M_N1 : id === 's1' ? M_S1 : M_S2];
-    return m.hasHitbox && !m.autoAim;
+    const m = sim.char(cfg.local).moves[slotFor(id)];
+    return (m.hasHitbox || !!m.proj || !!m.field) && !m.autoAim;
+  };
+  /** The move a button starts from neutral (shooting mode: ATK = shot, S1 = back to normal). */
+  const slotFor = (id: string) => {
+    const f = sim.s.f[cfg.local];
+    return id === 'atk' ? sim.atkSlot(f) : id === 's1' ? sim.skillSlot(f, M_S1) : M_S2;
   };
   const localDef = defs[cfg.local];
   const skillLook = (i: number) => ({ shape: localDef.skills[i].shape, label: `S${i + 1}`, cost: localDef.skills[i].cost });
   touch.setButtons({ atk: { shape: 'circle', label: 'ATTACK' }, s1: skillLook(0), s2: skillLook(1), step: { shape: 'arrow', label: 'STEP' } });
+  // shooters: ATK / S1 change their look with the mode
+  let shownMode = 0;
+  const syncModeButtons = () => {
+    const mode = sim.s.f[cfg.local].shootMode;
+    if (mode === shownMode || !sim.char(cfg.local).shooter) return;
+    shownMode = mode;
+    touch.setButtons(mode
+      ? { atk: { shape: 'diamond', label: 'SHOT' }, s1: { shape: 'square', label: '通常へ' }, s2: skillLook(1), step: { shape: 'arrow', label: 'STEP' } }
+      : { atk: { shape: 'circle', label: 'ATTACK' }, s1: skillLook(0), s2: skillLook(1), step: { shape: 'arrow', label: 'STEP' } });
+  };
 
   const bannerLayer = h('div');
   root.append(bannerLayer);
@@ -168,11 +183,16 @@ export function battleScreen(cfg: BattleConfig): Screen {
     switch (e.type) {
       case EV_HIT: {
         const heavy = !!(e.b & HF_KNOCKDOWN);
-        sfx.hit(heavy, !!(e.b & HF_COUNTER));
+        if (e.b & HF_PUNISH) sfx.punish();
+        if (e.b & HF_SHOT) sfx.shotHit();
+        else if (sim.moveOf(s.f[e.who])?.id === 'blast') sfx.blast();
+        else sfx.hit(heavy, !!(e.b & HF_COUNTER));
         if (involvesLocal(e.who) || involvesLocal(1 - e.who)) vibrate(heavy ? 25 : 10);
         break;
       }
       case EV_BLOCK:
+        if (e.b === 1) sfx.shotHit();
+        else if (sim.moveOf(s.f[e.who])?.id === 'blast') sfx.blast();
         sfx.block();
         if (involvesLocal(1 - e.who)) vibrate(20);
         break;
@@ -195,6 +215,22 @@ export function battleScreen(cfg: BattleConfig): Screen {
       case EV_BLINK:
         sfx.blink();
         break;
+      case EV_SHOT:
+        sfx.shot(e.a);
+        break;
+      case EV_MODE:
+        sfx.mode(e.a === 1);
+        break;
+      case EV_FIELD:
+        sfx.field();
+        break;
+      case EV_SHOCK:
+        sfx.shock();
+        if (involvesLocal(e.who)) vibrate(30);
+        break;
+      case EV_JAM:
+        sfx.jam();
+        break;
       case EV_GHOST:
         // sounds exactly like what the decoy pretends to do
         if (e.a === 1) sfx.step();
@@ -209,9 +245,10 @@ export function battleScreen(cfg: BattleConfig): Screen {
         break;
       case EV_MOVE: {
         const m = sim.moveOf(s.f[e.who]);
-        if (m && !m.ghost) {
+        if (m && !m.ghost && !m.proj) {
           const shape = SHAPES[m.shape];
-          if (shape === 'triangle' || shape === 'pentagon' || shape === 'hexagon') sfx.startup(shape);
+          if (m.dash) sfx.dash();
+          else if (shape === 'triangle' || shape === 'pentagon' || shape === 'hexagon' || shape === 'diamond') sfx.startup(shape);
           else sfx.whoosh();
         }
         break;
@@ -545,7 +582,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
     try {
       touch.tickAim();
       const a = touch.aim;
-      view.aim = a ? { slot: a.id === 'atk' ? M_N1 : a.id === 's1' ? M_S1 : M_S2, x: a.x, y: a.y, frac: a.frac, auto: a.auto, cancel: a.cancel, who: cfg.local } : null;
+      view.aim = a ? { slot: slotFor(a.id), x: a.x, y: a.y, frac: a.frac, auto: a.auto, cancel: a.cancel, who: cfg.local } : null;
       view.render((drawDt / TICK_MS) * devTime);
       app.render();
     } catch (err) {
@@ -613,8 +650,9 @@ export function battleScreen(cfg: BattleConfig): Screen {
   function updateButtons(): void {
     const f = sim.s.f[cfg.local];
     const c = sim.char(cfg.local);
+    syncModeButtons();
     const av = (slot: number) => {
-      const m = c.moves[slot];
+      const m = c.moves[slot === M_S1 ? sim.skillSlot(f, M_S1) : slot];
       const ok = (f.infCost || f.cost >= m.cost) && (m.usesPerRound === 0 || f.healUses < m.usesPerRound);
       return ok ? 'ready' : 'off';
     };

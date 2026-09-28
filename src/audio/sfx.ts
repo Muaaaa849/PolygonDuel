@@ -124,8 +124,12 @@ export const sfx = {
     noise(0.25, 1800, 0.8, 0.45);
   },
   /** Attack start: the shape has a voice. circle = short blip, triangle = rising warning. */
-  startup(shape: 'circle' | 'triangle' | 'pentagon' | 'hexagon') {
-    if (shape === 'triangle') {
+  startup(shape: 'circle' | 'triangle' | 'pentagon' | 'hexagon' | 'diamond') {
+    if (shape === 'diamond') {
+      // diamond (shooting): a short bright "ting", unlike the triangle's rising warning
+      tone(1760, 0.07, 'square', 0.05, 2400);
+      tone(2640, 0.09, 'sine', 0.06, 3200, 0.02);
+    } else if (shape === 'triangle') {
       tone(420, 0.28, 'sawtooth', 0.07, 840);
       tone(425, 0.28, 'square', 0.03, 850);
     } else if (shape === 'pentagon') {
@@ -135,6 +139,58 @@ export const sfx = {
     } else {
       tone(700, 0.04, 'triangle', 0.05, 900);
     }
+  },
+  /** Bullet fired: a short "チュン". Later shots of a volley pitch up a little. */
+  shot(n: number) {
+    const k = 1 + (n - 1) * 0.08;
+    tone(2200 * k, 0.09, 'square', 0.07, 900 * k);
+    tone(3300 * k, 0.06, 'sine', 0.06, 1400 * k);
+    noise(0.05, 7000, 2, 0.08, 'highpass');
+  },
+  /** A bullet landed: lighter than a melee hit. */
+  shotHit() {
+    tone(900, 0.06, 'square', 0.08, 400);
+    noise(0.07, 3400, 1, 0.2);
+  },
+  /** Switch blast: point-blank shotgun boom. */
+  blast() {
+    noise(0.35, 1800, 0.5, 0.6, 'bandpass', 200);
+    tone(140, 0.3, 'sine', 0.5, 40);
+    for (let i = 0; i < 6; i++) tone(2000 + Math.random() * 2000, 0.05, 'square', 0.04, 800, 0.01 * i);
+  },
+  /** Mode switch: a mechanical rack (on) / release (off). */
+  mode(on: boolean) {
+    noise(0.04, 2600, 3, 0.18, 'bandpass', undefined, 0);
+    noise(0.04, on ? 3400 : 1800, 3, 0.18, 'bandpass', undefined, 0.07);
+    tone(on ? 880 : 660, 0.12, 'triangle', 0.08, on ? 1320 : 440, 0.07);
+  },
+  /** Static field placed: a humming charge. */
+  field() {
+    tone(120, 0.5, 'sawtooth', 0.06, 240);
+    noise(0.5, 5000, 3, 0.05, 'bandpass', 9000);
+  },
+  /** Stepped into the field: an electric zap. */
+  shock() {
+    for (let i = 0; i < 4; i++) noise(0.05, 4000 + i * 900, 4, 0.22, 'bandpass', 1200, i * 0.035);
+    tone(90, 0.25, 'sawtooth', 0.15, 60);
+  },
+  /** Jammed (out of ammo): the dry "カチッ" of an empty trigger. */
+  jam() {
+    tone(2600, 0.02, 'square', 0.12);
+    noise(0.03, 3800, 6, 0.25, 'bandpass');
+    tone(1900, 0.02, 'square', 0.1, undefined, 0.09);
+    noise(0.03, 3000, 6, 0.2, 'bandpass', undefined, 0.09);
+  },
+  /** Dash thrust: a sharp air-tearing zip. */
+  dash() {
+    noise(0.18, 1500, 1.2, 0.2, 'bandpass', 8000);
+    tone(500, 0.14, 'sawtooth', 0.05, 1500);
+  },
+  /** An attack caught a dash (×1.5): a heavy crack with a bright ring. */
+  punish() {
+    tone(1760, 0.25, 'triangle', 0.14, 880);
+    tone(80, 0.35, 'sine', 0.5, 30);
+    noise(0.3, 2200, 0.6, 0.5, 'bandpass', 300);
   },
   whoosh() {
     noise(0.14, 900, 0.7, 0.12, 'bandpass', 2600);

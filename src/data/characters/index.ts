@@ -3,8 +3,10 @@ import { blaze } from './blaze';
 import { zephyr } from './zephyr';
 import { bastion } from './bastion';
 import { phantom } from './phantom';
+import { ray } from './ray';
+import { volt } from './volt';
 
 /** Registration order = character index used in the simulation state. */
-export const CHARACTERS: readonly CharacterDef[] = [blaze, zephyr, bastion, phantom];
+export const CHARACTERS: readonly CharacterDef[] = [blaze, zephyr, bastion, phantom, ray, volt];
 
 export const charIndex = (id: string): number => CHARACTERS.findIndex((c) => c.id === id);

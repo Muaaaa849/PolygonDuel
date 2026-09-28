@@ -28,12 +28,22 @@ export const EV_BLINK = 22;
 export const EV_GHOST = 23;
 /** Illusion ended: a = reason (0 timed out, 1 real revealed itself, 2 an attack touched the decoy), x/y = decoy position. */
 export const EV_GHOST_END = 24;
+/** A bullet left the muzzle: a = shot number, x/y = muzzle. */
+export const EV_SHOT = 25;
+/** Shooting mode changed: a = new mode (1 on, 0 off). */
+export const EV_MODE = 26;
+/** A floor field was placed: x/y = center, a = radius (milli-u). */
+export const EV_FIELD = 27;
+/** who = the fighter shocked by a field (stepped in it); a = damage. */
+export const EV_SHOCK = 28;
+/** who = the shooter jammed (a bullet was just-dodged). */
+export const EV_JAM = 29;
 
 export const EV_NAMES: Record<number, string> = {
   [EV_MOVE]: 'move', [EV_HIT]: 'hit', [EV_BLOCK]: 'block', [EV_CRUSH]: 'crush', [EV_GUARD_BREAK]: 'guardBreak',
   [EV_GB_OPEN]: 'gbOpen', [EV_JUST]: 'just', [EV_RIPOSTE]: 'riposte', [EV_KNOCKDOWN]: 'knockdown', [EV_STEP]: 'step',
   [EV_HEAL]: 'heal', [EV_KO]: 'ko', [EV_ROUND]: 'round', [EV_FIGHT]: 'fight', [EV_TIMEUP]: 'timeup',
-  [EV_ROUND_END]: 'roundEnd', [EV_MATCH_END]: 'matchEnd', [EV_WAKE]: 'wake', [EV_WHIFF]: 'whiff', [EV_GUARD]: 'guard', [EV_WALL]: 'wall', [EV_BLINK]: 'blink', [EV_GHOST]: 'ghost', [EV_GHOST_END]: 'ghostEnd',
+  [EV_ROUND_END]: 'roundEnd', [EV_MATCH_END]: 'matchEnd', [EV_WAKE]: 'wake', [EV_WHIFF]: 'whiff', [EV_GUARD]: 'guard', [EV_WALL]: 'wall', [EV_BLINK]: 'blink', [EV_GHOST]: 'ghost', [EV_GHOST_END]: 'ghostEnd', [EV_SHOT]: 'shot', [EV_MODE]: 'mode', [EV_FIELD]: 'field', [EV_SHOCK]: 'shock', [EV_JAM]: 'jam',
 };
 
 // HIT flags
@@ -42,6 +52,10 @@ export const HF_JA = 2;
 export const HF_OTG = 4;
 export const HF_KNOCKDOWN = 8;
 export const HF_FORCED_DOWN = 16;
+/** The hit / block came from a bullet (EV_HIT flags; EV_BLOCK b = 1). */
+export const HF_SHOT = 32;
+/** An attack caught a dash in its startup / active frames (×1.5). */
+export const HF_PUNISH = 64;
 
 export interface SimEvent {
   type: number;

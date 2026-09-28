@@ -49,6 +49,8 @@ SHAPE_RADII[SH.triangle] = sample(ngon(3, 0.74, 0));
 SHAPE_RADII[SH.arrow] = sample([[0.82, 0], [-0.5, 0.58], [-0.14, 0], [-0.5, -0.58]]);
 SHAPE_RADII[SH.pentagon] = sample(ngon(5, 0.62, 0));
 SHAPE_RADII[SH.star] = SHAPE_RADII[SH.square];
+// diamond (shooting / bullets): a rhombus stretched along the facing, unlike the square
+SHAPE_RADII[SH.diamond] = sample([[0.8, 0], [0, 0.48], [-0.62, 0], [0, -0.48]]);
 
 /** Spring-morphing radius set (4F convergence, ~13% overshoot). */
 export class Morph {

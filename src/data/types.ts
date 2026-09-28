@@ -10,7 +10,8 @@ export type Shape =
   | 'triangle' // guard break → move / step away
   | 'arrow' // step → punish the recovery
   | 'pentagon' // heal / buff → go hit them
-  | 'star'; // stunned → full combo
+  | 'star' // stunned → full combo
+  | 'diamond'; // shooting / a bullet → step INTO it (bullet just), guard in the open, eat it at a wall
 
 export type Window = readonly [number, number];
 
@@ -66,6 +67,45 @@ export interface GhostSpec {
   frames: number;
 }
 
+/** A bullet fired by the move (レイの射撃). Distances in u, speed in u per frame. */
+export interface ProjectileSpec {
+  /** Move frame the bullet leaves the muzzle. */
+  at: number;
+  speed: number;
+  range: number;
+  radius: number;
+  dmg: number;
+  hitstun: number;
+  blockstun: number;
+  /** Slide on hit / on guard (u). A guarded bullet can slam the target into the wall. */
+  hitPush: number;
+  guardPush: number;
+  /** Cost gained by the shooter on hit or guard (whole units; melee gives 0.5). */
+  costGain: number;
+}
+
+/** A zone placed on the floor (レイのスタティックフィールド). */
+export interface FieldSpec {
+  /** Move frame the field is placed. */
+  at: number;
+  radius: number;
+  frames: number;
+  /** Aimed placement distance at full reach (u); a tap places it at the opponent's feet (clamped). */
+  maxDist: number;
+  /** Starting a step inside it, or stepping into it: damage + stagger, the step is cut. */
+  dmg: number;
+  stun: number;
+}
+
+/** A dash thrust (ヴォルトのダッシュスラスト): travels through the opponent on its active frames. */
+export interface DashSpec {
+  /** Travel over the active frames (u). Bodies don't push while it is active. */
+  dist: number;
+  /** Frame advantage on hit / on block (stun is set so this holds on any active frame). */
+  advHit: number;
+  advBlock: number;
+}
+
 export interface MoveDef {
   id: string;
   name: string;
@@ -119,6 +159,19 @@ export interface MoveDef {
   otg?: boolean;
   heal?: HealSpec;
   ghost?: GhostSpec;
+  /** ATK on these frames starts `next` whether or not the move touched anything (連射). */
+  chainAny?: Window;
+  /** Skill cancel window that works on hit, block AND whiff (ダッシュ → ターンバック). */
+  cancelAny?: Window;
+  projectile?: ProjectileSpec;
+  field?: FieldSpec;
+  dash?: DashSpec;
+  /** Knockdown launch distance (u) instead of the system's. */
+  launch?: number;
+  /** Its guard pushback can slam the guard into the wall (wall damage while guarding). */
+  wallOnGuard?: boolean;
+  /** Sets the shooting mode at its 1st frame (1 = on, 0 = off). */
+  mode?: 0 | 1;
   /** Short description for UI. */
   desc?: string;
 }
@@ -136,13 +189,21 @@ export interface CharacterDef {
   hp: number;
   /** u / second */
   walk: number;
-  step: { dist: number; regen: number };
+  /** `stock`: step stock (default SYSTEM.step.maxStock = 2). */
+  step: { dist: number; regen: number; stock?: number };
   /** Guard gauge in frames of continuous guarding (refilled by every blocked attack). */
   guardMax: number;
   /** Which side the 1st swing starts from (N1 right→left, N2 back, N3 spin). */
   swing: 'right' | 'left';
   normals: { n1: MoveDef; n2: MoveDef; n3: MoveDef };
   skills: [MoveDef, MoveDef];
+  /** Extra moves (slots 8+), reached through `shooter` or skill resolution. */
+  extraMoves?: MoveDef[];
+  /**
+   * Shooting-mode character (レイ): S1 toggles the mode (skills[0] turns it on, `off` turns it
+   * off, from N2 it becomes `blast`); in the mode ATK fires `shots` (a chain of up to 3).
+   */
+  shooter?: { walk: number; shots: [string, string, string]; off: string; blast: string };
   /** Suggested combos for tutorial / move list. */
   combos: { route: string; cost: number; note: string }[];
   tips: string[];

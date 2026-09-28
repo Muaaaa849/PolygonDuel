@@ -11,6 +11,8 @@ export const ST_DOWN = 5;
 export const ST_WAKE = 6;
 export const ST_STUN = 7;
 export const ST_KO = 8;
+/** Out of ammo: a shooter whose bullet was just-dodged can't act until the JA lands (square). */
+export const ST_JAM = 9;
 
 // Result of the current move's contact
 export const MH_NONE = 0;
@@ -117,6 +119,20 @@ export interface FighterState {
    *  frame to keep applying (0 = none) and its direction. */
   momStep: number;
   momDir: number;
+  /** Shooting mode (レイ): ATK fires bullets. Kept through hits, reset each round. */
+  shootMode: number;
+  /** The pending just attack came from a bullet just (no ×1.5). */
+  justNoMul: number;
+  /** The current guard pushback came from a bullet / blast: slamming the wall hurts. */
+  wallGuard: number;
+  /** Bullets (up to 3): shot number (0 = none), position, direction, range left. */
+  sh0n: number; sh0x: number; sh0y: number; sh0a: number; sh0r: number;
+  sh1n: number; sh1x: number; sh1y: number; sh1a: number; sh1r: number;
+  sh2n: number; sh2x: number; sh2y: number; sh2a: number; sh2r: number;
+  /** Floor field owned by this fighter: frames left (0 = none), center. */
+  fieldT: number;
+  fieldX: number;
+  fieldY: number;
   // stats (for the result screen)
   statDmg: number;
   statGc: number;
@@ -164,6 +180,9 @@ export function newFighter(): FighterState {
     chainResetUsed: 0, otgUsed: 0, comboHits: 0, comboFrames: 0, comboDmg: 0, downAge: 0, kbDist: 0, kbAngle: 0,
     limited: 0, buff: 0, healUses: 0, csHit: 0, prevIn: 0, lastDir: 0,
     aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, wallHits: 0, lungePct: 100, momStep: 0, momDir: 0,
+    shootMode: 0, justNoMul: 0, wallGuard: 0,
+    sh0n: 0, sh0x: 0, sh0y: 0, sh0a: 0, sh0r: 0, sh1n: 0, sh1x: 0, sh1y: 0, sh1a: 0, sh1r: 0, sh2n: 0, sh2x: 0, sh2y: 0, sh2a: 0, sh2r: 0,
+    fieldT: 0, fieldX: 0, fieldY: 0,
     ghostT: 0, ghostMode: 0, ghostX: 0, ghostY: 0, ghostSx: 0, ghostSy: 0, ghostTx: 0, ghostTy: 0, ghostFace: 0, ghostAtk: 0,
     statDmg: 0, statGc: 0, statJust: 0, statCrush: 0, statMaxCombo: 0, statBlocks: 0, statHitsTaken: 0,
     infGuard: 0, infCost: 0,
@@ -217,6 +236,32 @@ export function hashSnapshot(a: Int32Array): number {
   }
   return h >>> 0;
 }
+
+/** Bullet j (0..2) of fighter f, or null. */
+export interface Shot {
+  n: number;
+  x: number;
+  y: number;
+  a: number;
+  r: number;
+}
+const SHOT_KEYS = [0, 1, 2].map((j) => ({ n: `sh${j}n`, x: `sh${j}x`, y: `sh${j}y`, a: `sh${j}a`, r: `sh${j}r` }));
+type Rec = Record<string, number>;
+export function getShot(f: FighterState, j: number): Shot | null {
+  const k = SHOT_KEYS[j];
+  const r = f as unknown as Rec;
+  return r[k.n] ? { n: r[k.n], x: r[k.x], y: r[k.y], a: r[k.a], r: r[k.r] } : null;
+}
+export function setShot(f: FighterState, j: number, s: Shot | null): void {
+  const k = SHOT_KEYS[j];
+  const r = f as unknown as Rec;
+  r[k.n] = s ? s.n : 0;
+  r[k.x] = s ? s.x : 0;
+  r[k.y] = s ? s.y : 0;
+  r[k.a] = s ? s.a : 0;
+  r[k.r] = s ? s.r : 0;
+}
+export const MAX_SHOTS = 3;
 
 const scratch = new Int32Array(SNAPSHOT_SIZE);
 export const hashState = (s: GameState): number => hashSnapshot(saveState(s, scratch));

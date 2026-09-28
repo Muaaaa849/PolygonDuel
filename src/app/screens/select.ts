@@ -3,6 +3,7 @@
 import { CHARACTERS } from '../../data/characters';
 import type { CharacterDef } from '../../data/types';
 import { CPU_LEVELS } from '../../ai/cpu';
+import { SYSTEM } from '../../data/system';
 import { settings, saveSettings } from '../settings';
 import { backButton, h, hex, shapeIcon } from '../ui';
 import { sfx } from '../../audio/sfx';
@@ -167,6 +168,11 @@ export function charCards(onSelect: (i: number) => void, initial = 0): CardsApi 
     for (const [label, v] of statRows(c)) {
       stats.append(h('span', null, label), h('div', { class: 'bar' }, h('i', { style: `width:${Math.round(Math.max(0.08, Math.min(1, v)) * 100)}%` })));
     }
+    // step stock (ヴォルト has 3)
+    const stock = c.step.stock ?? SYSTEM.step.maxStock;
+    const steps = h('div', { class: 'step-pips' });
+    for (let k = 0; k < stock; k++) steps.append(h('i'));
+    stats.append(h('span', null, 'ステップ'), steps);
     // skill chips: always one row of two; tap one for the full move sheet
     const skills = h('div', { class: 'skills' },
       ...c.skills.map((s, k) => {
@@ -245,7 +251,7 @@ export function selectScreen(opts: SelectOptions): Screen {
     refresh();
   }, initial);
 
-  const oppSeg = h('div', { class: 'segmented' });
+  const oppSeg = h('div', { class: `segmented${CHARACTERS.length >= 5 ? ' compact' : ''}` });
   const levelSeg = h('div', { class: 'segmented' });
   const refreshSeg = () => {
     oppSeg.innerHTML = '';
