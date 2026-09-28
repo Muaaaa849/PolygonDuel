@@ -10,10 +10,10 @@ import { ST_ATTACK, ST_FREE, ST_STEP, ST_STUN } from '../src/core/state';
 import { SYSTEM } from '../src/data/system';
 
 describe('tempo', () => {
-  it.each(CHARACTERS.map((c) => c.id))('%s: N1 starts within human reaction + online delay (15–18F)', (id) => {
+  it.each(CHARACTERS.map((c) => c.id))('%s: N1 starts around the edge of human reaction + online delay (15–21F, v0.9)', (id) => {
     const n1 = getChar(charIndex(id)).moves[M_N1];
     expect(n1.S).toBeGreaterThanOrEqual(15);
-    expect(n1.S).toBeLessThanOrEqual(18);
+    expect(n1.S).toBeLessThanOrEqual(21);
   });
 
   it.each(CHARACTERS.map((c) => c.id))('%s: a whiffed N1 recovers faster than a blocked one', (id) => {
@@ -59,7 +59,7 @@ describe('tempo', () => {
 
   it.each(CHARACTERS.map((c) => c.id))('%s: idle guarding breaks after the gauge (~1.5s)', (id) => {
     const c = CHARACTERS[charIndex(id)];
-    const sc = new Scenario(id, 'blaze', 2).run(200, () => 0, () => stick(8));
+    const sc = new Scenario(id, 'blaze', 2).run(200, () => 0, (_m, _o, _s, t) => stick(t % 40 < 20 ? 8 : 24)); // (stays within 5u)
     const br = sc.events(EV_GUARD_BREAK, 0);
     expect(br.length).toBe(1);
     expect(br[0].lf).toBeGreaterThanOrEqual(c.guardMax - 2);

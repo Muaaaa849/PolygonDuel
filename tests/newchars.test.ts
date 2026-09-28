@@ -356,11 +356,15 @@ describe('ヴォルト', () => {
     expect(sc.events(EV_STEP, 0).length).toBeGreaterThanOrEqual(3);
   });
 
-  it('R14: no dash from neutral', () => {
-    const sc = new Scenario('volt', 'blaze', 3);
-    sc.run(30, (_m, _o, _s, t) => (t === 0 ? IN_S1 : 0), guard);
-    expect(sc.moves(0).length).toBe(0);
-    expect(sc.s.f[0].cost).toBe(SYSTEM.cost.start * 4);
+  it('R14 (v0.9): the dash also comes out on its own (from neutral), passing behind a guard at +2', () => {
+    const sc = new Scenario('volt', 'blaze', 2.4);
+    sc.run(60, (_m, _o, _s, t) => (t === 0 ? IN_S1 : 0), guard);
+    expect(sc.moves(0)[0].a).toBe(M_S1);
+    expect(sc.s.f[0].cost).toBe(SYSTEM.cost.start * 4 - volt.moves[M_S1].cost);
+    expect(sc.blocks(0).length).toBe(1);
+    expect(sc.s.f[0].x).toBeGreaterThan(sc.s.f[1].x);
+    // and the steps stay free for moving: 3 in stock after it
+    expect(sc.s.f[0].steps).toBe(3);
   });
 
   it('R9: a guarded dash passes behind at +2; a hit is +3 and no combo', () => {

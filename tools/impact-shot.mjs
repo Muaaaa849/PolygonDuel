@@ -14,7 +14,7 @@ await p.getByText('決定').first().click();
 await p.waitForTimeout(2500);
 const ev = (s) => p.evaluate(s);
 // ── wall impact: blaze 1-2-3 into the right edge
-await ev(`(() => { const B = __battle; B.pause(true); B.setTime(0); B.reset(); const s = B.sim.s; s.f[1].x = 16500 - 900; s.f[0].x = s.f[1].x - 1600; s.f[0].y = s.f[1].y = 4650; window.__t = 0; })()`);
+await ev(`(() => { const B = __battle; B.pause(true); B.setTime(0); B.reset(); const s = B.sim.s; s.f[1].x = 24750 - 900; s.f[0].x = s.f[1].x - 1600; s.f[0].y = s.f[1].y = 6975; window.__t = 0; })()`);
 let shots = 0;
 for (let k = 0; k < 200; k++) {
   const r = await ev(`(() => { const B = __battle; const w = B.sim.s.frame; B.step(1, (__t++ % 4 === 0) ? 64 : 0, (__t % 20 < 10) ? (32|8) : (32|24)); return B.sim.events.map(e => e.type); })()`);
@@ -28,7 +28,7 @@ for (let k = 0; k < 200; k++) {
   }
 }
 // ── just dodge → slow → blink JA
-await ev(`(() => { const B = __battle; B.reset(); const s = B.sim.s; s.f[0].x = 8000; s.f[1].x = 10200; s.f[0].y = s.f[1].y = 4650; window.__t = 0; })()`);
+await ev(`(() => { const B = __battle; B.reset(); const s = B.sim.s; s.f[0].x = 11300; s.f[1].x = 13500; s.f[0].y = s.f[1].y = 6975; window.__t = 0; })()`);
 // dummy (B) attacks toward A; A steps away at frame 20
 let justAt = -1;
 for (let t = 0; t < 120; t++) {
