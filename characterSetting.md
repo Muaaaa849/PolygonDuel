@@ -71,7 +71,7 @@
 | `sweep` | 扇の範囲 [開始°, 終了°] | 通常技・GC・JAは省略で自動（±35°、2段目逆、3段目±180°）。スキルは省略＝突き |
 | `dmg` / `hitstun` / `blockstun` / `hitstop` | 威力・ヒット硬直・ガード硬直・ヒットストップ | 硬直は当たったFを1F目として数える |
 | `next` / `chainHit` / `chainBlock` / `cancel` | 次の段・受付窓 | §3 |
-| `knockdown` | ヒットでダウン | 3段目に付ける |
+| `knockdown` | ヒットでダウン | 3段目に付ける。3段目（id 'n3'）が当たると硬直は半分（`SYSTEM.finisherRecovery`、自動）。3段目の `cancel` 窓はその短い全体Fの内側に置くこと |
 | `knockback` / `pushback` | ヒット時／ガード時に相手が滑る距離 u | ノックバックで場外に触れると壁ダメージ（§5） |
 | `cost` | スキルのコスト | 0.5刻み |
 | `cancelFrom` | どこから出せるか | `'neutral'`＝自由状態、`'step'`＝ステップの3F目から、`'n1'`（GC・JAも含む）、`'n2'`、`'n3'`、他の技のID（例 `'dashThrust'`） |

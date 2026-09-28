@@ -1,12 +1,12 @@
 // v0.7 tempo rules: fast startups, short whiff recovery, step → attack with momentum,
 // a short guard gauge that every blocked attack refills.
 import { describe, expect, it } from 'vitest';
-import { Scenario, stick, IN_ATK, IN_S2, IN_STEP, type Bot } from './harness';
+import { Scenario, stick, sequence, IN_ATK, IN_S2, IN_STEP, type Bot } from './harness';
 import { getChar, CTL_FACE_FOE, CTL_MANUAL_GUARD } from '../src/core/sim';
 import { CHARACTERS, charIndex } from '../src/data/characters';
-import { M_N1, M_S1, M_S2 } from '../src/core/compile';
+import { M_N1, M_N3, M_S1, M_S2 } from '../src/core/compile';
 import { EV_CRUSH, EV_GUARD_BREAK } from '../src/core/events';
-import { ST_ATTACK, ST_FREE, ST_STEP, ST_STUN } from '../src/core/state';
+import { ST_ATTACK, ST_DOWN, ST_FREE, ST_STEP, ST_STUN, ST_WAKE } from '../src/core/state';
 import { SYSTEM } from '../src/data/system';
 import { IN_GUARD } from '../src/core/input';
 
@@ -134,5 +134,44 @@ describe('guard setting (v0.9)', () => {
   it('v1.2 costs: Ray static field 2, Bastion riposte 2', () => {
     expect(getChar(charIndex('ray')).moves[M_S2].cost).toBe(2 * 4);
     expect(getChar(charIndex('bastion')).moves[M_S1].cost).toBe(2 * 4);
+  });
+
+  it.each(CHARACTERS.map((c) => c.id))('v1.4 %s: the combo-ending N3 that hits recovers in half (a guarded one keeps its full recovery)', (id) => {
+    const c = getChar(charIndex(id));
+    const n3 = c.moves[M_N3];
+    const act = n3.S + n3.A - 1;
+    expect(n3.hitT).toBe(act + Math.ceil((n3.T - act) / 2));
+    const hitThenGuard: Bot = (me) => (me.statHitsTaken > 0 ? 0 : stick(16));
+    const sc = new Scenario(id, 'bastion', 1.4);
+    let start = -1;
+    const seq = sequence('AAA');
+    sc.run(300, (me, o, s, t) => {
+      if (start < 0 && me.st === ST_ATTACK && me.move === M_N3) start = sc.lf - 1;
+      return seq(me, o, s, t);
+    }, hitThenGuard);
+    expect(sc.hits(0).length).toBe(3);
+    const free = sc.freeAt[0].find((f) => f > start)!;
+    expect(free - start).toBe(n3.hitT + 1); // free on sf = hitT + 1 (was T + 1)
+  });
+
+  it('v1.4: for 3 seconds after getting up, steps travel twice as far', () => {
+    const stepDist = (boost: boolean) => {
+      const sc = new Scenario('blaze', 'zephyr', 6);
+      if (boost) sc.s.f[0].wakeBoost = SYSTEM.wakeStep.frames;
+      const y0 = sc.s.f[0].y;
+      sc.run(20, (_m, _o, _s, t) => (t === 0 ? IN_STEP | stick(8) : 0), () => 0);
+      return Math.abs(sc.s.f[0].y - y0);
+    };
+    const normal = stepDist(false);
+    const boosted = stepDist(true);
+    expect(boosted).toBeGreaterThan(normal * 1.9);
+    // the bonus starts when the wake-up ends and runs out after SYSTEM.wakeStep.frames
+    const sc = new Scenario('blaze', 'blaze', 1.4);
+    sc.run(300, sequence('AAA'), (me) => (me.statHitsTaken > 0 ? 0 : stick(16)));
+    const d = sc.s.f[1];
+    expect(d.st === ST_DOWN || d.st === ST_WAKE).toBe(false);
+    expect(d.wakeBoost).toBeGreaterThan(0);
+    sc.run(SYSTEM.wakeStep.frames, () => 0, () => 0);
+    expect(sc.s.f[1].wakeBoost).toBe(0);
   });
 });

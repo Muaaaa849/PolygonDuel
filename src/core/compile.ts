@@ -56,6 +56,8 @@ export interface CMove {
   T: number;
   /** Total frames when the move touched nothing (normals recover faster on a whiff). */
   whiffT: number;
+  /** Total frames when it hit: N3 (the combo's last normal) recovers faster (SYSTEM.finisherRecovery). */
+  hitT: number;
   reach: number;
   lunge: number;
   /** Per-frame lunge distance, index = move frame. */
@@ -174,6 +176,7 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     S: m.S,
     A: m.A,
     T: m.T,
+    hitT: m.kind === 'normal' && m.id === 'n3' && m.A > 0 ? m.S + m.A - 1 + Math.ceil((m.T - (m.S + m.A - 1)) * SYSTEM.finisherRecovery) : m.T,
     whiffT: m.kind === 'normal' && m.A > 0 && m.reach > 0 ? m.S + m.A - 1 + Math.ceil((m.T - (m.S + m.A - 1)) * SYSTEM.whiffRecovery) : m.T,
     reach: u(m.reach),
     lunge,

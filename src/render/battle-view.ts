@@ -1703,10 +1703,14 @@ export class BattleView {
     }
     // steps
     const sx = start + n * w + 4;
+    // after getting up (steps ×2): the chevrons turn white, stretch and pulse
+    const boost = f.wakeBoost > 0;
+    const pulse = boost ? 0.7 + 0.3 * Math.sin(this.t * 0.5) : 1;
     for (let k = 0; k < this.sim.char(i & 1).stepStock; k++) {
-      const cx = sx + k * 12;
+      const cx = sx + k * (boost ? 16 : 12);
       const on = k < f.steps;
-      g.poly([cx - 4, by - 7, cx + 4, by, cx - 4, by + 7, cx, by]).fill({ color: on ? 0x58f0a0 : 0x56607e, alpha: on ? 0.95 : 0.4 });
+      const L = boost ? 8 : 4;
+      g.poly([cx - L, by - 7, cx + L, by, cx - L, by + 7, cx - L + 4, by]).fill({ color: on ? (boost ? 0xffffff : 0x58f0a0) : 0x56607e, alpha: on ? 0.95 * pulse : 0.4 });
     }
   }
 }

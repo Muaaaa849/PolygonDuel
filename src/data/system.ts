@@ -41,6 +41,13 @@ export const SYSTEM = {
    * only this share of its recovery is played. Placing attacks is less of a gamble.
    */
   whiffRecovery: 0.6,
+  /**
+   * v1.4: the last hit of a normal combo (N3, whichever chain it ends) that lands only plays
+   * this share of its recovery — you hit them, you can move. (Guarded N3 keeps its full recovery: C8.)
+   */
+  finisherRecovery: 0.5,
+  /** v1.4: for `frames` after getting up (WAKE ends) steps travel `mul`× as far — a way out of the corner. */
+  wakeStep: { frames: 180, mul: 2 },
 
   gc: {
     S: 14,
