@@ -3,6 +3,7 @@
 見下ろし型 1vs1 “形を読む” 対戦アクション（スマホ横持ち・ブラウザ）。元になった設計書は
 「POLYGON DUEL 設計・開発計画書（28ページPDF）」で、リポジトリには含まれていない。
 計画書の要点はこのファイルに書いてある。進捗・既知の問題は **progress.md**、キャラの追加・設計（全パラメータ、フレームの式、エフェクトの作り方）は **characterSetting.md** を参照。
+描画・通信・読み込みを触るときは、先に **§12 軽量化・ラグ対策** を読むこと（守らないと、スマホでカクつく・オンラインで相手が止まる）。
 
 - 公開URL：https://muaaaa849.github.io/PolygonDuel/
 - 作業ブランチ：`claude/dev-project-start-ut2c5k`。これがデフォルトブランチで、push するとCIが走り、Pagesへ自動公開される。
@@ -56,6 +57,9 @@ npm run build        # tsc + vite build → dist/（sw.js を自動生成）
 npm run gen:trig     # src/core/trig-table.ts を再生成（通常は触らない）
 python3 tools/fx/gen_fx.py [--preview out.png]   # エフェクトのスプライトを再生成（numpy/opencv-python-headless/pillow が必要）
 node tools/gen-icons.mjs                          # PWAアイコンPNGを public/icon.svg から生成
+node tools/perf-bench.mjs fight [秒] [mid|high|low]  # 激しい対戦中のメインスレッド負荷（devサーバーが必要。§12.1）
+node tools/perf-bench.mjs firstuse                   # 全フィルター・全シートの「初回使用」の描画時間（ウォームアップ漏れの検出）
+node tools/perf-bench.mjs resize                     # 衝撃波を出しながらリサイズしても描き続けるか（Pixiの不具合回避の確認）
 ```
 
 CI（`.github/workflows/deploy.yml`）は、型チェック → vitest → ビルドの順に実行する。デフォルトブランチへの push の場合だけ、そのあと Pages に公開する。
@@ -75,17 +79,18 @@ src/core/      決定論シミュレーション（DOMに触れない純粋計�
   input.ts       入力ワード（21bit：10bit＋エイム11bit）
   rng.ts         xorshift（CPU用。sim内では未使用）
 src/data/      純データ：system.ts（共通数値）、characters/{blaze,zephyr,bastion,phantom}.ts、types.ts
-src/net/       qr-signaling.ts（SDP圧縮）、transport.ts（WebRTC）、rollback.ts、relay.ts（リンク部屋のシグナリング）
+src/net/       qr-signaling.ts（SDP圧縮）、transport.ts（WebRTC）、rollback.ts、relay.ts（リンク部屋のシグナリング）、
+               event-filter.ts（巻き戻しで再発行された演出イベントの重複除去）
 src/input/     touch.ts（フローティングスティック＋形アイコンボタン）、keyboard.ts（＋ゲームパッド）
-src/render/    pixi-app.ts、battle-view.ts（描画本体）、shapes.ts（64頂点モーフ）、
-               vfx.ts（手続き的パーティクル）、fx-sprites.ts（焼き込みスプライト）
+src/render/    pixi-app.ts（アプリ・60fps上限・Pixiの不具合回避）、battle-view.ts（描画本体）、shapes.ts（64頂点モーフ）、
+               vfx.ts（手続き的パーティクル）、fx-sprites.ts（焼き込みスプライト）、warmup.ts（GPUの事前準備）
 src/audio/     sfx.ts（WebAudio合成音・振動）
 src/ai/        cpu.ts（CPU＋トレモ用ダミー）
-src/app/       ui.ts, router.ts, settings.ts, hud.ts, qr-view.ts,
+src/app/       ui.ts, router.ts, settings.ts, hud.ts, qr-view.ts, frame-clock.ts（対戦ループのフレーム配分）,
                screens/{title,select,battle,online,tutorial,info,frame-meter}.ts
-public/fx/     焼き込み済みの透過WebPスプライトシート26種＋fx.json（コミット済み）。lo/ はスマホ用の半解像度版
+public/fx/     焼き込み済みの透過WebPスプライトシート27種＋fx.json（コミット済み）。lo/ はスマホ用の半解像度版
 tests/         harness.ts（ボットで実シムを駆動）ほか
-tools/         gen-trig.mjs, gen-icons.mjs, fx/gen_fx.py, shot.mjs, online-test.mjs, room-test.mjs
+tools/         gen-trig.mjs, gen-icons.mjs, fx/gen_fx.py, shot.mjs, online-test.mjs, room-test.mjs, perf-bench.mjs
 ```
 
 **ビルドハッシュ**（`vite.config.ts` の simHash）は `src/core`・`src/data`・`src/net/rollback.ts` の内容から作る。QRに埋め込み、接続時に照合する。ハッシュが違う相手とは対戦できない。
@@ -267,6 +272,9 @@ FREE のときは、スティックを倒していれば移動（四角）、中
 - `netcode.test.ts`：遅延・ロスありの擬似ネットワークで両端末が同期すること、巻き戻し後の結果が一直線に実行した結果と同じこと、決定論、状態が整数だけであること。
 - `qr-signaling.test.ts`：SDP圧縮の往復変換。
 - `cpu-soak.test.ts`：CPU同士の全組み合わせが最後まで決着すること（勝率をログに出す）。
+- `frame-clock.test.ts`：60／59.94／90／120／144Hzの画面で、シムがきっかり毎秒60回進み、描画も毎秒約60回（シムが進んだフレームだけ）になること。60Hzで1フレームに0回・2回とぶれないこと。ポーズ中は描かないこと。
+- `event-filter.test.ts`：巻き戻しで再発行・1〜2Fずれた演出イベントを二重に出さないこと（実際のロールバック2台でも確認）。
+- `perf-budget.test.ts`：`Sim.step` とロールバック1tickの処理時間の上限（実測の約20倍。遅くするとCIで落ちる。§12.1）。
 
 ---
 
@@ -285,7 +293,8 @@ FREE のときは、スティックを倒していれば移動（四角）、中
   - 毎パケットに、相手がまだ受け取っていない入力を最大32F分まとめて送る（冗長送信）。
   - 時刻同期：先行しすぎていれば、20Fに1回まで1Fスキップする。
   - 30Fごとに確定したフレームの状態ハッシュを交換し、不一致なら `onDesync`。
-- **演出イベントの重複除去**：巻き戻し再計算で同じイベントが再発行されるので、`frame:type:who` をキーに重複を除く（battle.ts）。
+- **演出イベントの重複除去**（`event-filter.ts`）：巻き戻し再計算で同じイベントが再発行されるので、`frame:type:who` をキーに重複を除く。
+  さらに、修正後の流れでは同じイベントが1〜2Fずれて出ることがある（相手の本当のスティック入力で位置が少し変わり、ヒットが1F遅れる等）。再計算中のイベントは、同じ種類・同じキャラで±2F以内に表示済みなら同じものとみなして出さない（出すと火花・音・ダメージ数字が二重になる）。
 - ホストが1P（左）、ゲストが2P。対戦後は接続を維持したまま、オンラインのキャラ選択画面に戻る。
 - **リンク部屋**（遠くの人と。`relay.ts`＋`online.ts` の roomHostScreen / roomJoinScreen）
   - 公開のPeerJSシグナリングサーバー（`wss://0.peerjs.com`）を、SDPと候補の受け渡しにだけ使う。対戦はP2Pのまま。
@@ -319,7 +328,7 @@ FREE のときは、スティックを倒していれば移動（四角）、中
   - `handle(e)`：イベントに応じた演出。
     - ヒット、3段目で攻撃側から広がる波紋（ripple）＋衝撃波、ガード成功時のハニカムシールド（guard_t）、クラッシュ、ジャスト、リポスト、KO、土煙。
 - `fx-sprites.ts`：`public/fx/fx.json` を読み込んで、コマ送りのスプライトを管理する。
-  - **タッチ端末とメモリ4GB以下の端末は `fx/lo/`（半解像度）を読む**。フル解像度はGPUメモリを約193MB使い、スマホでWebGLコンテキストが落ちて画面が真っ暗になった（シムと音は動き続ける）。半解像度は約48MB。シート一覧は characterSetting.md §7.3。
+  - **タッチ端末とメモリ4GB以下の端末は `fx/lo/`（半解像度）を読む**。フル解像度はGPUメモリを約197MB使い、スマホでWebGLコンテキストが落ちて画面が真っ暗になった（シムと音は動き続ける）。半解像度は約49MB。シート一覧は characterSetting.md §7.3。
   - コンテキストが落ちたら「描画を復旧しています…」を出す（Pixiが復元する）。描画の例外で対戦ループは止めない。
   - `spawn(name, {x, y, size, rot, tint, flipY, loop, follow, speed, alpha})`
   - `_t` で終わるシートは白で焼いてあり、`tint` でキャラ色に着色する。
@@ -328,6 +337,7 @@ FREE のときは、スティックを倒していれば移動（四角）、中
   - **白飛びに注意**：ブルームと加算合成が重なると、画面が真っ白になって形が読めなくなる。サイズや alpha は控えめにする（過去に抑えた経緯がある）。
 - 画質：自動の場合、タッチ端末は mid から始める。実測の描画時間で low/mid/high を切り替える。フラッシュ抑制の設定あり。
 - 対戦中は Pixi 自身の ticker を止め、自前のループで「入力 → シム → `app.render()`」を同じフレームで行う（遅延を減らすため）。
+  フレームの配分は `app/frame-clock.ts`：60Hz固定のtickを刻み、**描くのはシムが進んだフレームだけ**（120Hzの画面でも描画は毎秒60回）。ポーズ中（モーダル表示中）は描かない。詳細は §12.2。
 
 ## 10. アプリ・UI
 
@@ -350,11 +360,67 @@ FREE のときは、スティックを倒していれば移動（四角）、中
 - **ボタン配置**（`input/layout.ts`、`screens/layout-editor.ts`）：設定→ボタン配置→編集。各操作部品の中心を画面比率、大きさを倍率（0.6〜1.8）で `settings.layout` に保存。
   - 設定は localStorage に保存される（ブラウザごと）。別のブラウザ・端末へは「設定ファイル」の書き出し（JSONダウンロード＋クリップボード）→読み込み（ファイル選択か貼り付け）。
 - 開発時のフック `__battle.setTime(k)`：描画の時間倍率（0でエフェクトを止めてスクショ）。`tools/impact-shot.mjs`（壁とジャスト）、`tools/movesheet-shot.mjs`（技詳細デモ）。
+  `__battle.pause(true)` は開発用のポーズで、画面は描き続ける（本物のポーズは画面を止める。スクリプトで `step` した結果を撮るため）。
 - 設定は localStorage の `polygon-duel.settings.v1` に保存する（try/catch で囲むこと）。
 
 ## 11. 作業の約束
 
 - 開発はブランチ `claude/dev-project-start-ut2c5k` で行う。コミットの最後には、会話で指示された attribution 行を付ける。
 - push する前に、`npx tsc --noEmit && npx vitest run` が通ることを確認する。演出を変えたら、スクリーンショットで目視確認する。
+- 描画・演出・通信・読み込みを変えたら §12 のチェックリストを確認する（フィルターやシートを足したら `node tools/perf-bench.mjs firstuse`）。
 - 数値を調整するときは、まず `src/data/` を触る。規約テストが落ちたら、データのほうが間違っている。
 - 計画書に書かれていない仕様は、テーマ（形＝対処）とプレイヤー視点で補完する。決めたことは README の「計画書から補完・調整した点」に追記する。
+
+---
+
+## 12. 軽量化・ラグ対策（v0.6。今後も守ること）
+
+目標は「見た目と手触りを変えずに、スマホで落ちない・カクつかない・オンラインで相手を待たせない」。
+**片方の端末の一瞬の引っかかりは、オンラインでは相手側の停止（ストール）や巻き戻しになる**。描画の工夫はそのまま通信対策でもある。
+
+### 12.1 測り方と基準値
+- `npm test` に `perf-budget.test.ts` が入っている。実測は `Sim.step` 約1µs、ロールバック1tick（2台分、片道5F遅延）約15µs。上限はその約20倍で、超えるとCIで落ちる。
+  シムの処理は巻き戻しで1描画フレームに最大9回（通常1＋巻き戻し8）走るので、`Sim.step` に重い処理（毎tickの配列生成、全状態ハッシュ、ログなど）を入れない。
+- `node tools/perf-bench.mjs fight`：激しい対戦中のメインスレッド時間。この環境のChromiumはswiftshader（GPUが別プロセスのソフト描画）なので、フレームレートは参考にならない。見るのはメインスレッドの数字。
+  v0.6時点（844×390、mid）：`view.render` 平均0.3ms、`app.render` 平均1.5ms・最大11ms（最適化前は平均2.7ms・最大227ms）。
+- `node tools/perf-bench.mjs firstuse`：全フィルター・全27シートの「初回使用」の描画時間。v0.6時点で全部3.5ms以下。
+  最適化前は、初回のシェーダー作成とテクスチャ転送で、衝撃波545ms・色収差228ms・モノクロ199ms・KOシート748msかかっていた（対戦で最初の3段目・ジャスト・KOの瞬間に止まっていた）。
+
+### 12.2 描画（src/render・battle.ts）
+1. **GPUの事前準備（`render/warmup.ts`）**：タイトル表示中に、対戦で使うフィルター（ブルーム・衝撃波・色収差・モノクロ）のシェーダーを作り、全エフェクトシートをGPUへ送る。1フレームに1件ずつ、そのフレームの描画の後に行う。
+   - **新しい種類のフィルターを使うときは `warmShaders()` に足す**。シートは `fxSources()` で自動的に全部送られる。足したら `perf-bench.mjs firstuse` で確認する。
+   - 送る量はスマホ（lo）で約49MB、PCで約197MB。シートを増やすときは characterSetting.md §7.3 の大きさの目安を守る（真っ暗バグの再発防止）。
+2. **描くのはシムが進んだフレームだけ（`app/frame-clock.ts`）**：90／120／144Hzの画面でも描画は毎秒60回（120Hzなら描画の負荷・発熱・電池消費が半分。60Hzで動くコマとカメラのずれも無くなる）。
+   - 対戦中の演出は必ず `render(dtFrames)` の経過時間で動かす。表示フレームごとの前提（1フレーム＝1/120秒など）で作らない。
+   - rAFの時刻は約0.1ms単位に丸められているので、そのまま積算すると60Hzで「0回・2回」とtickがぶれる。1ms以内の誤差は整数tick（120Hzは半tick）に揃える（`snapVsync`）。
+   - ポーズ中（モーダル表示中）は描かない。モーダルの背景ぼかし（`backdrop-filter`）の下で絵が動くと、ぼかしを毎フレーム作り直すことになる。対戦中の画面の上に、ぼかし付きの要素を常時出さない。
+   - サイズが変わったら（回転・ブラウザのバー）必ず描き直す（Pixiはリサイズでキャンバスを消す）。
+3. **自動画質**：描画の間隔が1.5tickを超えた（＝コマ落ちした）回数を数え、120回中8回以上なら1段下げる。平均だけでは「4回に1回落ちる」を見逃していた。
+   逆に、90Hz以上の画面で1回も落ちない端末は mid→high に1回だけ上げる。対戦開始直後の1秒は数えない。high でしか成立しない演出を作らない（low はブルーム無し）。
+4. **Graphicsは変わらない物を作り直さない**：床・グリッドは一度だけ（`fieldG`）。場外の線は揺れていない間は作り直さない。
+   幻影レイヤー・画面フラッシュ・パーティクルは、何か描いたフレームの次のフレームにだけ消す（何も無い間は触らない）。空の `clear()` を毎フレーム呼ばない。
+5. **スプライトは使い回す**：`FxLayer` は終わったスプライトをプール（最大48）に戻して再利用する。演出ごとに `new Sprite`／`destroy` しない。`Text` は生成も文字の変更も重い（canvas描画＋GPU転送）ので、`vfx.text` のプールを使い、毎フレーム新しい文字列を作らない。
+6. **フィルターは必要な間だけ**：色収差・モノクロ・衝撃波は `applyFilters()` で付け外しする。画質を変えたら古いブルームを `destroy` する。
+7. **メニュー**：Pixiの ticker は `cap60()`（`maxFPS = 62.5`）。Pixiは経過時間を整数msに切り捨てて比べるので、`maxFPS = 60` だと120Hzの画面で40fpsになる。
+   キャラカードのプレビューも60fpsまで、技詳細シートを開いている間は止める。シートのデモ（別のWebGLキャンバス）が動く間はメニューの ticker を止める（アニメーションするWebGLキャンバスは常に1つ）。
+8. **DOM**：HUDは値が変わった時だけ書く（`hud.ts`）。フレームメーターは新しいフレームを記録した時だけ描く。毎フレームの `getBoundingClientRect()` やレイアウトを変えるスタイル変更をしない。
+9. **Pixiの不具合の回避（`pixi-app.ts`）**：Pixi 8.21はリサイズのたびに、使っていない画面サイズのテクスチャをプールから破棄する。
+   ところが FilterSystem は、入れ子のフィルター（床の衝撃波 ⊂ ブルームのかかったworld）で前フレームの破棄済みテクスチャを読み、例外を出していた。例外で filter のスタックが戻らず、以後の描画が全部失敗する（**画面が固まる・真っ黒になる。次の対戦でも直らない**。回転やブラウザのバーが出るだけで起きた）。
+   `_findFilterResolution` を安全な版に差し替え、描画で例外が出たら `recoverRenderer()` でスタックを戻す。**Pixiを更新したら `node tools/perf-bench.mjs resize` を実行する**（衝撃波を出しながらリサイズして、エラーが出ず描き続けることを確認。回避を外すとこのバグが再現する）。
+
+### 12.3 通信（オンラインのラグ）
+1. 入力遅延は往復遅延の片道分（1〜3F）、巻き戻しは最大8F、未確認の入力を毎パケット最大32F分まとめて送る（§8）。入力は順序保証なし・再送なしの `game` チャンネルだけで送る。`ctrl`（信頼性あり）に入力を流さない（再送待ちで詰まる）。
+2. パケットのバッファは使い回す（`rollback.ts` の `sendBuf`）。`send` に渡された配列を保持したい場合は、コピーしてから保持する（`RTCDataChannel.send` はその場でコピーするので本番はそのまま）。
+3. `getStats()`（経路の判定）は5秒に1回。RTTはpingの中央値を毎秒使う。対戦中に重いAPIを毎フレーム呼ばない。
+4. 巻き戻しで出る演出の重複は `EventFilter` で除く（§8）。結果画面は一度だけ出す（`matchOver`）。
+5. リンク部屋の中継（PeerJS）は、P2Pがつながった時点で閉じる。対戦中にシグナリングの通信はしない。
+6. オンライン中はポーズできない（シムを止めると相手がストールする）。
+
+### 12.4 読み込み
+1. 起動時のバンドルに、めったに使わない重いライブラリを入れない。jsQR（約130KB）はQRを読む時だけ動的 `import()` する（起動時のメインJSは619KB→503KB、gzipで205KB→162KB）。
+2. Service Worker の事前キャッシュは、実際に使うフォント（latin の woff2 2つ）と半解像度シートだけ。フル解像度シートは使った時にキャッシュする。
+3. エフェクトシートは起動後にバックグラウンドで読む（読み込み前でも対戦できる）。デコードはPixiがワーカーで行う。
+
+### 12.5 見た目を変えない確認
+- 最適化の前後で、同じ場面のスクリーンショットを比べる（`tools/impact-shot.mjs`、`tools/movesheet-shot.mjs`、`tools/shot.mjs`）。
+- 最適化前のコードと比べたいときは `git stash` → 撮影 → `git stash pop`。
