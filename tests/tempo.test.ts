@@ -154,23 +154,30 @@ describe('guard setting (v0.9)', () => {
     expect(free - start).toBe(n3.hitT + 1); // free on sf = hitT + 1 (was T + 1)
   });
 
-  it('v1.4: for 3 seconds after getting up, steps travel twice as far', () => {
-    const stepDist = (boost: boolean) => {
+  it('v1.4.2: after getting up, the first step within 3 seconds travels 1.5× as far — then steps are normal again', () => {
+    const run = (boost: boolean, steps: number) => {
       const sc = new Scenario('blaze', 'zephyr', 6);
       if (boost) sc.s.f[0].wakeBoost = SYSTEM.wakeStep.frames;
-      const y0 = sc.s.f[0].y;
-      sc.run(20, (_m, _o, _s, t) => (t === 0 ? IN_STEP | stick(8) : 0), () => 0);
-      return Math.abs(sc.s.f[0].y - y0);
+      const d: number[] = [];
+      for (let k = 0; k < steps; k++) {
+        const y0 = sc.s.f[0].y;
+        sc.run(20, (_m, _o, _s, t) => (t === 20 * k ? IN_STEP | stick(k % 2 ? 24 : 8) : 0), () => 0);
+        d.push(Math.abs(sc.s.f[0].y - y0));
+      }
+      return { d, sc };
     };
-    const normal = stepDist(false);
-    const boosted = stepDist(true);
-    expect(boosted).toBeGreaterThan(normal * 1.9);
+    const normal = run(false, 1).d[0];
+    const boosted = run(true, 2);
+    expect(boosted.d[0] / normal).toBeGreaterThan(1.45);
+    expect(boosted.d[0] / normal).toBeLessThan(1.55);
+    expect(boosted.d[1]).toBe(normal); // used up by the first step
+    expect(boosted.sc.s.f[0].wakeBoost).toBe(0);
     // the bonus starts when the wake-up ends and runs out after SYSTEM.wakeStep.frames
     const sc = new Scenario('blaze', 'blaze', 1.4);
     sc.run(300, sequence('AAA'), (me) => (me.statHitsTaken > 0 ? 0 : stick(16)));
-    const d = sc.s.f[1];
-    expect(d.st === ST_DOWN || d.st === ST_WAKE).toBe(false);
-    expect(d.wakeBoost).toBeGreaterThan(0);
+    const df = sc.s.f[1];
+    expect(df.st === ST_DOWN || df.st === ST_WAKE).toBe(false);
+    expect(df.wakeBoost).toBeGreaterThan(0);
     sc.run(SYSTEM.wakeStep.frames, () => 0, () => 0);
     expect(sc.s.f[1].wakeBoost).toBe(0);
   });

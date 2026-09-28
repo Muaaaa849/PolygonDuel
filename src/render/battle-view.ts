@@ -1703,7 +1703,7 @@ export class BattleView {
     }
     // steps
     const sx = start + n * w + 4;
-    // after getting up (steps ×2): the chevrons turn white, stretch and pulse
+    // after getting up (next step ×1.5): the chevrons turn white, stretch and pulse
     const boost = f.wakeBoost > 0;
     const pulse = boost ? 0.7 + 0.3 * Math.sin(this.t * 0.5) : 1;
     for (let k = 0; k < this.sim.char(i & 1).stepStock; k++) {

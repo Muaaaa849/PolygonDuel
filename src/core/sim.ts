@@ -141,7 +141,7 @@ export class Sim {
         kbDist: 0, kbAngle: 0, limited: 0, buff: 0, healUses: 0, csHit: 0,
         lastDir: i === 0 ? 0 : 16,
         aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, lungePct: 100, wallHits: 0, momStep: 0, momDir: 0,
-        ghostT: 0, ghostMode: 0, shootMode: 0, justNoMul: 0, wallGuard: 0, fieldT: 0, power: 0, instLock: 0, pullUsed: 0, wakeBoost: 0, stepMul: 1,
+        ghostT: 0, ghostMode: 0, shootMode: 0, justNoMul: 0, wallGuard: 0, fieldT: 0, power: 0, instLock: 0, pullUsed: 0, wakeBoost: 0, stepPct: 100,
       });
       for (let j = 0; j < MAX_SHOTS; j++) setShot(f, j, null);
       f.char = keepChar;
@@ -335,7 +335,7 @@ export class Sim {
         if (f.sf > f.len) {
           this.toFree(f);
           f.limited = SYSTEM.down.limited;
-          // just got up: steps go twice as far for a while (a way out of a corner)
+          // just got up: the next step (within 3 s) goes 1.5× as far (a way out of a corner)
           f.wakeBoost = SYSTEM.wakeStep.frames;
           this.freeLogic(i, w);
         } else {
@@ -361,7 +361,7 @@ export class Sim {
       f.momStep = 0;
       return;
     }
-    const d = STEP_TABLE[f.char][f.momStep++] * f.stepMul;
+    const d = idiv(STEP_TABLE[f.char][f.momStep++] * f.stepPct, 100);
     f.x += offX(f.momDir, d);
     f.y += offY(f.momDir, d);
   }
@@ -575,7 +575,9 @@ export class Sim {
     f.moveDir = w & IN_STICK ? dirAngle(w) : (this.angleTo(i) + ANG / 2) & (ANG - 1);
     if (f.steps === COMPILED[f.char].stepStock) f.stepTimer = 0;
     f.steps--;
-    f.stepMul = f.wakeBoost > 0 ? SYSTEM.wakeStep.mul : 1;
+    // after getting up: this one step goes further, and uses the bonus up
+    f.stepPct = f.wakeBoost > 0 ? SYSTEM.wakeStep.pct : 100;
+    f.wakeBoost = 0;
     f.st = ST_STEP;
     f.sf = 1;
     f.move = -1;
@@ -587,7 +589,7 @@ export class Sim {
 
   private stepMove(f: FighterState): void {
     if (f.sf > SYSTEM.step.moveFrames) return;
-    const d = STEP_TABLE[f.char][f.sf] * f.stepMul;
+    const d = idiv(STEP_TABLE[f.char][f.sf] * f.stepPct, 100);
     f.x += offX(f.moveDir, d);
     f.y += offY(f.moveDir, d);
   }
@@ -1065,7 +1067,7 @@ export class Sim {
       let inside = dx * dx + dy * dy <= r2;
       if (!inside && o.sf === 1) {
         // started inside (the 1st frame's travel may already have carried it out)
-        const d1 = STEP_TABLE[o.char][1] * o.stepMul;
+        const d1 = idiv(STEP_TABLE[o.char][1] * o.stepPct, 100);
         const sx = dx - offX(o.moveDir, d1);
         const sy = dy - offY(o.moveDir, d1);
         inside = sx * sx + sy * sy <= r2;

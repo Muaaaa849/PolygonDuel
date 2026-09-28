@@ -46,8 +46,11 @@ export const SYSTEM = {
    * this share of its recovery — you hit them, you can move. (Guarded N3 keeps its full recovery: C8.)
    */
   finisherRecovery: 0.5,
-  /** v1.4: for `frames` after getting up (WAKE ends) steps travel `mul`× as far — a way out of the corner. */
-  wakeStep: { frames: 180, mul: 2 },
+  /**
+   * After getting up (WAKE ends), the first step within `frames` travels `pct`% as far — a way
+   * out of the corner. One step only: it is used up by that step (v1.4.2: 1.5×, once).
+   */
+  wakeStep: { frames: 180, pct: 150 },
 
   gc: {
     S: 14,
