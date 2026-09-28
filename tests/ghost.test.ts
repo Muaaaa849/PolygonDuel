@@ -4,7 +4,9 @@ import { Scenario, stick, IN_ATK, IN_S1, IN_S2, guard, type Bot } from './harnes
 import { u } from '../src/core/fixed';
 import { EV_GHOST, EV_GHOST_END, EV_HIT, EV_CRUSH } from '../src/core/events';
 import { ST_ATTACK, ST_STEP } from '../src/core/state';
-import { COST_UNIT } from '../src/core/compile';
+import { COST_UNIT, M_N1 } from '../src/core/compile';
+import { getChar } from '../src/core/sim';
+import { charIndex } from '../src/data/characters';
 
 const idle: Bot = () => stick(8) & 0; // stands (guards)
 
@@ -50,8 +52,10 @@ describe('ghost (illusion)', () => {
     expect(sc.blocks(0).length).toBe(0);
     const end = sc.events(EV_GHOST_END, 0)[0];
     expect(end.a).toBe(0);
-    expect(end.lf).toBeGreaterThanOrEqual(22);
-    expect(end.lf).toBeLessThanOrEqual(32);
+    // dissolves right after its fake blade passes through (N1's S + A)
+    const pn1 = getChar(charIndex('phantom')).moves[M_N1];
+    expect(end.lf).toBeGreaterThanOrEqual(pn1.S + pn1.A - 2);
+    expect(end.lf).toBeLessThanOrEqual(pn1.S + pn1.A + 8);
   });
 
   it('the real one moves freely during the illusion', () => {

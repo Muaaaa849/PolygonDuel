@@ -29,7 +29,18 @@ export const SYSTEM = {
     breakRefill: 0.25,
     /** Hexagon shrinks down to this scale at empty gauge. */
     minScale: 0.45,
+    /**
+     * Blocking an attack refills the gauge: guarding against real attacks never breaks,
+     * only standing in guard with nothing coming (the gauge is short: ~1.5s) does.
+     */
+    refillOnBlock: true,
   },
+
+  /**
+   * A normal that touched nothing (a real whiff, not a just-dodged one) recovers faster:
+   * only this share of its recovery is played. Placing attacks is less of a gamble.
+   */
+  whiffRecovery: 0.6,
 
   gc: {
     S: 14,
@@ -57,8 +68,11 @@ export const SYSTEM = {
     maxStock: 2,
     /** A second step may be started from this frame of the first. */
     chainFrom: 8,
-    /** Attack may cancel the recovery from this frame. */
-    attackCancelFrom: 11,
+    /**
+     * Attacks / skills may cancel the step from this frame (after the just-dodge frames),
+     * keeping the step's remaining travel as momentum: step-in attacks close distance fast.
+     */
+    attackCancelFrom: 3,
     /** Just-dodge frames (hit on these step frames = just). */
     justFrames: 2,
   },

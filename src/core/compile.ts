@@ -50,6 +50,8 @@ export interface CMove {
   S: number;
   A: number;
   T: number;
+  /** Total frames when the move touched nothing (normals recover faster on a whiff). */
+  whiffT: number;
   reach: number;
   lunge: number;
   /** Per-frame lunge distance, index = move frame. */
@@ -75,7 +77,7 @@ export interface CMove {
   cancelFrom: number;
   usesPerRound: number;
   gb: { crush: number; dmgGuard: number; dmgOpen: number } | null;
-  cs: { from: number; to: number; dmg: number; strikeT: number } | null;
+  cs: { from: number; to: number; dmg: number; strikeT: number; stagger: number; pull: number; refund: number } | null;
   chainReset: CWindow | null;
   otg: boolean;
   heal: { frame: number; hp: number; buffFrames: number; walkPct: number; stepRegenMul: number } | null;
@@ -140,6 +142,7 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     S: m.S,
     A: m.A,
     T: m.T,
+    whiffT: m.kind === 'normal' && m.A > 0 && m.reach > 0 ? m.S + m.A - 1 + Math.ceil((m.T - (m.S + m.A - 1)) * SYSTEM.whiffRecovery) : m.T,
     reach: u(m.reach),
     lunge,
     lungeAt: lungeTable(m.S, m.T, lunge, m.lungeFrom),
@@ -162,7 +165,9 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     cancelFrom,
     usesPerRound: m.usesPerRound ?? 0,
     gb: m.guardBreak ? { ...m.guardBreak } : null,
-    cs: m.counterStance ? { ...m.counterStance } : null,
+    cs: m.counterStance
+      ? { from: m.counterStance.from, to: m.counterStance.to, dmg: m.counterStance.dmg, strikeT: m.counterStance.strikeT, stagger: m.counterStance.stagger, pull: u(m.counterStance.pull), refund: m.counterStance.refund }
+      : null,
     chainReset: win(m.chainReset),
     otg: !!m.otg,
     heal: m.heal ? { ...m.heal } : null,
@@ -195,10 +200,13 @@ export function compileCharacter(def: CharacterDef, idx: number): CChar {
     knockback: n1.knockback, pushback: n1.pushback,
   };
   const cs = def.skills.find((s) => s.counterStance)?.counterStance;
+  // riposte strike: no hitbox of its own (its damage lands on the riposte), but it chains
+  // into N2 → N3 while the caught attacker staggers
   const strikeDef: MoveDef = {
     id: 'strike', name: '反撃', kind: 'skill', shape: 'circle',
     S: 1, A: 0, T: cs?.strikeT ?? 20, reach: 0, lunge: 0,
     dmg: 0, hitstun: 0, blockstun: 0, hitstop: 0,
+    ...(cs ? { next: 'n2', chainHit: cs.chain } : {}),
   };
   // Swings (fan attacks): N1 from the character's side, N2 back, N3 a full spin.
   const w = SYSTEM.swingHalfDeg;

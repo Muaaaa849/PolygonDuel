@@ -15,8 +15,8 @@ function statRows(c: CharacterDef): [string, number][] {
     ['体力', (c.hp - 800) / 400],
     ['速さ', (c.walk - 3.6) / 1.8],
     ['リーチ', (n1.reach + n1.lunge - 2.0) / 1.0],
-    ['円の速さ', (28 - n1.S) / 9],
-    ['ガード', (c.guardMax - 180) / 140],
+    ['円の速さ', (21 - n1.S) / 6],
+    ['ガード', (c.guardMax - 60) / 50],
   ];
 }
 

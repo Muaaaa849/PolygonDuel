@@ -29,8 +29,11 @@ function facts(m: MoveDef): [string, string][] {
     rows.push(['ガード中の相手', `クラッシュ：スタン${m.guardBreak.crush}F＋${m.guardBreak.dmgGuard}ダメージ → フルコンボへ`]);
     rows.push(['ガードしていない相手', `${m.guardBreak.dmgOpen}ダメージのみ（怯まない）`]);
   } else if (m.counterStance) {
-    rows.push(['成立', `円の攻撃が触れると即反撃：${m.counterStance.dmg}ダメージ＋ダウン`]);
-    rows.push(['弱点', '三角（ガードブレイク）には崩される']);
+    const cs = m.counterStance;
+    rows.push(['成立', `円の攻撃が触れると即反撃：${cs.dmg}ダメージ＋よろけ（${cs.stagger}F）。相手を${cs.pull}uまで引き寄せる`]);
+    rows.push(['追撃', `反撃の${cs.chain[0]}〜${cs.chain[1]}Fに攻撃で 2段目→3段目（ガード→GCより痛い）`]);
+    rows.push(['コスト', `成立するとコスト${cs.refund}が戻る（外すと支払ったまま）`]);
+    rows.push(['弱点', '三角（ガードブレイク）には崩される。何も来なければ隙だらけ']);
   } else if (m.heal) {
     rows.push(['効果', `HP+${m.heal.hp}、${Math.round(m.heal.buffFrames / 60)}秒間 移動+${m.heal.walkPct}%・ステップ回復×${m.heal.stepRegenMul}`]);
     if (m.usesPerRound) rows.push(['回数', `1ラウンド${m.usesPerRound}回まで`]);
@@ -47,6 +50,9 @@ function facts(m: MoveDef): [string, string][] {
   rows.push(['エイム', m.reach > 0 && m.A > 0 ? `ボタンをドラッグで方向${m.lunge > 0 ? 'と突進距離' : ''}を指定できる` : 'その場で発動（エイム不要）']);
   return rows;
 }
+
+/** Total frames of a whiffed normal (only part of the recovery is played; see core/compile.ts). */
+const whiffT = (m: MoveDef): number => m.S + m.A - 1 + Math.ceil((m.T - (m.S + m.A - 1)) * SYSTEM.whiffRecovery);
 
 function skillBlock(c: CharacterDef, m: MoveDef, slot: number): HTMLElement {
   const info = SHAPE_INFO.find((x) => x.shape === m.shape)!;
@@ -80,10 +86,10 @@ function normalsBlock(c: CharacterDef): HTMLElement {
       h('div', { class: 'ms-title' }, h('small', null, 'ATK'), h('b', null, '通常攻撃 1→2→3')),
     ),
     h('div', { class: 'ms-text' },
-      h('p', null, `円・前方70°の横振り。1段目は${side}から → 2段目は逆から → 3段目は一回転してダウン。1段目が当たれば3段目まで確定。`),
+      h('p', null, `円・前方70°の横振り。1段目は${side}から → 2段目は逆から → 3段目は一回転してダウン。1段目が当たれば3段目まで確定。空振りは硬直が短い（置いておける）。ステップ中に押すと、ステップの勢いのまま出る。`),
       h('div', { class: 'ms-ntable' },
-        h('span'), h('small', null, '発生'), h('small', null, '全体'), h('small', null, '威力'), h('small', null, 'リーチ'),
-        ...[n.n1, n.n2, n.n3].flatMap((m) => [h('b', null, m.name), h('span', null, `${m.S}F`), h('span', null, `${m.T}F`), h('span', null, String(m.dmg)), h('span', null, `${m.reach}u`)]),
+        h('span'), h('small', null, '発生'), h('small', null, '全体'), h('small', null, '空振り'), h('small', null, '威力'), h('small', null, 'リーチ'),
+        ...[n.n1, n.n2, n.n3].flatMap((m) => [h('b', null, m.name), h('span', null, `${m.S}F`), h('span', null, `${m.T}F`), h('span', null, `${whiffT(m)}F`), h('span', null, String(m.dmg)), h('span', null, `${m.reach}u`)]),
       ),
     ),
   );

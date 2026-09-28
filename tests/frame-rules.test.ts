@@ -187,8 +187,17 @@ describe('skill & system rules (plan §6-9 table 2)', () => {
     expect(sc.hits(0).length).toBe(3);
   });
 
-  it('Bastion: riposte canceled from a blocked N1 on frames 30–37 catches the GC', () => {
-    for (let cf = 30; cf <= 37; cf++) {
+  it('Bastion: riposte canceled from a blocked N1 catches the GC (every cancel frame whose stance covers it)', () => {
+    const b = getChar(IDS.indexOf('bastion'));
+    const bn1 = b.moves[M_N1];
+    const cs = b.moves[5].cs!;
+    const gc = getChar(IDS.indexOf('blaze')).moves[M_GC];
+    // Blaze's GC after blocking Bastion's N1 lands on this frame of the N1
+    const gcHit = bn1.S + bn1.blockstun + gc.S - 1;
+    const lo = Math.max(bn1.cancel!.a, gcHit - cs.to + 1);
+    const hi = Math.min(bn1.cancel!.b, gcHit - cs.from + 1);
+    expect(hi - lo).toBeGreaterThanOrEqual(5);
+    for (let cf = lo; cf <= hi; cf++) {
       const a: Bot = (me, op, s, t) => {
         if (t === 0) return IN_ATK;
         if (me.st === ST_ATTACK && me.move === M_N1 && me.moveHit === MH_BLOCK && me.sf === cf - 1) return IN_S1;

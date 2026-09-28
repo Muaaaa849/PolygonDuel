@@ -26,9 +26,18 @@ export interface GuardBreakSpec {
 export interface CounterStanceSpec {
   from: number;
   to: number;
+  /** Damage of the retaliation strike (the 1st hit of a combo). */
   dmg: number;
   /** Recovery of the retaliation strike. */
   strikeT: number;
+  /** Hitstun the caught attacker suffers (long enough for the strike → N2 chain). */
+  stagger: number;
+  /** Strike frames on which ATK chains into N2 (→ N3). */
+  chain: Window;
+  /** The caught attacker is pulled in to this distance (u) so N2 reaches. */
+  pull: number;
+  /** Cost given back when the riposte lands (whole units). */
+  refund: number;
 }
 
 export interface HealSpec {
@@ -128,7 +137,7 @@ export interface CharacterDef {
   /** u / second */
   walk: number;
   step: { dist: number; regen: number };
-  /** Guard gauge in frames. */
+  /** Guard gauge in frames of continuous guarding (refilled by every blocked attack). */
   guardMax: number;
   /** Which side the 1st swing starts from (N1 right→left, N2 back, N3 spin). */
   swing: 'right' | 'left';

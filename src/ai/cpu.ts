@@ -50,6 +50,7 @@ export class CpuPlayer {
   private riposteFor = -1;
   private lastOpMove = -1;
   private lastOpSf = 0;
+  private stepIn = false;
 
   constructor(private sim: Sim, private me: 0 | 1, public level: CpuLevel, seed = 1) {
     this.rng = new Rng(seed * 7919 + 17);
@@ -132,8 +133,16 @@ export class CpuPlayer {
 
     if (me.st === ST_STEP) {
       if (me.justWin > 0) return mash();
+      // a step in toward the opponent turns into an attack with the step's momentum
+      if (this.stepIn && dist < myReach + 1.2) {
+        this.stepIn = false;
+        const s2 = c.moves[M_S2];
+        if (s2.gb && me.cost >= s2.cost && this.hexFrames > 6 && this.rng.chance(0.5)) return IN_S2 | IN_STICK | toward;
+        return IN_ATK | IN_STICK | toward;
+      }
       return 0;
     }
+    this.stepIn = false;
     if (me.st === ST_HITSTUN || me.st === ST_STUN || me.st === ST_DOWN) return 0;
     if (me.st === ST_WAKE) return this.rng.chance(0.5) ? IN_STICK | ((away + (this.rng.chance(0.5) ? 8 : -8) + 32) % 32) : 0;
     if (me.justWin > 0) return mash();
@@ -159,14 +168,16 @@ export class CpuPlayer {
         }
       }
       if (this.reaction === 'step') return me.steps > 0 ? IN_STEP | IN_STICK | ((away + (this.rng.chance(0.5) ? 6 : -6) + 32) % 32) : IN_STICK | away;
-      if (this.reaction === 'guard') return 0;
+      // guard — unless the gauge is about to run out (idle guarding breaks in ~1.5s)
+      if (this.reaction === 'guard') return me.guardQ < c.guardMaxQ * 0.2 ? IN_STICK | ((away + this.strafe * 8 + 32) % 32) : 0;
     }
 
     // punish whiffed recovery / stunned opponent
     if (op.st === ST_STUN && dist < myReach + 0.3) return mash();
     if (op.st === ST_ATTACK && op.moveHit === MH_NONE) {
       const om = this.sim.moveOf(op)!;
-      if (op.sf > om.S + om.A && om.T - op.sf > n1.S && dist < myReach) return IN_ATK;
+      const end = op.moveHit === MH_NONE ? om.whiffT : om.T;
+      if (op.sf > om.S + om.A && end - op.sf > n1.S && dist < myReach) return IN_ATK;
     }
 
     // break a long guard
@@ -221,6 +232,11 @@ export class CpuPlayer {
     }
     if (dist <= myReach && this.rng.chance(this.level.aggression * 3)) return IN_ATK | IN_STICK | toward;
     if (dist > pref + 1.6 && me.steps > 1 && this.rng.chance(0.01)) return IN_STEP | IN_STICK | toward;
+    // step in and attack out of the step (the step's momentum carries the attack)
+    if (dist > myReach && dist < myReach + 2.4 && me.steps > 0 && this.rng.chance(this.level.aggression)) {
+      this.stepIn = true;
+      return IN_STEP | IN_STICK | toward;
+    }
     if (dist > pref + 0.3) return IN_STICK | ((toward + this.strafe * 2 + 32) % 32);
     if (dist < pref - 0.6) return IN_STICK | ((away + this.strafe * 3 + 32) % 32);
     if (this.rng.chance(this.level.aggression)) return IN_STICK | toward | (dist <= myReach + 0.6 ? IN_ATK : 0);
@@ -263,11 +279,12 @@ export class Dummy {
       case 'guard':
         return 0;
       case 'hitGuard':
-        if (me.st === ST_HITSTUN || me.st === ST_STUN || me.st === ST_DOWN) this.hitSeen = 90;
+        if (me.st === ST_HITSTUN || me.st === ST_STUN || me.st === ST_DOWN) this.hitSeen = 60;
         if (this.hitSeen > 0) {
           this.hitSeen--;
           return 0;
         }
+        // (guard only ~1s after a hit: the guard gauge is short)
         return IN_STICK | ((toward + 8) % 32);
       case 'mash':
         if (dist > 2.6) return IN_STICK | toward;

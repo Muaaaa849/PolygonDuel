@@ -1839,7 +1839,7 @@ kbd {
 }
 .ms-ntable {
   display: grid;
-  grid-template-columns: auto repeat(4, 1fr);
+  grid-template-columns: auto repeat(5, 1fr);
   gap: 3px 10px;
   font-size: 12px;
   margin-top: 4px;

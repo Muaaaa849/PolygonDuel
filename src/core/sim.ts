@@ -124,7 +124,7 @@ export class Sim {
         chainResetUsed: 0, otgUsed: 0, comboHits: 0, comboFrames: 0, comboDmg: 0, downAge: 0,
         kbDist: 0, kbAngle: 0, limited: 0, buff: 0, healUses: 0, csHit: 0,
         lastDir: i === 0 ? 0 : 16,
-        aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, lungePct: 100, wallHits: 0,
+        aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, lungePct: 100, wallHits: 0, momStep: 0, momDir: 0,
         ghostT: 0, ghostMode: 0,
       });
       f.char = keepChar;
@@ -253,6 +253,7 @@ export class Sim {
     if (f.justWin > 0) f.justWin--;
     if (f.buff > 0) f.buff--;
     f.sf++;
+    if (f.st !== ST_ATTACK) f.momStep = 0;
 
     this.slide(f);
 
@@ -262,7 +263,9 @@ export class Sim {
         break;
       case ST_ATTACK: {
         const m = this.moveOf(f)!;
-        if (f.sf > m.T) {
+        this.carry(f);
+        // a normal that touched nothing recovers faster (whiffT < T)
+        if (f.sf > (f.moveHit === MH_NONE ? m.whiffT : m.T)) {
           this.toFree(f);
           this.freeLogic(i, w);
         } else if (!this.tryChain(i, w)) {
@@ -324,6 +327,18 @@ export class Sim {
     f.sf = 1;
     f.move = -1;
     f.guardF = 0;
+  }
+
+  /** Step momentum: an attack started out of a step keeps travelling like the step would have. */
+  private carry(f: FighterState): void {
+    if (f.momStep <= 0) return;
+    if (f.momStep > SYSTEM.step.moveFrames || f.moveHit !== MH_NONE) {
+      f.momStep = 0;
+      return;
+    }
+    const d = STEP_TABLE[f.char][f.momStep++];
+    f.x += offX(f.momDir, d);
+    f.y += offY(f.momDir, d);
   }
 
   private slide(f: FighterState): void {
@@ -453,9 +468,20 @@ export class Sim {
     if (f.sf >= SYSTEM.step.attackCancelFrom) {
       const s1 = c.moves[M_S1];
       const s2 = c.moves[M_S2];
-      if (f.bufS1 && s1.cancelFrom & CANCEL_NEUTRAL && this.canAfford(f, s1)) return this.startMove(i, M_S1, w);
-      if (f.bufS2 && s2.cancelFrom & CANCEL_NEUTRAL && this.canAfford(f, s2)) return this.startMove(i, M_S2, w);
-      if (f.bufAtk) return this.startMove(i, M_N1, w);
+      let mi = -1;
+      if (f.bufS1 && s1.cancelFrom & CANCEL_NEUTRAL && this.canAfford(f, s1)) mi = M_S1;
+      else if (f.bufS2 && s2.cancelFrom & CANCEL_NEUTRAL && this.canAfford(f, s2)) mi = M_S2;
+      else if (f.bufAtk) mi = M_N1;
+      if (mi >= 0) {
+        // seamless: this frame's step travel still happens, the rest rides on the attack
+        this.stepMove(f);
+        const next = f.sf + 1;
+        const dir = f.moveDir;
+        this.startMove(i, mi, w);
+        f.momStep = next;
+        f.momDir = dir;
+        return;
+      }
     }
     this.stepMove(f);
   }
@@ -491,6 +517,7 @@ export class Sim {
     f.st = ST_ATTACK;
     f.sf = 1;
     f.move = mi;
+    f.momStep = 0;
     f.moveHit = MH_NONE;
     f.moveHitAt = 0;
     f.csHit = 0;
@@ -830,16 +857,33 @@ export class Sim {
         return;
       }
       case C_RIPOSTE: {
+        // caught: the strike lands at once, the attacker staggers and is pulled in, and the
+        // strike chains into N2 → N3 (a full combo); the riposte's cost comes back
         const cs = dm!.cs!;
         a.moveHit = MH_SPENT;
         d.csHit = 1;
-        d.facing = (away + ANG / 2) & (ANG - 1);
+        const back = (away + ANG / 2) & (ANG - 1);
+        d.facing = back;
         const dmg = this.damage(d, a, cs.dmg, false);
-        this.knockDown(a, (away + ANG / 2) & (ANG - 1));
+        this.gainHurtCost(a);
+        a.st = ST_HITSTUN;
+        a.sf = 1;
+        a.len = cs.stagger;
+        a.move = -1;
+        a.guardF = 0;
+        a.gcQueued = 0;
+        a.momStep = 0;
+        const dx = a.x - d.x;
+        const dy = a.y - d.y;
+        const dist = isqrt(dx * dx + dy * dy);
+        a.kbDist = Math.max(0, dist - cs.pull);
+        a.kbAngle = away; // toward the riposting fighter
+        if (!d.infCost) d.cost = Math.min(COST_MAX, d.cost + cs.refund * COST_UNIT);
         d.st = ST_ATTACK;
         d.sf = 1;
         d.move = M_STRIKE;
         d.moveHit = MH_HIT;
+        d.moveHitAt = 1;
         s.hitstop = Math.max(s.hitstop, dm!.hitstop);
         this.emit(EV_RIPOSTE, 1 - i, dmg, 0, ex, ey);
         return;
@@ -857,6 +901,8 @@ export class Sim {
         d.kbDist = m.pushback;
         d.kbAngle = away;
         d.statBlocks++;
+        // a blocked attack refills the guard gauge: only idle guarding breaks
+        if (SYSTEM.guard.refillOnBlock) d.guardQ = COMPILED[d.char].guardMaxQ;
         this.gainCost(a, m);
         s.hitstop = Math.max(s.hitstop, m.hitstop);
         this.emit(EV_BLOCK, i, m.idx, 0, ex, ey);

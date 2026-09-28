@@ -4,6 +4,12 @@ import { Scenario, stick, IN_ATK, IN_STEP, type Bot } from './harness';
 import { u } from '../src/core/fixed';
 import { SYSTEM } from '../src/data/system';
 import { EV_BLINK, EV_HIT, EV_JUST, EV_WALL, HF_JA } from '../src/core/events';
+import { ST_ATTACK } from '../src/core/state';
+import { getChar } from '../src/core/sim';
+import { charIndex } from '../src/data/characters';
+import { M_N1 } from '../src/core/compile';
+
+const zn1 = getChar(charIndex('zephyr')).moves[M_N1];
 
 const guardless: Bot = (_m, _o, _s, t) => stick(t % 20 < 10 ? 8 : 24);
 
@@ -15,8 +21,8 @@ describe('wall impact', () => {
         sc.s.f[1].x = u(SYSTEM.field.w) - u(0.9);
         sc.s.f[0].x = sc.s.f[1].x - u(1.6);
       }
-      // mash ATK from 1st hit to 3rd (the defender never guards)
-      sc.run(160, (_m, _o, _s, t) => (t % 4 === 0 ? IN_ATK : 0), guardless);
+      // mash ATK from 1st hit to 3rd (the defender never guards), then stop (no okizeme)
+      sc.run(160, (_m, _o, _s, t) => (t % 4 === 0 && t < 70 ? IN_ATK : 0), guardless);
       return { hp: sc.s.f[1].hp, walls: sc.events(EV_WALL) };
     };
     const open = run(false);
@@ -46,8 +52,9 @@ describe('just dodge', () => {
     sc.run(
       200,
       (_m, _o, _s, t) => (t === 0 ? IN_ATK | stick(0) : 0),
-      (me, _o, s, t) => {
-        if (me.st === 0 && t === 20) return IN_STEP | stick(16); // step back just as the swing lands
+      (me, op, s, t) => {
+        // step back just as the swing lands
+        if (me.st === 0 && op.st === ST_ATTACK && op.sf === zn1.S - 1) return IN_STEP | stick(16);
         if (s.slow > 0 && s.slow < 8 && pressedAt < 0) {
           pressedAt = t;
           return IN_ATK;

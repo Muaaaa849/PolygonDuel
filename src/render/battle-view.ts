@@ -415,6 +415,8 @@ export class BattleView {
         this.fx.spawn('riposte', { x: toPx(f.x), y: toPx(f.y), size: 3.6 * PX, rot: Math.atan2(y - toPx(f.y), x - toPx(f.x)) });
         this.fx.spawn('hit_heavy_t', { x, y, size: 3 * PX, tint: this.fighters[e.who].color });
         this.vfx.text('REVERSAL', x, y - 100, this.fighters[e.who].color, 38, 56, -0.6);
+        const refund = this.sim.char(e.who).moves.find((m) => m.cs)?.cs?.refund ?? 0;
+        if (refund > 0) this.vfx.text(`COST +${refund}`, toPx(f.x), toPx(f.y) + 70, 0xffc048, 22, 50, -0.4);
         this.vfx.text(String(e.a), x, y - 40, 0xffffff, 36);
         this.flashScreen(0xffffff, 0.35);
         this.addShake(12);
@@ -940,7 +942,8 @@ export class BattleView {
     if (f.st === ST_KO) alpha = 0;
 
     // ghosts (step afterimages)
-    if (f.st === ST_STEP && f.sf <= SYSTEM.step.moveFrames && !frozen) {
+    // (an attack out of a step keeps leaving them while the step's momentum carries it)
+    if (((f.st === ST_STEP && f.sf <= SYSTEM.step.moveFrames) || (f.st === ST_ATTACK && f.momStep > 0)) && !frozen) {
       if (Math.floor(this.t) % 2 === 0) fv.ghosts.push({ x, y, rot, radii: Float32Array.from(fv.morph.r), life: 12 });
     }
     const maxGhosts = this.quality === 'low' ? 2 : 4;

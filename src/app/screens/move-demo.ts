@@ -6,6 +6,7 @@ import { Sim, getChar } from '../../core/sim';
 import { u } from '../../core/fixed';
 import { IN_ATK, IN_S1, IN_S2, IN_STICK } from '../../core/input';
 import { ST_FREE } from '../../core/state';
+import { M_N2, M_STRIKE } from '../../core/compile';
 import { SYSTEM } from '../../data/system';
 import { CHARACTERS, charIndex } from '../../data/characters';
 import type { CharacterDef, MoveDef } from '../../data/types';
@@ -34,8 +35,15 @@ function scriptFor(c: CharacterDef, kind: DemoKind): Script {
   const btn = kind === 's1' ? IN_S1 : IN_S2;
   const press = (t: number) => (t === 20 ? btn | IN_STICK : 0); // stick 0 = toward the dummy (right)
   if (m.counterStance) {
-    // the dummy swings into the stance → reversal
-    return { dist: 1.9, input: (t) => [t === 22 ? btn : 0, t === 12 ? IN_ATK : 0] };
+    // the dummy swings into the stance → reversal → the strike chains into 2 → 3
+    return {
+      dist: 1.9,
+      input: (t, sim) => {
+        const me = sim.s.f[0];
+        const follow = (me.move === M_STRIKE || me.move === M_N2) && t % 3 === 0 ? IN_ATK : 0;
+        return [t === 22 ? btn : follow, t === 12 ? IN_ATK : 0];
+      },
+    };
   }
   if (m.guardBreak) {
     // the dummy is guarding → crush, then a follow-up combo

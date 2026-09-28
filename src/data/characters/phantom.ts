@@ -6,8 +6,8 @@ import type { CharacterDef } from '../types';
 // and the real 1st hit punishes players who start ignoring the decoys.
 //
 // Frame rules (characterSetting.md §3), checked by tests/frame-rules.test.ts:
-//  C1 33+16-1=48 < 21+29=50   C2 28+21-1=48 < 16+34=50   C3 (52+1)-(16+34)=3
-//  C4 36+16-1=51 > 21+13+13=47   C5 44+2=46 ≤ 47   C6 29+21-1=49 > 16+14+13=43   C7 43 < 54
+//  C1 28+12-1=39 < 16+24=40   C2 24+16-1=39 < 12+28=40   C3 (42+1)-(12+28)=3
+//  C4 33+12-1=44 > 16+13+13=42   C5 39+2=41 ≤ 42   C6 26+16-1=41 > 12+14+13=39   C7 39 < 44
 export const phantom: CharacterDef = {
   id: 'phantom',
   name: 'ファントム',
@@ -19,26 +19,26 @@ export const phantom: CharacterDef = {
   hp: 880,
   walk: 4.6,
   step: { dist: 3.0, regen: 45 },
-  guardMax: 240,
+  guardMax: 90,
   swing: 'left',
   normals: {
     n1: {
       id: 'n1', name: '1段目', kind: 'normal', shape: 'circle',
-      S: 21, A: 3, T: 44, reach: 2.1, lunge: 0.4,
-      dmg: 42, hitstun: 29, blockstun: 13, hitstop: 6,
-      next: 'n2', chainHit: [24, 33], chainBlock: [36, 44], cancel: [24, 33],
+      S: 16, A: 3, T: 39, reach: 2.1, lunge: 0.4,
+      dmg: 42, hitstun: 24, blockstun: 13, hitstop: 6,
+      next: 'n2', chainHit: [19, 28], chainBlock: [33, 39], cancel: [19, 28],
       knockback: 0.25, pushback: 0.4,
     },
     n2: {
       id: 'n2', name: '2段目', kind: 'normal', shape: 'circle',
-      S: 16, A: 3, T: 52, reach: 2.1, lunge: 0.4,
-      dmg: 38, hitstun: 34, blockstun: 14, hitstop: 6,
-      next: 'n3', chainHit: [19, 28], chainBlock: [29, 52], cancel: [19, 28],
+      S: 12, A: 3, T: 42, reach: 2.1, lunge: 0.4,
+      dmg: 38, hitstun: 28, blockstun: 14, hitstop: 6,
+      next: 'n3', chainHit: [15, 24], chainBlock: [26, 42], cancel: [15, 24],
       knockback: 0.25, pushback: 0.4,
     },
     n3: {
       id: 'n3', name: '3段目', kind: 'normal', shape: 'circle',
-      S: 21, A: 4, T: 58, reach: 2.2, lunge: 0.4,
+      S: 16, A: 4, T: 52, reach: 2.2, lunge: 0.4,
       dmg: 66, hitstun: 0, blockstun: 16, hitstop: 10,
       knockdown: true, pushback: 0.6,
     },
@@ -55,7 +55,7 @@ export const phantom: CharacterDef = {
     {
       id: 'soulRipper', name: 'ソウルリッパー', kind: 'skill', shape: 'triangle',
       desc: 'ガード崩し。ガード中の相手をスタン',
-      cost: 2, S: 26, A: 3, T: 56, reach: 2.0, lunge: 1.0,
+      cost: 2, S: 21, A: 3, T: 51, reach: 2.0, lunge: 1.0,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 6,
       guardBreak: { crush: 70, dmgGuard: 30, dmgOpen: 25 },
       cancelFrom: ['n1', 'neutral'],
