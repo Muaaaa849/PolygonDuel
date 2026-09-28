@@ -670,7 +670,9 @@ export function onlineSelect(nav: OnlineNav, link: PeerLink, isHost: boolean, pr
   let theirs = -1;
   let myReady = false;
   let theirReady = false;
+  let theirGuard = 0;
   let started = false;
+  const myGuard = () => (settings.guardMode === 'manual' ? 1 : 0);
   const status = h('div', { class: 'hint' });
   const readyBtn = h('button', { class: 'btn primary' }, '準備OK');
   const badge = h('span', { class: 'badge good' }, h('span', { class: 'dot' }), '接続中');
@@ -689,7 +691,7 @@ export function onlineSelect(nav: OnlineNav, link: PeerLink, isHost: boolean, pr
   };
   const setReady = (v: boolean) => {
     myReady = v;
-    link.sendCtrl({ t: 'ready', v, c: mine });
+    link.sendCtrl({ t: 'ready', v, c: mine, g: myGuard() });
     refresh();
     maybeStart();
   };
@@ -706,11 +708,13 @@ export function onlineSelect(nav: OnlineNav, link: PeerLink, isHost: boolean, pr
   function maybeStart(): void {
     if (!isHost || !myReady || !theirReady || started || theirs < 0) return;
     const delay = inputDelay();
-    link.sendCtrl({ t: 'start', chars: [mine, theirs], delay });
-    begin([mine, theirs], delay);
+    // each player's guard setting (host = 1P) goes into both simulations
+    const guard: [number, number] = [myGuard(), theirGuard];
+    link.sendCtrl({ t: 'start', chars: [mine, theirs], delay, guard });
+    begin([mine, theirs], delay, guard);
   }
 
-  function begin(chars: [number, number], delay: number): void {
+  function begin(chars: [number, number], delay: number, guard: [number, number]): void {
     if (started) return;
     started = true;
     saveSettings({ lastChar: CHARACTERS[mine].id });
@@ -721,6 +725,7 @@ export function onlineSelect(nav: OnlineNav, link: PeerLink, isHost: boolean, pr
         chars,
         local,
         online: { link, inputDelay: delay },
+        guardModes: guard,
         onExit: (a) => {
           if (a === 'title') {
             link.close();
@@ -743,11 +748,13 @@ export function onlineSelect(nav: OnlineNav, link: PeerLink, isHost: boolean, pr
       case 'ready':
         theirs = m.c as number;
         theirReady = !!m.v;
+        theirGuard = m.g === 1 ? 1 : 0;
         if (theirReady) sfx.ui();
         break;
       case 'start': {
         const chars = m.chars as [number, number];
-        begin(chars, m.delay as number);
+        const g = Array.isArray(m.guard) ? (m.guard as number[]) : [0, 0];
+        begin(chars, m.delay as number, [g[0] === 1 ? 1 : 0, g[1] === 1 ? 1 : 0]);
         return;
       }
       case 'hello':

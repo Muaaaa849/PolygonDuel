@@ -92,7 +92,7 @@ export interface CMove {
   /** Skill cancel on these frames even without contact. */
   cancelAny: CWindow | null;
   /** Bullet (milli-u; speed per frame; costGain in cost quarters). */
-  proj: { at: number; speed: number; range: number; radius: number; dmg: number; hitstun: number; blockstun: number; hitPush: number; guardPush: number; costGain: number } | null;
+  proj: { at: number; speed: number; range: number; radius: number; dmg: number; hitstun: number; blockstun: number; hitPush: number; guardPush: number; costGain: number; guardDrainPct: number } | null;
   /** Floor field (milli-u). */
   field: { at: number; radius: number; frames: number; maxDist: number; dmg: number; stun: number } | null;
   /** Dash: travel per active frame (milli-u), frame advantage on hit / block. */
@@ -202,6 +202,7 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
           at: m.projectile.at, speed: u(m.projectile.speed), range: u(m.projectile.range), radius: u(m.projectile.radius),
           dmg: m.projectile.dmg, hitstun: m.projectile.hitstun, blockstun: m.projectile.blockstun,
           hitPush: u(m.projectile.hitPush), guardPush: u(m.projectile.guardPush), costGain: Math.round(m.projectile.costGain * COST_UNIT),
+          guardDrainPct: Math.round((m.projectile.guardDrain ?? 0) * 100),
         }
       : null,
     field: m.field

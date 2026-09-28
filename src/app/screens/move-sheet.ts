@@ -40,7 +40,7 @@ function facts(m: MoveDef, c?: CharacterDef): [string, string][] {
   }
   if (m.dash) {
     rows.push(['フレーム', `発生${m.S}F／持続${m.A}F（この間に${m.dash.dist}u前進）／全体${m.T}F`]);
-    rows.push(['出せる場面', 'ステップ中だけ（3F目から）。通常時は出ない']);
+    rows.push(['出せる場面', '通常時にそのまま／ステップ中（3F目から。ステップの勢いは乗らない）']);
     rows.push(['すり抜け', '持続中は相手をすり抜けて背後へ抜ける']);
     rows.push(['威力', `${m.dmg}。ヒットで+${m.dash.advHit}F（コンボにはならない）、ガードされても+${m.dash.advBlock}F`]);
     rows.push(['弱点', '出始めと突進中に相手の攻撃（弾・三角も）が触れると必ず負け、×1.5で食らう']);

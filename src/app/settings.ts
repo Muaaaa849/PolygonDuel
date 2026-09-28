@@ -12,6 +12,8 @@ export interface Settings {
   dynamicCamera: boolean;
   /** Touch: drag ATK / skill buttons to aim, release to fire. */
   aimMode: boolean;
+  /** Guard: 'auto' = stand still (stick released) to guard; 'manual' = hold the GUARD button. */
+  guardMode: 'auto' | 'manual';
   showBrief: boolean;
   tutorialDone: boolean;
   lastChar: string;
@@ -30,6 +32,7 @@ const DEFAULTS: Settings = {
   reduceFlash: false,
   dynamicCamera: true,
   aimMode: true,
+  guardMode: 'auto',
   showBrief: true,
   tutorialDone: false,
   lastChar: 'blaze',
@@ -43,7 +46,12 @@ const KEY = 'polygon-duel.settings.v1';
 function load(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+    if (raw) {
+      const v = { ...DEFAULTS, ...JSON.parse(raw) } as Settings;
+      // (a layout saved by an older version may miss newer controls: fill them in)
+      if (v.layout) v.layout = sanitizeLayout(v.layout);
+      return v;
+    }
   } catch {
     /* storage unavailable */
   }
@@ -69,7 +77,7 @@ export function onSettings(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
-const EXPORT_KEYS: (keyof Settings)[] = ['volume', 'haptics', 'lefty', 'buttonScale', 'quality', 'reduceFlash', 'dynamicCamera', 'aimMode', 'showBrief', 'layout'];
+const EXPORT_KEYS: (keyof Settings)[] = ['volume', 'haptics', 'lefty', 'buttonScale', 'quality', 'reduceFlash', 'dynamicCamera', 'aimMode', 'guardMode', 'showBrief', 'layout'];
 
 /** Settings as a portable JSON file (controls layout included). */
 export function exportSettings(): string {
@@ -93,6 +101,10 @@ export function importSettings(text: string): void {
     const v = j.settings[k];
     if (k === 'layout') {
       (patch as Record<string, unknown>).layout = v === null ? null : sanitizeLayout(v);
+      continue;
+    }
+    if (k === 'guardMode') {
+      if (v === 'auto' || v === 'manual') patch.guardMode = v;
       continue;
     }
     if (typeof v === typeof DEFAULTS[k]) (patch as Record<string, unknown>)[k] = v;

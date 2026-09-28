@@ -8,7 +8,7 @@ import { M_N1, M_GC, M_S1, M_S2 } from '../src/core/compile';
 import { u } from '../src/core/fixed';
 import { SYSTEM } from '../src/data/system';
 import {
-  EV_RIPOSTE, EV_STEP, EV_JUST, EV_JAM, EV_WALL, EV_SHOT, EV_SHOCK, EV_CRUSH, EV_MOVE, EV_FIELD,
+  EV_RIPOSTE, EV_STEP, EV_GUARD_BREAK, EV_JUST, EV_JAM, EV_WALL, EV_SHOT, EV_SHOCK, EV_CRUSH, EV_MOVE, EV_FIELD,
   HF_SHOT, HF_PUNISH, HF_JA,
 } from '../src/core/events';
 import {
@@ -57,13 +57,13 @@ function nearestShot(f: FighterState, o: FighterState): number {
 }
 
 describe('レイ: 弾', () => {
-  it('R1: a bullet hit stuns 7F — free before the next bullet can come (≤ 12 − 4)', () => {
+  it('R1: a bullet hit stuns briefly — free before the next bullet can come (≤ 12 − 4)', () => {
     expect(shot1.hitstun).toBeLessThanOrEqual(12 - 4);
     const sc = shooting('blaze', 4).run(60, shoot(1), hold(stick(16)));
     const hits = sc.hits(0);
     expect(hits.length).toBe(1);
     expect(hits[0].b & HF_SHOT).toBeTruthy();
-    expect(hits[0].a).toBe(20);
+    expect(hits[0].a).toBe(shot1.dmg);
     // unscaled single hit: no combo count
     expect(sc.s.f[1].comboHits).toBe(0);
     const free = sc.freeAt[1].find((f) => f > hits[0].lf)!;
@@ -142,7 +142,7 @@ describe('レイ: 弾', () => {
   });
 
   it('a step still recovering (after its travel) is hit normally', () => {
-    const sc = shooting('blaze', 5.5);
+    const sc = shooting('blaze', 7);
     let stepped = false;
     const dodger: Bot = () => {
       // step early, away along the line: the bullet catches up in the recovery frames
@@ -172,12 +172,26 @@ describe('レイ: 弾', () => {
     const sc = shooting('bastion', 4);
     sc.s.f[1].x = FW - u(1.0);
     sc.s.f[0].x = sc.s.f[1].x - u(4);
+    sc.s.f[1].infGuard = 1; // (only the wall here; the gauge chip is tested below)
     sc.run(120, shoot(3), guard);
     const walls = sc.events(EV_WALL, 1).filter((e) => e.b & 4);
     expect(walls.length).toBe(3);
     for (const w of walls) expect(w.a).toBe(30);
     expect(sc.hits(0).length).toBe(0);
     expect(sc.s.f[1].hp).toBe(getChar(charIndex('bastion')).hp - 90);
+  });
+
+  it('guarded bullets chip the guard gauge (no refill): a volley leaves it low, the next one breaks it', () => {
+    const sc = shooting('bastion', 5);
+    const max = getChar(charIndex('bastion')).guardMaxQ;
+    sc.run(90, shoot(3), guard);
+    expect(sc.blocks(0).length).toBe(3);
+    expect(sc.events(EV_GUARD_BREAK, 1).length).toBe(0);
+    expect(sc.s.f[1].guardQ).toBeLessThan(max * 0.3);
+    // melee blocks still refill it
+    const m = new Scenario('blaze', 'bastion', 1.6).run(40, (_m, _o, _s, t) => (t === 0 ? IN_ATK : 0), guard);
+    expect(m.blocks(0).length).toBe(1);
+    expect(m.s.f[1].guardQ).toBeGreaterThan(max * 0.7);
   });
 
   it('R8: bullets gain half a melee contact (+0.25 cost)', () => {

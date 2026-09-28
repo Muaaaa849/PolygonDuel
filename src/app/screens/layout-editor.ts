@@ -13,6 +13,7 @@ const LOOK: Record<CtrlId, { label: string; shape: 'circle' | 'hexagon' | 'trian
   s1: { label: 'S1', shape: 'circle' },
   s2: { label: 'S2', shape: 'triangle' },
   step: { label: 'STEP', shape: 'arrow' },
+  guard: { label: 'GUARD', shape: 'hexagon' },
 };
 
 export function downloadText(name: string, text: string): void {

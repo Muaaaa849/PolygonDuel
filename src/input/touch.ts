@@ -10,14 +10,14 @@
 import { h, shapeIcon } from '../app/ui';
 import { settings } from '../app/settings';
 import { placePx } from './layout';
-import { AIM_DIRS, AIM_LEVELS, IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, aimBits, quantizeDir } from '../core/input';
+import { AIM_DIRS, AIM_LEVELS, IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, IN_GUARD, aimBits, quantizeDir } from '../core/input';
 import type { Shape } from '../data/types';
 
 const DEADZONE = 0.18;
 /** Frames the last direction is held when the thumb crosses the center (plan §4 hysteresis). */
 const HYSTERESIS_TICKS = 2;
 
-export type BtnId = 'atk' | 's1' | 's2' | 'step';
+export type BtnId = 'atk' | 's1' | 's2' | 'step' | 'guard';
 
 /** Live aim while a button is being dragged (screen-space unit vector, 0..1 reach). */
 export interface AimState {
@@ -40,7 +40,7 @@ const AIM_RANGE = 92;
 const AIM_CANCEL = 170;
 /** A hold inside the inner ring shows the auto-target preview after this long (ms), so taps don't flash. */
 const AUTO_PREVIEW_MS = 140;
-const BTN_BITS: Record<BtnId, number> = { atk: IN_ATK, s1: IN_S1, s2: IN_S2, step: IN_STEP };
+const BTN_BITS: Record<BtnId, number> = { atk: IN_ATK, s1: IN_S1, s2: IN_S2, step: IN_STEP, guard: IN_GUARD };
 
 export interface ButtonLook {
   shape: Shape;
@@ -57,7 +57,9 @@ export class TouchControls {
   private zone: HTMLElement;
   private btnWrap: HTMLElement;
   private btns: Record<BtnId, HTMLElement>;
-  private held: Record<BtnId, Set<number>> = { atk: new Set(), s1: new Set(), s2: new Set(), step: new Set() };
+  private held: Record<BtnId, Set<number>> = { atk: new Set(), s1: new Set(), s2: new Set(), step: new Set(), guard: new Set() };
+  /** Manual guard: the GUARD button is shown and a released stick no longer means guard. */
+  private manualGuard = false;
   private latched = 0;
   private stickPointer = -1;
   private origin = { x: 0, y: 0 };
@@ -86,8 +88,10 @@ export class TouchControls {
     this.stickHint = h('div', { class: 'stick-hint' }, '離す＝ガード');
     this.zone = h('div', { class: 'stick-zone' });
     const mk = (id: BtnId) => h('button', { class: `cbtn ${id}`, 'aria-label': id });
-    this.btns = { atk: mk('atk'), s1: mk('s1'), s2: mk('s2'), step: mk('step') };
-    this.btnWrap = h('div', { class: 'buttons' }, this.btns.s2, this.btns.step, this.btns.s1, this.btns.atk);
+    this.btns = { atk: mk('atk'), s1: mk('s1'), s2: mk('s2'), step: mk('step'), guard: mk('guard') };
+    this.btns.guard.append(h('span', { html: shapeIcon('hexagon', 'rgba(90,160,255,.35)') }), h('span', { class: 'lbl' }, 'GUARD'));
+    this.btns.guard.classList.add('off');
+    this.btnWrap = h('div', { class: 'buttons' }, this.btns.guard, this.btns.s2, this.btns.step, this.btns.s1, this.btns.atk);
     this.aimKnob = h('div', { class: 'aim-knob' });
     this.aimInner = h('div', { class: 'aim-inner' }, h('span', null, 'AUTO'));
     this.aimPad = h('div', { class: 'aim-pad' }, this.aimInner, this.aimKnob);
@@ -103,9 +107,17 @@ export class TouchControls {
     this.applyLayout();
   }
 
-  setButtons(look: Record<BtnId, ButtonLook>): void {
+  /** Guard setting: manual shows the GUARD button (the stick no longer guards when released). */
+  setManualGuard(on: boolean): void {
+    this.manualGuard = on;
+    this.btns.guard.classList.toggle('off', !on);
+    this.stickHint.textContent = on ? 'GUARDボタン＝ガード' : '離す＝ガード';
+    this.updateKnob();
+  }
+
+  setButtons(look: Partial<Record<BtnId, ButtonLook>>): void {
     for (const id of Object.keys(look) as BtnId[]) {
-      const l = look[id];
+      const l = look[id]!;
       const b = this.btns[id];
       b.innerHTML = '';
       b.append(h('span', { html: shapeIcon(l.shape, id === 'atk' ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,.12)') }));
@@ -173,7 +185,7 @@ export class TouchControls {
       this.stickHint.style.opacity = '0';
     } else {
       const id = this.nearestButton(x, y);
-      if (id && id !== 'step' && this.aimPtr < 0 && this.aimPolicy(id)) this.beginAim(e.pointerId, id, x, y);
+      if (id && id !== 'step' && id !== 'guard' && this.aimPtr < 0 && this.aimPolicy(id)) this.beginAim(e.pointerId, id, x, y);
       else if (id) this.pressBtn(e.pointerId, id);
     }
     try {
@@ -307,6 +319,7 @@ export class TouchControls {
     let best: BtnId | null = null;
     let bestD = Infinity;
     for (const id of Object.keys(this.btns) as BtnId[]) {
+      if (id === 'guard' && !this.manualGuard) continue;
       const r = this.btns[id].getBoundingClientRect();
       const cx = r.left + r.width / 2;
       const cy = r.top + r.height / 2;
@@ -353,7 +366,7 @@ export class TouchControls {
     const k = len > 1 ? 1 / len : 1;
     const r = this.radius();
     this.knob.style.transform = `translate(${this.vec.x * k * r * 0.7}px, ${this.vec.y * k * r * 0.7}px)`;
-    const neutral = len < DEADZONE;
+    const neutral = len < DEADZONE && !this.manualGuard;
     this.stickEl.classList.toggle('guarding', neutral);
     this.knobIcon.style.opacity = neutral ? '1' : '0';
   }

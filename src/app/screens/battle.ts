@@ -44,6 +44,8 @@ export interface BattleConfig {
   local: 0 | 1;
   cpuLevel?: number;
   online?: { link: PeerLink; inputDelay: number };
+  /** Guard mode per side (0 auto, 1 manual). Online: agreed at the start; otherwise from settings. */
+  guardModes?: [number, number];
   tutorial?: TutorialHooks;
   onExit: (a: ExitAction) => void;
 }
@@ -52,6 +54,10 @@ export function battleScreen(cfg: BattleConfig): Screen {
   const training = cfg.mode === 'training' || cfg.mode === 'tutorial';
   const sim = new Sim(cfg.chars[0], cfg.chars[1], { training });
   if (training) sim.skipIntro();
+  // guard setting: this device's player(s) use the settings (the tutorial teaches the auto guard)
+  const myGuard = settings.guardMode === 'manual' && cfg.mode !== 'tutorial' ? 1 : 0;
+  const guardModes: [number, number] = cfg.guardModes ?? (cfg.mode === 'local' ? [myGuard, myGuard] : cfg.local === 0 ? [myGuard, 0] : [0, myGuard]);
+  sim.setGuardModes(guardModes);
   const defs = [CHARACTERS[cfg.chars[0]], CHARACTERS[cfg.chars[1]]];
   const oppIdx = (1 - cfg.local) as 0 | 1;
 
@@ -85,6 +91,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
     const f = sim.s.f[cfg.local];
     return id === 'atk' ? sim.atkSlot(f) : id === 's1' ? sim.skillSlot(f, M_S1) : M_S2;
   };
+  touch.setManualGuard(guardModes[cfg.local] === 1);
   const localDef = defs[cfg.local];
   const skillLook = (i: number) => ({ shape: localDef.skills[i].shape, label: `S${i + 1}`, cost: localDef.skills[i].cost });
   touch.setButtons({ atk: { shape: 'circle', label: 'ATTACK' }, s1: skillLook(0), s2: skillLook(1), step: { shape: 'arrow', label: 'STEP' } });

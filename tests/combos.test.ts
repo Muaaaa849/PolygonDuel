@@ -35,8 +35,8 @@ describe('combo damage table (plan §7)', () => {
     ['zephyr', 'AA1', 142],
     ['bastion', 'AAA', 195],
     ['phantom', 'AAA', 146],
-    ['ray', 'AAA', 136],
-    ['ray', 'AA1', 106],
+    ['ray', 'AAA', 142],
+    ['ray', 'AA1', 116],
     ['volt', 'AAA', 138],
   ];
   it.each(plain)('%s %s = %i', (id, seq, dmg) => {
@@ -61,7 +61,7 @@ describe('combo damage table (plan §7)', () => {
     ['zephyr', 'AAA1', 268],
     ['bastion', 'AAA', 292],
     ['phantom', 'AAA', 219],
-    ['ray', 'AAA', 204],
+    ['ray', 'AAA', 213],
     ['volt', 'AAA', 207],
   ];
   it.each(ja)('%s JA route %s = %i', (id, seq, dmg) => {

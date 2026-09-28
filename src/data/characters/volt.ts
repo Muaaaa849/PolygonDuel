@@ -1,15 +1,17 @@
 import type { CharacterDef } from '../types';
 
 // ヴォルト（水色）— 速さ・裏回り
-// The fastest walk and the only 3-stock step. S1 is a dash thrust that comes ONLY out of a
-// step and goes through the opponent (+3 on hit, +2 even when guarded) — but any attack
+// The fastest walk and the only 3-stock step. S1 is a dash thrust (on its own, or out of a
+// step) that goes through the opponent (+3 on hit, +2 even when guarded) — but any attack
 // touching it wins, with a ×1.5 punish. S2 turns back right after the dash into a guard break.
 //
-// Normals are Blaze's frames with the shortest reach (C1–C8 identical to Blaze).
+// Normals are Blaze's frames with the shortest reach, and N1 two frames quicker than Blaze's
+// (the whole N1 shifted, so C1–C8 hold exactly as for Blaze). N1 has to stay at 15F: R11
+// (N1 after a guarded +2 dash beats the fastest GC) needs N1.S − 1 < 2 + GC.S − 1.
 // Dash rules (tests/newchars.test.ts): R9 +3 hit / +2 block, no combo; R10 turnback after a
-// guarded dash loses to the fastest GC by ≥2F (S30 from the cancel: 13+30-1=42 ≥ 40+2);
-// R11 N1 after a guarded dash beats the GC by 1F; R12 turnback ≥ 21F; R13 dash always loses
-// to an attack touching it; R14 no dash from neutral.
+// guarded dash loses to the fastest GC by ≥2F (S30 from the cancel: 14+30-1=43 ≥ 41+2);
+// R12 turnback ≥ 21F; R13 dash always loses to an attack touching it;
+// R14 (v0.9, user request) the dash also comes out on its own — steps stay for moving.
 export const volt: CharacterDef = {
   id: 'volt',
   name: 'ヴォルト',
@@ -48,7 +50,7 @@ export const volt: CharacterDef = {
   skills: [
     {
       id: 'dashThrust', name: 'ダッシュスラスト', kind: 'skill', shape: 'circle',
-      desc: 'ステップ中だけ出せる突進。相手を突き抜けて背後へ（ヒット+3F・ガードされても+2F）。出始めと突進中に攻撃が触れると必ず負け、×1.5で食らう',
+      desc: '突進（単体でも、ステップ中からでも）。相手を突き抜けて背後へ（ヒット+3F・ガードされても+2F）。出始めと突進中に攻撃が触れると必ず負け、×1.5で食らう',
       cost: 1, S: 6, A: 8, T: 25, reach: 0.8, lunge: 0,
       dmg: 55, hitstun: 18, blockstun: 16, hitstop: 6,
       dash: { dist: 3.2, advHit: 3, advBlock: 2 },
@@ -71,7 +73,7 @@ export const volt: CharacterDef = {
     { route: 'JA→2→3', cost: 0, note: 'ジャスト回避から' },
   ],
   tips: [
-    'ステップを見せて、相手が振った瞬間（判定が出る前）に突進で刺す',
+    '相手が振った瞬間（判定が出る前）に突進で刺す。ステップは3回あるので、突進とは別に動き回れる',
     '攻撃を置かれると最悪（×1.5で食らう）。六角（ガード・リポスト構え）には突進せず、突進→ターンバック',
     '突進をガードされた後は +2F。1段目・ターンバック・ガードのじゃんけん',
   ],

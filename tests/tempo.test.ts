@@ -8,6 +8,7 @@ import { M_N1, M_S2 } from '../src/core/compile';
 import { EV_CRUSH, EV_GUARD_BREAK } from '../src/core/events';
 import { ST_ATTACK, ST_FREE, ST_STEP, ST_STUN } from '../src/core/state';
 import { SYSTEM } from '../src/data/system';
+import { IN_GUARD } from '../src/core/input';
 
 describe('tempo', () => {
   it.each(CHARACTERS.map((c) => c.id))('%s: N1 starts around the edge of human reaction + online delay (15–21F, v0.9)', (id) => {
@@ -76,5 +77,40 @@ describe('tempo', () => {
     expect(sc.events(EV_GUARD_BREAK, 1).length).toBe(0);
     expect(sc.s.f[1].st).not.toBe(ST_STUN);
     void SYSTEM;
+  });
+});
+
+describe('guard setting (v0.9)', () => {
+  it('manual guard: standing still does not guard; holding GUARD does (even with the stick)', () => {
+    const atk: Bot = (_m, _o, _s, t) => (t === 0 ? IN_ATK : 0);
+    // standing still, no GUARD → the hit lands
+    const a = new Scenario('blaze', 'bastion', 1.6);
+    a.sim.setGuardModes([0, 1]);
+    a.run(60, atk, () => 0);
+    expect(a.hits(0).length).toBe(1);
+    // GUARD held while pushing the stick → blocked
+    const b = new Scenario('blaze', 'bastion', 1.6);
+    b.sim.setGuardModes([0, 1]);
+    b.run(60, atk, () => IN_GUARD | stick(8));
+    expect(b.blocks(0).length).toBe(1);
+    // standing still in manual mode never drains the gauge
+    const c = new Scenario('blaze', 'bastion', 2);
+    c.sim.setGuardModes([0, 1]);
+    c.run(200, () => 0, () => 0);
+    expect(c.events(EV_GUARD_BREAK, 1).length).toBe(0);
+    expect(c.events(EV_GUARD_BREAK, 0).length).toBe(1); // (the auto side idles in guard and breaks)
+    // auto mode ignores the GUARD bit: walking with it held is still walking
+    const d = new Scenario('blaze', 'bastion', 1.6);
+    d.run(60, atk, () => IN_GUARD | stick(8));
+    expect(d.hits(0).length).toBe(1);
+  });
+
+  it('the guard mode survives into the next round', () => {
+    const sc = new Scenario('blaze', 'bastion', 2);
+    sc.sim.setGuardModes([1, 0]);
+    sc.s.f[1].hp = 0;
+    sc.run(400, () => 0, () => 0, () => sc.s.round === 2);
+    expect(sc.s.round).toBe(2);
+    expect(sc.s.f[0].manualGuard).toBe(1);
   });
 });

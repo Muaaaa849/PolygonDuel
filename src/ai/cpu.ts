@@ -299,6 +299,15 @@ export class CpuPlayer {
       if (op.sf > om.S + om.A && end - op.sf > n1.S && dist < myReach) return IN_ATK;
     }
 
+    // ── volt: the dash also comes out on its own — through a slow startup (seen with the
+    // reaction delay, before its hitbox is out) or a guard; never into a riposte stance
+    if (c.def.id === 'volt' && me.cost >= c.moves[M_S1].cost && dist < 3.6 && dist > 1.2) {
+      const om = op.st === ST_ATTACK ? this.sim.moveOf(op) : null;
+      const seenAtk = seen.st === ST_ATTACK && !!om && om.hasHitbox && op.sf < om.S - 5;
+      const riposte = !!om?.cs || (!!this.sim.char(1 - this.me).moves[M_S1].cs && op.cost >= COST_UNIT && op.st === ST_FREE && op.guardF > 0);
+      if (!riposte && ((seenAtk && this.rng.chance(0.35)) || (this.hexFrames > 20 && me.cost >= 2 * COST_UNIT && this.rng.chance(0.03)))) return IN_S1 | IN_STICK | toward;
+    }
+
     // ── ray: modes, shots, field
     if (c.def.id === 'ray') {
       if (me.shootMode) {
@@ -315,13 +324,24 @@ export class CpuPlayer {
           if (!nearWall(d)) return IN_STEP | IN_STICK | d;
         }
         // the gun is useless up close: back to melee before they arrive
-        if (dist < 3.4 && op.st !== ST_DOWN && this.rng.chance(0.2)) return IN_S1;
+        if (dist < 2.6 && op.st !== ST_DOWN && this.rng.chance(0.1)) return IN_S1;
         // shoot when a step-in can't answer it (no steps, in the field, pinned, busy guarding);
         // into a fresh opponent with steps in stock only now and then
         const pinned = this.inField(op, me) || this.wallBehind(op, (toward * 32) & 1023);
-        const safe = pinned || op.steps === 0 || (op.st === ST_FREE && op.guardF > 0) || op.st === ST_BLOCKSTUN || op.st === ST_HITSTUN;
-        if (dist > 2.6 && op.st !== ST_DOWN && op.st !== ST_STEP && this.rng.chance(safe ? 0.1 : 0.015)) return IN_ATK | IN_STICK | toward;
-      } else if (me.cost >= COST_UNIT && ((op.st === ST_DOWN && dist >= 3.4) || dist >= 6) && this.rng.chance(0.05)) return IN_S1;
+        const guarding = (op.st === ST_FREE && op.guardF > 0) || op.st === ST_BLOCKSTUN;
+        const safe = pinned || op.steps === 0 || guarding || op.st === ST_HITSTUN || op.st === ST_STUN;
+        if (dist > 2.6 && op.st !== ST_DOWN && op.st !== ST_STEP && this.rng.chance(safe ? (guarding ? 0.18 : 0.1) : 0.05)) return IN_ATK | IN_STICK | toward;
+      } else if (this.hexFrames > 6 && this.sim.char(1 - this.me).moves[M_S1].cs && op.cost >= COST_UNIT) {
+        // a hexagon that may be a riposte stance: don't swing a circle into it — the gun's
+        // diamonds can't be caught (back off, or switch to shooting)
+        if (me.cost >= COST_UNIT && dist > 2.4 && this.rng.chance(0.15)) return IN_S1;
+        if (dist < 3) return IN_STICK | ((away + this.strafe * 4 + 32) % 32);
+      } else if (me.cost >= COST_UNIT) {
+        // into the gun: from afar, over a knocked-down opponent, or against a turtle
+        // (no guard break of her own: guarded bullets chip the gauge instead)
+        const turtle = this.hexFrames > 24 && dist > 2.8 && dist < 6.5;
+        if (((op.st === ST_DOWN && dist >= 3.4) || dist >= 5 || turtle) && this.rng.chance(turtle ? 0.12 : 0.05)) return IN_S1;
+      }
       const s2 = c.moves[M_S2];
       if (me.shootMode && me.cost >= s2.cost && me.fieldT === 0 && dist > 4 && dist < 5.2 && this.rng.chance(0.008)) return IN_S2;
     }

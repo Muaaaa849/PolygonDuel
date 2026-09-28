@@ -9,6 +9,8 @@ export const IN_S1 = 1 << 7;
 export const IN_S2 = 1 << 8;
 export const IN_STEP = 1 << 9;
 export const IN_BUTTONS = IN_ATK | IN_S1 | IN_S2 | IN_STEP;
+/** GUARD button held (bit 21). Only fighters in manual-guard mode use it; in auto mode a centered stick guards. */
+export const IN_GUARD = 1 << 21;
 export const IN_AIM = 1 << 10;
 const AIM_DIR_SHIFT = 11; // 8 bits: 256 directions
 const AIM_LVL_SHIFT = 19; // 2 bits: reach level 0..3

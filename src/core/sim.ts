@@ -15,7 +15,7 @@ import {
   MH_NONE, MH_HIT, MH_BLOCK, MH_SPENT,
   PH_INTRO, PH_FIGHT, PH_END, PH_MATCH_OVER,
 } from './state';
-import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, aimAngle, aimLevel, aimLungePct, dirAngle } from './input';
+import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, IN_GUARD, aimAngle, aimLevel, aimLungePct, dirAngle } from './input';
 import {
   type SimEvent,
   EV_MOVE, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN, EV_STEP,
@@ -72,6 +72,12 @@ export class Sim {
   events: SimEvent[] = [];
   /** Training-mode behaviour (not part of the synced state; only used offline). */
   training: boolean;
+
+  /** Guard mode per fighter (0 auto, 1 manual). Set before the match starts; part of the state. */
+  setGuardModes(modes: readonly [number, number]): void {
+    this.s.f[0].manualGuard = modes[0] ? 1 : 0;
+    this.s.f[1].manualGuard = modes[1] ? 1 : 0;
+  }
 
   constructor(charA: number, charB: number, opts: SimOptions = {}) {
     this.training = !!opts.training;
@@ -457,7 +463,9 @@ export class Sim {
       if (f.bufAtk) return this.startMove(i, this.atkSlot(f), w);
       if (f.bufStep && f.steps > 0) return this.startStep(i, w);
     }
-    if (w & IN_STICK) {
+    // guard: auto = stick released; manual = only while GUARD is held (it wins over the stick)
+    const guardIn = f.manualGuard ? (w & IN_GUARD) !== 0 : (w & IN_STICK) === 0;
+    if (!guardIn && w & IN_STICK) {
       // walk
       const a = dirAngle(w);
       f.facing = a;
@@ -469,8 +477,11 @@ export class Sim {
       f.x += offX(a, sp);
       f.y += offY(a, sp);
       if (f.guardF > 0) f.guardF = 0;
+    } else if (!guardIn) {
+      // manual guard, stick released, no GUARD: just standing (square, not guarding)
+      f.guardF = 0;
     } else {
-      // stick released = guard (hexagon)
+      // guarding (hexagon)
       if (f.guardF === 0) this.emit(EV_GUARD, i);
       if (f.guardF < 1000) f.guardF++;
       f.facing = this.angleTo(i);
@@ -838,10 +849,14 @@ export class Sim {
       o.kbAngle = ang;
       o.wallGuard = 1;
       o.statBlocks++;
-      if (SYSTEM.guard.refillOnBlock) o.guardQ = COMPILED[o.char].guardMaxQ;
       this.shotCost(f, p);
       s.hitstop = Math.max(s.hitstop, SHOT_BLOCKSTOP);
       this.emit(EV_BLOCK, i, -1, 1, x, y);
+      // bullets chip the guard gauge instead of refilling it (pressure on a turtling guard)
+      if (!o.infGuard && p.guardDrainPct > 0) {
+        o.guardQ -= idiv(COMPILED[o.char].guardMaxQ * p.guardDrainPct, 100);
+        if (o.guardQ <= 0) this.breakGuard(1 - i);
+      }
       return;
     }
     // hit: flat damage (outside the combo scaling), a short flinch
@@ -1407,17 +1422,7 @@ export class Sim {
       if (guarding) {
         f.guardIdle = 0;
         if (!f.infGuard) f.guardQ -= far ? 1 : 4;
-        if (f.guardQ <= 0) {
-          f.guardQ = idiv(c.guardMaxQ * Math.round(SYSTEM.guard.breakRefill * 100), 100);
-          f.st = ST_STUN;
-          f.sf = 1;
-          f.len = SYSTEM.guard.breakStun;
-          f.guardF = 0;
-          f.gcQueued = 0;
-          f.move = -1;
-          s.hitstop = Math.max(s.hitstop, SYSTEM.crushHitstop);
-          this.emit(EV_GUARD_BREAK, i, 0, 0, f.x, f.y);
-        }
+        if (f.guardQ <= 0) this.breakGuard(i);
       } else {
         f.guardIdle++;
         if (f.guardIdle > SYSTEM.guard.regenDelay && f.guardQ < c.guardMaxQ) {
@@ -1438,6 +1443,24 @@ export class Sim {
         }
       }
     }
+  }
+
+  /** The guard gauge ran out: star stun, the gauge comes back partly. */
+  private breakGuard(i: number): void {
+    const s = this.s;
+    const f = s.f[i];
+    const c = COMPILED[f.char];
+    f.guardQ = idiv(c.guardMaxQ * Math.round(SYSTEM.guard.breakRefill * 100), 100);
+    f.st = ST_STUN;
+    f.sf = 1;
+    f.len = SYSTEM.guard.breakStun;
+    f.guardF = 0;
+    f.gcQueued = 0;
+    f.move = -1;
+    f.kbDist = 0;
+    f.wallGuard = 0;
+    s.hitstop = Math.max(s.hitstop, SYSTEM.crushHitstop);
+    this.emit(EV_GUARD_BREAK, i, 0, 0, f.x, f.y);
   }
 
   private updateCombos(): void {

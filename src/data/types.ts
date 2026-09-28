@@ -82,6 +82,11 @@ export interface ProjectileSpec {
   guardPush: number;
   /** Cost gained by the shooter on hit or guard (whole units; melee gives 0.5). */
   costGain: number;
+  /**
+   * Share of the target's guard gauge a guarded bullet chips away (0..1). Bullets never
+   * refill the gauge like melee blocks do: standing in guard against a volley is a slow loss.
+   */
+  guardDrain?: number;
 }
 
 /** A zone placed on the floor (レイのスタティックフィールド). */

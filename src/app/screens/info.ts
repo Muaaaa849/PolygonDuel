@@ -64,6 +64,7 @@ export function howtoScreen(onBack: () => void): Screen {
         <span><kbd>J</kbd>/<kbd>Z</kbd></span><span>攻撃</span>
         <span><kbd>K</kbd>/<kbd>X</kbd> <kbd>L</kbd>/<kbd>C</kbd></span><span>S1 / S2</span>
         <span><kbd>Space</kbd></span><span>ステップ</span>
+        <span><kbd>U</kbd>/<kbd>V</kbd></span><span>ガード（設定で「手動」の時）</span>
         <span><kbd>Esc</kbd></span><span>ポーズ</span>` }),
       h('div', { class: 'section-title' }, 'オンライン対戦'),
       h('div', { class: 'prose', html: `
@@ -107,6 +108,20 @@ export function settingsScreen(onBack: () => void): Screen {
     }
   };
   drawQ();
+  const guardSeg = h('div', { class: 'segmented' });
+  const drawG = () => {
+    guardSeg.innerHTML = '';
+    for (const [g, label] of [['auto', '自動'], ['manual', '手動（ボタン）']] as const) {
+      const b = h('button', { class: settings.guardMode === g ? 'on' : '' }, label);
+      b.onclick = () => {
+        sfx.ui();
+        saveSettings({ guardMode: g });
+        drawG();
+      };
+      guardSeg.append(b);
+    }
+  };
+  drawG();
   const el = h('div', { class: 'screen' },
     h('div', { class: 'topbar' }, backButton(onBack), h('h2', null, 'SETTINGS'), h('span', { class: 'sub' }, '設定')),
     h('div', { class: 'scroll' },
@@ -126,6 +141,7 @@ export function settingsScreen(onBack: () => void): Screen {
             h('button', { class: 'btn small', onclick: () => openImport(() => show(settingsScreen(onBack))) }, '読み込み'),
           ),
         ),
+        h('div', { class: 'row-set' }, h('div', { class: 't' }, h('b', null, 'ガード'), h('small', null, '自動：立ち止まる（スティックを離す）とガード。手動：GUARDボタンを押している間だけガード（止まっていてもガードしない）')), guardSeg),
         toggle('aimMode', 'ドラッグでエイム', '攻撃・スキルボタンを押したままドラッグで方向と距離を指定、離して発動。オフ：押した瞬間に発動'),
         toggle('dynamicCamera', 'ダイナミックカメラ', '近づくと寄って、形を大きく見せる'),
         toggle('reduceFlash', 'フラッシュを抑える', '画面の点滅・色収差を弱める（光過敏の方向け）'),

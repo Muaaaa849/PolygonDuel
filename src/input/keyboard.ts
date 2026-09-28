@@ -1,5 +1,5 @@
 // Keyboard + gamepad input (PC testing and local 2P, plan §12 phase 3).
-import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, quantizeDir } from '../core/input';
+import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, IN_GUARD, quantizeDir } from '../core/input';
 
 export interface KeyMap {
   up: string[];
@@ -10,6 +10,8 @@ export interface KeyMap {
   s1: string[];
   s2: string[];
   step: string[];
+  /** Manual guard (used only when the guard setting is 'manual'). */
+  guard: string[];
 }
 
 export const KEYS_SOLO: KeyMap = {
@@ -21,16 +23,17 @@ export const KEYS_SOLO: KeyMap = {
   s1: ['KeyK', 'KeyX'],
   s2: ['KeyL', 'KeyC'],
   step: ['Space', 'Semicolon', 'ShiftLeft'],
+  guard: ['KeyU', 'KeyV'],
 };
 
 export const KEYS_P1: KeyMap = {
   up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'],
-  atk: ['KeyF'], s1: ['KeyG'], s2: ['KeyH'], step: ['ShiftLeft', 'Space'],
+  atk: ['KeyF'], s1: ['KeyG'], s2: ['KeyH'], step: ['ShiftLeft', 'Space'], guard: ['KeyT'],
 };
 
 export const KEYS_P2: KeyMap = {
   up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'],
-  atk: ['Comma', 'Numpad1'], s1: ['Period', 'Numpad2'], s2: ['Slash', 'Numpad3'], step: ['ShiftRight', 'Numpad0'],
+  atk: ['Comma', 'Numpad1'], s1: ['Period', 'Numpad2'], s2: ['Slash', 'Numpad3'], step: ['ShiftRight', 'Numpad0'], guard: ['KeyM', 'Numpad4'],
 };
 
 const down = new Set<string>();
@@ -76,6 +79,7 @@ export class KeyboardInput {
     if (this.any(m.s1)) w |= IN_S1;
     if (this.any(m.s2)) w |= IN_S2;
     if (this.any(m.step)) w |= IN_STEP;
+    if (this.any(m.guard)) w |= IN_GUARD;
     // gamepad
     if (this.pad !== null && pads > 0 && navigator.getGamepads) {
       const gp = navigator.getGamepads()[this.pad];
@@ -94,7 +98,8 @@ export class KeyboardInput {
         if (b(0) || b(7)) w |= IN_ATK;
         if (b(2) || b(4)) w |= IN_S1;
         if (b(3) || b(5)) w |= IN_S2;
-        if (b(1) || b(6)) w |= IN_STEP;
+        if (b(1)) w |= IN_STEP;
+        if (b(6)) w |= IN_GUARD; // LT
       }
     }
     if (x !== 0 || y !== 0) w |= IN_STICK | quantizeDir(x, y);

@@ -1187,6 +1187,19 @@ button {
   right: calc(30px * var(--btn-scale));
   bottom: calc(128px * var(--btn-scale));
 }
+.cbtn.guard {
+  width: calc(58px * var(--btn-scale));
+  height: calc(58px * var(--btn-scale));
+  right: calc(176px * var(--btn-scale));
+  bottom: calc(100px * var(--btn-scale));
+  border-color: rgba(90, 160, 255, 0.5);
+}
+.cbtn.guard.down {
+  background: rgba(90, 160, 255, 0.3);
+}
+.cbtn.off {
+  display: none;
+}
 .lefty .stick-zone {
   left: auto;
   right: 0;
