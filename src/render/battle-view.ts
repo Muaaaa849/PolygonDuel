@@ -306,13 +306,18 @@ export class BattleView {
         const fx = toPx(f.x);
         const fy = toPx(f.y);
         this.vfx.shatter(fx, fy, this.fighters[who].color, 6, 18, 30);
-        this.fx.spawn('crush', { x: fx, y: fy, size: 3.4 * PX, alpha: 0.75 });
-        if (e.type === EV_CRUSH && this.moveIs(e.who, 'soulRipper')) this.fx.spawn('reaper', { x: fx, y: fy, size: 3.4 * PX, rot: s.f[e.who].facing * ANG_TO_RAD, speed: 1.4 });
+        // Soul Ripper crushes with its own violet claws instead of the generic yellow shatter
+        const ripper = e.type === EV_CRUSH && this.moveIs(e.who, 'soulRipper');
+        const accent = ripper ? 0xd9a8ff : 0xffd060;
+        if (ripper) {
+          this.fx.spawn('reaper', { x: fx, y: fy, size: 4.2 * PX, rot: s.f[e.who].facing * ANG_TO_RAD, speed: 0.9, alpha: 0.9 });
+          this.fx.spawn('ghost_fade', { x: fx, y: fy, size: 2.4 * PX, alpha: 0.45 });
+        } else this.fx.spawn('crush', { x: fx, y: fy, size: 3.4 * PX, alpha: 0.75 });
         if (e.type === EV_CRUSH && this.moveIs(e.who, 'breakFang')) this.fx.spawn('fang', { x: fx, y: fy, size: 2.6 * PX, rot: s.f[e.who].facing * ANG_TO_RAD, speed: 1.6 });
-        this.vfx.ring(fx, fy, 0xffd060, 20, 180, 20, 10);
-        this.vfx.spark(fx, fy, 0xffd060, 16, 30, 40, 6);
-        this.vfx.text(e.type === EV_CRUSH ? 'CRUSH!' : 'GUARD BREAK', fx, fy - 100, 0xffd060, 40, 56, -0.6);
-        this.flashScreen(0xffd060, 0.35);
+        this.vfx.ring(fx, fy, accent, 20, 180, 20, 10);
+        this.vfx.spark(fx, fy, accent, 16, 30, 40, 6);
+        this.vfx.text(e.type === EV_CRUSH ? 'CRUSH!' : 'GUARD BREAK', fx, fy - 100, accent, 40, 56, -0.6);
+        this.flashScreen(accent, ripper ? 0.22 : 0.35);
         this.addShake(14);
         this.wave(fx, fy, 1.2);
         this.fighters[who].flash = 4;
@@ -740,7 +745,8 @@ export class BattleView {
           once(f.sf >= m.S, () => this.fx.spawn('gale', { x, y, size: reach * 1.05, rot: face, follow: () => { const p = pos(); return p && { ...p, rot: (this.fOf(i)?.facing ?? 0) * ANG_TO_RAD }; } }));
           break;
         case 'soulRipper':
-          once(f.sf >= m.S - 4, () => this.fx.spawn('reaper', { x: x + cos * reach * 0.55, y: y + sin * reach * 0.55, size: 2.8 * PX, rot: face, speed: 1.1 }));
+          // claws tear through the whole reach on the active frames
+          once(f.sf >= m.S - 2, () => this.fx.spawn('reaper', { x: x + cos * reach * 0.6, y: y + sin * reach * 0.6, size: 3.4 * PX, rot: face, speed: 1.0 }));
           break;
         case 'shieldBash':
           once(f.sf >= m.S, () => this.fx.spawn('bash', { x: x + cos * 60, y: y + sin * 60, size: 3.2 * PX, rot: face }));
@@ -757,7 +763,9 @@ export class BattleView {
       }
     };
     const dangerOn = !!m && !!m.gb && f.sf < m.S;
-    loop('danger', dangerOn, () => this.fx.spawn('danger', { x, y, size: 2.6 * PX, rot: face, loop: true, follow: () => { const p = pos(); return p && { ...p, rot: (this.fOf(i)?.facing ?? 0) * ANG_TO_RAD }; } }));
+    // guard-break warning aura (Phantom's is violet: the claws are coming)
+    const dangerSheet = m?.id === 'soulRipper' ? 'danger_p' : 'danger';
+    loop('danger', dangerOn, () => this.fx.spawn(dangerSheet, { x, y, size: 2.6 * PX, rot: face, loop: true, follow: () => { const p = pos(); return p && { ...p, rot: (this.fOf(i)?.facing ?? 0) * ANG_TO_RAD }; } }));
     loop('stun', f.st === ST_STUN, () => this.fx.spawn('stun', { x, y, size: 2 * PX, loop: true, alpha: 0.85, follow: pos }));
     const casting = !!m && !!m.heal && f.sf < m.heal.frame;
     loop('breeze', casting || f.buff > 0, () => this.fx.spawn('breeze', { x, y, size: 2.9 * PX, loop: true, alpha: casting ? 1 : 0.55, follow: pos }));
@@ -939,7 +947,8 @@ export class BattleView {
       let stroke = mix(fv.color, 0xffffff, 0.65);
       let strokeW = 5;
       if (shape === SH.triangle && Math.floor(f.sf / 3) % 2 === 0) {
-        stroke = 0xffe070;
+        // guard-break warning: the outline flashes (Phantom's Soul Ripper in violet-white)
+        stroke = f.st === ST_ATTACK && this.sim.moveOf(f)?.id === 'soulRipper' ? 0xf0d4ff : 0xffe070;
         strokeW = 9;
       }
       const lowGuard = shape === SH.hexagon && f.guardQ / char.guardMaxQ < 0.3 && f.st !== ST_ATTACK;

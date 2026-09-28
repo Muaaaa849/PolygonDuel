@@ -327,9 +327,22 @@
  "reaper": {
   "file": "reaper.webp",
   "size": 384,
-  "count": 14,
+  "count": 16,
   "cols": 4,
   "fps": 60,
+  "tint": false,
+  "anchor": [
+   0.5,
+   0.5
+  ],
+  "scale": 1.0
+ },
+ "danger_p": {
+  "file": "danger_p.webp",
+  "size": 256,
+  "count": 16,
+  "cols": 4,
+  "fps": 30,
   "tint": false,
   "anchor": [
    0.5,

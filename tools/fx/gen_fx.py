@@ -483,7 +483,7 @@ def bash(size=384, n=14):
     save('bash', frames)
 
 
-def danger(size=256, n=16):
+def danger(size=256, n=16, name='danger', color=(1.0, 0.72, 0.2)):
     """Triangle (guard break) startup: pulsing warning aura (loop)."""
     x, y, r, th = grid(size)
     frames = []
@@ -500,8 +500,8 @@ def danger(size=256, n=16):
         ring = gauss(tri - (0.35 + 0.45 * pulse), 0.03) * (1 - pulse) * 1.5
         base = gauss(tri - 0.35, 0.05) * (0.6 + 0.4 * math.sin(t * 2 * np.pi * 2))
         inten = ring + base
-        frames.append(rgba(glowify(inten, 4, 0.7), (1.0, 0.72, 0.2), white_core=0.5))
-    save('danger', frames, fps=30)
+        frames.append(rgba(glowify(inten, 4, 0.7), color, white_core=0.5))
+    save(name, frames, fps=30)
 
 
 def stun(size=256, n=16):
@@ -665,30 +665,54 @@ def ghost_appear(size=320, n=16):
     save('ghost_appear', frames)
 
 
-def reaper(size=384, n=14):
-    """Soul Ripper: three violet claw crescents raking across, with a ghostly afterglow."""
+def reaper(size=384, n=16):
+    """Soul Ripper: three bold claw strokes raking diagonally across (facing +x), white-hot
+    cores in a violet glow, torn in one after another, then dissolving into violet mist."""
     x, y, r, th = grid(size)
     frames = []
     nz = fbm(size, 3, 91, 5)
+    ns = 120
     for k in range(n):
         t = k / (n - 1)
         inten = np.zeros_like(r)
-        for i, off in enumerate((-0.28, 0.0, 0.28)):
-            lt = np.clip(t * 1.6 - i * 0.12, 0, 1)
+        mist = np.zeros_like(r)
+        nrm = np.array([1.0, -1.0]) / math.sqrt(2)  # normal of the diagonal strokes
+        for i, off in enumerate((-0.3, 0.0, 0.3)):
+            lt = np.clip(t * 2.2 - i * 0.18, 0, 1.6)
             if lt <= 0:
                 continue
-            # crescent: arc of radius R centred off to one side, revealed as lt sweeps
-            R = 0.75
-            cx, cy = -0.35, off - R * 0.2
-            rr = np.sqrt((x - cx) ** 2 + (y - cy - R) ** 2)
-            ang = np.arctan2(y - cy - R, x - cx)
-            sweep = smooth(-2.2, -2.2 + 1.9 * lt, ang) * (1 - smooth(-2.2 + 1.9 * lt, -2.2 + 1.9 * lt + 0.15, ang))
-            width = 0.028 * (1 - lt * 0.6)
-            inten += gauss(rr - R, width) * (0.6 + 0.4 * nz) * sweep * (1 - max(0, lt - 0.6) * 2.4) * 2.0
-            inten += gauss(rr - R, width * 4) * sweep * (1 - lt) * 0.5
-        inten += gauss(r, 0.35) * (1 - t) ** 3 * 0.6 * nz
-        frames.append(rgba(glowify(inten, 4, 0.7), PURPLE, white_core=0.8))
+            head = min(1.0, ease_out(min(1.0, lt / 0.55)))  # how far the stroke has been torn
+            fade = max(0.0, 1 - max(0.0, lt - 0.7) * 1.4)
+            if fade <= 0:
+                continue
+            # curved stroke from upper-left to lower-right, offset along its normal
+            L = 0.62 - abs(off) * 0.35  # outer claws a little shorter
+            p0 = np.array([-L, -L]) + nrm * off
+            p1 = np.array([L, L]) + nrm * off
+            ctrl = (p0 + p1) / 2 + nrm * 0.16
+            best = np.full(r.shape, 9.0, np.float32)
+            prof = np.zeros_like(r)
+            for j in range(ns + 1):
+                sj = j / ns * head
+                q = (1 - sj) ** 2 * p0 + 2 * (1 - sj) * sj * ctrl + sj ** 2 * p1
+                d = np.sqrt((x - q[0]) ** 2 + (y - q[1]) ** 2)
+                closer = d < best
+                best = np.where(closer, d, best)
+                # tapered: thick in the middle of the full stroke, sharp at both ends
+                w = 0.006 + 0.028 * math.sin(math.pi * (j / ns)) ** 0.8
+                prof = np.where(closer, w, prof)
+            core = np.exp(-(best / np.maximum(prof * 0.45, 1e-3)) ** 2)
+            glow = np.exp(-(best / np.maximum(prof * 2.2, 1e-3)) ** 2)
+            inten += (core * 1.7 + glow * 0.55) * fade
+            mist += np.exp(-(best / 0.16) ** 2) * fade * (0.5 + 0.5 * nz)
+        inten += mist * 0.25 * min(1.0, t * 3)
+        frames.append(rgba(glowify(inten, 3, 0.45), PURPLE, white_core=0.9))
     save('reaper', frames)
+
+
+def danger_violet():
+    """Phantom's guard-break warning aura: the same pulsing triangle, in violet."""
+    danger(name='danger_p', color=(0.8, 0.45, 1.0))
 
 
 if __name__ == '__main__':
@@ -717,6 +741,7 @@ if __name__ == '__main__':
     ghost_fade()
     ghost_appear()
     reaper()
+    danger_violet()
     with open(os.path.join(OUT, 'fx.json'), 'w') as f:
         json.dump(MANIFEST, f, indent=1)
     total = sum(os.path.getsize(os.path.join(OUT, m['file'])) for m in MANIFEST.values())
