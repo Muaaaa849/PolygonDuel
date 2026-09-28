@@ -395,7 +395,7 @@ describe('ヴォルト', () => {
     const sc2 = new Scenario('volt', 'blaze', 4).run(120, dashBot(0, (me, _o, _s, t) => (me.st === ST_FREE && t % 2 === 0 ? IN_ATK : 0)), walkIn);
     const h = sc2.hits(0);
     expect(h.length).toBe(1);
-    expect(h[0].a).toBe(55);
+    expect(h[0].a).toBe(volt.moves[M_S1].dmg);
     const vf = sc2.freeAt[0].find((f) => f > h[0].lf)!;
     const bf = sc2.freeAt[1].find((f) => f > h[0].lf)!;
     expect(bf - vf).toBe(volt.moves[M_S1].dash!.advHit);
@@ -404,18 +404,12 @@ describe('ヴォルト', () => {
 
   const gcBot: Bot = (me) => (me.st === ST_BLOCKSTUN ? IN_ATK : 0);
 
-  it('R10: guarded dash → turnback loses to the fastest GC (GC hit + 2 ≤ turnback hit)', () => {
+  it('R10: guarded dash → turnback loses to the fastest GC (v1.0: the GB is faster, but on an attacking GC it only chips)', () => {
     const tb: Bot = (me) => (me.move === M_S1 && me.sf === 12 ? IN_S2 : 0);
     // turnback vs a plain guard: crush
     const a = new Scenario('volt', 'blaze', 4).run(120, dashBot(0, tb), guard);
     expect(a.events(EV_CRUSH, 0).length).toBe(1);
-    const crushLf = a.events(EV_CRUSH, 0)[0].lf;
-    // fastest GC vs a guarding Volt
-    const b = new Scenario('volt', 'blaze', 4).run(120, dashBot(0), gcBot);
-    const gc = b.blocks(1)[0];
-    expect(gc).toBeTruthy();
-    expect(gc.lf + 2).toBeLessThanOrEqual(crushLf);
-    // and head-on: the GC wins
+    // head-on: the GC wins (the turnback reaches a GC in its startup: no guard to break → no crush)
     const c = new Scenario('volt', 'blaze', 4).run(120, dashBot(0, tb), gcBot);
     expect(c.hits(1).length).toBeGreaterThanOrEqual(1);
     expect(c.events(EV_CRUSH, 0).length).toBe(0);
@@ -486,6 +480,41 @@ describe('ヴォルト', () => {
       expect(h[0].b & HF_PUNISH).toBeTruthy();
       expect(h[0].a).toBe(30);
     }
+  });
+
+  it('v1.0: a dash that hits chains into the next dash by mashing S1 — 4 cost = 4 hits (a skill-only combo, ×0.8 damage)', () => {
+    const d = volt.moves[M_S1];
+    expect(d.dmg).toBe(44);
+    const walkIn: Bot = (me) => (me.statHitsTaken > 0 ? 0 : stick(16));
+    const mashS1: Bot = (_m, _o, _s, t) => (t % 2 ? 0 : IN_S1);
+    const sc = new Scenario('volt', 'blaze', 3);
+    sc.s.f[0].cost = 16;
+    sc.run(240, mashS1, walkIn);
+    const h = sc.hits(0);
+    expect(h.length).toBe(4);
+    expect(h.map((e) => e.a)).toEqual([44, 44, 44, 35]); // 4th hit: 80% scaling
+    expect(sc.s.f[0].cost).toBe(0);
+    // the chain is one combo: the defender never gets out of hit stun between the dashes
+    const free = sc.freeAt[1].filter((f) => f > h[0].lf && f < h[3].lf);
+    expect(free.length).toBe(0);
+    // 2 cost → 2 hits
+    const two = new Scenario('volt', 'blaze', 3);
+    two.s.f[0].cost = 8;
+    two.run(240, mashS1, walkIn);
+    expect(two.hits(0).length).toBe(2);
+  });
+
+  it('v1.0: a guarded or whiffed dash does not chain (the next dash only after its recovery)', () => {
+    const sc = new Scenario('volt', 'blaze', 3);
+    sc.s.f[0].cost = 16;
+    const first: Bot = (me, _o, _s, t) => (t === 0 ? IN_S1 : me.move === M_S1 && me.sf >= 12 && me.sf <= 18 && t % 2 === 0 ? IN_S1 : 0); // (presses expire before its recovery ends)
+    sc.run(40, first, guard);
+    expect(sc.blocks(0).length).toBe(1);
+    expect(sc.moves(0).length).toBe(1);
+    const w = new Scenario('volt', 'blaze', 9);
+    w.s.f[0].cost = 16;
+    w.run(40, first, guard);
+    expect(w.moves(0).length).toBe(1);
   });
 
   it('riposte (hexagon) catches the dash (a circle)', () => {

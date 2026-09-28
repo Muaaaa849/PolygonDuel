@@ -24,21 +24,21 @@ export const phantom: CharacterDef = {
   normals: {
     n1: {
       id: 'n1', name: '1段目', kind: 'normal', shape: 'circle',
-      S: 18, A: 3, T: 41, reach: 2.1, lunge: 0.4,
+      S: 18, A: 3, T: 41, reach: 2.625, lunge: 0.4,
       dmg: 42, hitstun: 26, blockstun: 13, hitstop: 6,
       next: 'n2', chainHit: [21, 30], chainBlock: [34, 41], cancel: [21, 30],
       knockback: 0.25, pushback: 0.4,
     },
     n2: {
       id: 'n2', name: '2段目', kind: 'normal', shape: 'circle',
-      S: 14, A: 3, T: 47, reach: 2.1, lunge: 0.4,
+      S: 14, A: 3, T: 47, reach: 2.625, lunge: 0.4,
       dmg: 38, hitstun: 31, blockstun: 14, hitstop: 6,
       next: 'n3', chainHit: [17, 26], chainBlock: [27, 47], cancel: [17, 26],
       knockback: 0.25, pushback: 0.4,
     },
     n3: {
       id: 'n3', name: '3段目', kind: 'normal', shape: 'circle',
-      S: 18, A: 4, T: 55, reach: 2.2, lunge: 0.4,
+      S: 18, A: 4, T: 55, reach: 2.75, lunge: 0.4,
       dmg: 66, hitstun: 0, blockstun: 16, hitstop: 10,
       knockdown: true, pushback: 0.6,
     },
@@ -55,7 +55,7 @@ export const phantom: CharacterDef = {
     {
       id: 'soulRipper', name: 'ソウルリッパー', kind: 'skill', shape: 'triangle',
       desc: 'ガード崩し。ガード中の相手をスタン',
-      cost: 2, S: 23, A: 3, T: 53, reach: 2.0, lunge: 1.0,
+      cost: 2, S: 19, A: 3, T: 49, reach: 2.5, lunge: 1.0,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 6,
       guardBreak: { crush: 70, dmgGuard: 30, dmgOpen: 25 },
       cancelFrom: ['n1', 'neutral'],

@@ -592,7 +592,8 @@ export class Sim {
     // attacks go where the stick points, or at the opponent (plan §4).
     f.aimed = 0;
     f.lungePct = 100;
-    if (m.autoAim) f.facing = this.angleTo(i);
+    // (a dash chained out of a dash turns back toward the one it just passed)
+    if (m.autoAim || (m.dash && chained)) f.facing = this.angleTo(i);
     else if (m.proj) {
       // every shot re-aims: where it was aimed, or at the opponent
       if (aim) {
@@ -948,7 +949,7 @@ export class Sim {
     const f = this.s.f[i];
     const c = COMPILED[f.char];
     const bit = 1 << f.move;
-    if (f.bufS1 && c.moves[M_S1].cancelFrom & bit) {
+    if (f.bufS1 && c.moves[M_S1].cancelFrom & bit && (!c.moves[M_S1].cancelHitOnly || f.moveHit === MH_HIT)) {
       const r = this.skillSlot(f, M_S1, f.move);
       if (this.canAfford(f, c.moves[r])) {
         this.startMove(i, r, w, true);

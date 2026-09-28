@@ -17,21 +17,21 @@ export const bastion: CharacterDef = {
   normals: {
     n1: {
       id: 'n1', name: '1段目', kind: 'normal', shape: 'circle',
-      S: 21, A: 4, T: 47, reach: 2.2, lunge: 0.3,
+      S: 21, A: 4, T: 47, reach: 2.75, lunge: 0.3,
       dmg: 55, hitstun: 29, blockstun: 16, hitstop: 6,
       next: 'n2', chainHit: [25, 34], chainBlock: [37, 47], cancel: [25, 34],
       knockback: 0.25, pushback: 0.4,
     },
     n2: {
       id: 'n2', name: '2段目', kind: 'normal', shape: 'circle',
-      S: 16, A: 4, T: 53, reach: 2.2, lunge: 0.3,
+      S: 16, A: 4, T: 53, reach: 2.75, lunge: 0.3,
       dmg: 50, hitstun: 35, blockstun: 16, hitstop: 6,
       next: 'n3', chainHit: [20, 29], chainBlock: [30, 53], cancel: [20, 29],
       knockback: 0.25, pushback: 0.4,
     },
     n3: {
       id: 'n3', name: '3段目', kind: 'normal', shape: 'circle',
-      S: 22, A: 5, T: 62, reach: 2.3, lunge: 0.4,
+      S: 22, A: 5, T: 62, reach: 2.875, lunge: 0.4,
       dmg: 90, hitstun: 0, blockstun: 18, hitstop: 10,
       knockdown: true, pushback: 0.6,
     },
@@ -48,7 +48,7 @@ export const bastion: CharacterDef = {
     {
       id: 'shieldBash', name: 'シールドバッシュ', kind: 'skill', shape: 'triangle',
       desc: '2.2u突進のガード崩し',
-      cost: 2, S: 27, A: 4, T: 59, reach: 2.0, lunge: 2.2, lungeFrom: 8,
+      cost: 2, S: 23, A: 4, T: 55, reach: 2.5, lunge: 2.2, lungeFrom: 8,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 6,
       guardBreak: { crush: 80, dmgGuard: 40, dmgOpen: 30 },
       cancelFrom: ['neutral'],

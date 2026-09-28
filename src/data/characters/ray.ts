@@ -39,21 +39,21 @@ export const ray: CharacterDef = {
   normals: {
     n1: {
       id: 'n1', name: '1段目', kind: 'normal', shape: 'circle',
-      S: 17, A: 3, T: 39, reach: 1.8, lunge: 0.5,
+      S: 17, A: 3, T: 39, reach: 2.25, lunge: 0.5,
       dmg: 42, hitstun: 26, blockstun: 12, hitstop: 6,
       next: 'n2', chainHit: [20, 29], chainBlock: [33, 39], cancel: [20, 29],
       knockback: 0.25, pushback: 0.4,
     },
     n2: {
       id: 'n2', name: '2段目', kind: 'normal', shape: 'circle',
-      S: 14, A: 3, T: 46, reach: 1.8, lunge: 0.4,
+      S: 14, A: 3, T: 46, reach: 2.25, lunge: 0.4,
       dmg: 38, hitstun: 30, blockstun: 14, hitstop: 6,
       next: 'n3', chainHit: [17, 26], chainBlock: [27, 46], cancel: [17, 26],
       knockback: 0.25, pushback: 0.4,
     },
     n3: {
       id: 'n3', name: '3段目', kind: 'normal', shape: 'circle',
-      S: 18, A: 4, T: 55, reach: 1.9, lunge: 0.4,
+      S: 18, A: 4, T: 55, reach: 2.375, lunge: 0.4,
       dmg: 62, hitstun: 0, blockstun: 16, hitstop: 10,
       knockdown: true, pushback: 0.6,
     },
@@ -84,7 +84,7 @@ export const ray: CharacterDef = {
     {
       id: 'blast', name: '切替ブラスト', kind: 'skill', shape: 'diamond',
       desc: '至近距離の散弾。大きく吹き飛ばしてダウン、射撃モードへ',
-      cost: 1, S: 13, A: 3, T: 41, reach: 2.0, lunge: 0.2, sweep: [-50, 50],
+      cost: 1, S: 13, A: 3, T: 41, reach: 2.5, lunge: 0.2, sweep: [-50, 50],
       dmg: 36, hitstun: 0, blockstun: 16, hitstop: 10,
       knockdown: true, launch: 5.0, pushback: 3.4, wallOnGuard: true, mode: 1,
     },

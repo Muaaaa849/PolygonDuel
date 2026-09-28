@@ -181,6 +181,8 @@ export class CpuPlayer {
           this.dashFor = this.t - me.sf;
           this.dashPlan = 0;
         }
+        // a dash that hit: mash S1 — the next dash chains in (as many as the cost allows)
+        if (me.moveHit === MH_HIT && me.cost >= m.cost) return this.t % 2 ? IN_S1 : 0;
         if (me.moveHit === MH_BLOCK && this.dashPlan === 0) {
           const r = this.rng.next();
           this.dashPlan = r < 0.4 ? 1 : r < 0.7 && me.cost >= c.moves[M_S2].cost ? 2 : 3;

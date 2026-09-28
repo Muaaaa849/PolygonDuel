@@ -61,6 +61,8 @@ export interface CMove {
   /** Per-frame lunge distance, index = move frame. */
   lungeAt: Int32Array;
   autoAim: boolean;
+  /** Canceled into only from a move that hit. */
+  cancelHitOnly: boolean;
   /** Swing arc relative to facing, in angle units (0/0 = thrust). */
   sweepFrom: number;
   sweepTo: number;
@@ -170,6 +172,7 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     lunge,
     lungeAt: lungeTable(m.S, m.T, lunge, m.lungeFrom),
     autoAim: !!m.autoAim,
+    cancelHitOnly: !!m.cancelHitOnly,
     sweepFrom,
     sweepTo,
     isSweep: sweepFrom !== sweepTo,

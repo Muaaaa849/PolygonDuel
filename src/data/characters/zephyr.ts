@@ -17,21 +17,21 @@ export const zephyr: CharacterDef = {
   normals: {
     n1: {
       id: 'n1', name: '1段目', kind: 'normal', shape: 'circle',
-      S: 19, A: 3, T: 44, reach: 2.4, lunge: 0.4,
+      S: 19, A: 3, T: 44, reach: 3, lunge: 0.4,
       dmg: 42, hitstun: 27, blockstun: 14, hitstop: 6,
       next: 'n2', chainHit: [22, 32], chainBlock: [35, 44], cancel: [22, 32],
       knockback: 0.25, pushback: 0.4,
     },
     n2: {
       id: 'n2', name: '2段目', kind: 'normal', shape: 'circle',
-      S: 15, A: 3, T: 49, reach: 2.4, lunge: 0.4,
+      S: 15, A: 3, T: 49, reach: 3, lunge: 0.4,
       dmg: 40, hitstun: 32, blockstun: 14, hitstop: 6,
       next: 'n3', chainHit: [18, 27], chainBlock: [28, 49], cancel: [18, 27],
       knockback: 0.25, pushback: 0.4,
     },
     n3: {
       id: 'n3', name: '3段目', kind: 'normal', shape: 'circle',
-      S: 19, A: 4, T: 57, reach: 2.5, lunge: 0.4,
+      S: 19, A: 4, T: 57, reach: 3.125, lunge: 0.4,
       dmg: 65, hitstun: 0, blockstun: 16, hitstop: 10,
       knockdown: true, cancel: [25, 37], pushback: 0.6,
     },
@@ -40,7 +40,7 @@ export const zephyr: CharacterDef = {
     {
       id: 'galePierce', name: 'ゲイルピアス', kind: 'skill', shape: 'circle',
       desc: 'リーチ3.8uの突き。ダウン追撃可',
-      cost: 1, S: 18, A: 3, T: 44, reach: 3.8, lunge: 0.3,
+      cost: 1, S: 18, A: 3, T: 44, reach: 4.75, lunge: 0.3,
       dmg: 60, hitstun: 24, blockstun: 12, hitstop: 8,
       otg: true, cancelFrom: ['n2', 'n3', 'neutral'],
       knockback: 0.4, pushback: 0.5,

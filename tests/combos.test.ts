@@ -52,7 +52,9 @@ describe('combo damage table (plan §7)', () => {
     ['phantom', '2AAA', 162],
   ];
   it.each(crush)('%s %s (crush) = %i', (id, seq, dmg) => {
-    const sc = new Scenario(id, 'zephyr', 2.2).run(600, sequence(seq), guard);
+    const sc = new Scenario(id, 'zephyr', 2.2);
+    sc.s.f[0].cost = 16; // (GB 2 + Flare Rush 2: the long route needs a full gauge)
+    sc.run(600, sequence(seq), guard);
     expect(dealt(sc)).toBe(dmg);
   });
 

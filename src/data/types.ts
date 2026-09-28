@@ -171,6 +171,8 @@ export interface MoveDef {
   projectile?: ProjectileSpec;
   field?: FieldSpec;
   dash?: DashSpec;
+  /** Canceling INTO this skill from another move (cancelFrom a move id) needs that move to have hit. */
+  cancelHitOnly?: boolean;
   /** Knockdown launch distance (u) instead of the system's. */
   launch?: number;
   /** Its guard pushback can slam the guard into the wall (wall damage while guarding). */
