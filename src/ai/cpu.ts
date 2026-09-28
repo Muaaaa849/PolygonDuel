@@ -193,7 +193,7 @@ export class CpuPlayer {
       }
       if (me.moveHit === MH_HIT && m.next >= 0 && this.rng.chance(this.level.confirm)) {
         // blaze sometimes extends with S1 after N2
-        if (me.move === M_N2 && c.def.id === 'blaze' && me.cost >= COST_UNIT && !me.chainResetUsed && this.rng.chance(0.5)) return IN_S1;
+        if (me.move === M_N2 && c.def.id === 'blaze' && me.cost >= c.moves[M_S1].cost && !me.chainResetUsed && this.rng.chance(0.5)) return IN_S1;
         return mash();
       }
       if (me.moveHit === MH_HIT && me.move === M_N3 && c.def.id === 'zephyr' && me.cost >= COST_UNIT) return IN_S1;
@@ -202,7 +202,7 @@ export class CpuPlayer {
         // mixup after a blocked N1: mostly stop, sometimes a read
         const r = this.rng.next();
         if (c.def.id === 'bastion' && me.cost >= COST_UNIT && r < 0.05) return IN_S1;
-        if (c.def.id === 'blaze' && me.cost >= COST_UNIT && r < 0.03) return IN_S1;
+        if (c.def.id === 'blaze' && me.cost >= c.moves[M_S1].cost && r < 0.03) return IN_S1;
         return 0;
       }
       if (m.kind === KIND_GC && me.moveHit === MH_HIT) return mash();

@@ -6,6 +6,8 @@ import { settings, saveSettings } from '../settings';
 import { sfx, setVolume } from '../../audio/sfx';
 import { show, type Screen } from '../router';
 import { layoutEditorScreen, exportSettingsFile, openImport } from './layout-editor';
+import { keybindScreen } from './keybind-editor';
+import { keyLabel, keysFor } from '../../input/keyboard';
 
 export function howtoScreen(onBack: () => void): Screen {
   const legend = h('div', { class: 'legend-grid' });
@@ -59,13 +61,8 @@ export function howtoScreen(onBack: () => void): Screen {
       h('div', { class: 'section-title' }, 'キャラクター'),
       chars,
       h('div', { class: 'section-title' }, 'キーボード'),
-      h('div', { class: 'kbd-table', html: `
-        <span><kbd>WASD</kbd>/<kbd>矢印</kbd></span><span>移動（離すとガード）</span>
-        <span><kbd>J</kbd>/<kbd>Z</kbd></span><span>攻撃</span>
-        <span><kbd>K</kbd>/<kbd>X</kbd> <kbd>L</kbd>/<kbd>C</kbd></span><span>S1 / S2</span>
-        <span><kbd>Space</kbd></span><span>ステップ</span>
-        <span><kbd>U</kbd>/<kbd>V</kbd></span><span>ガード（設定で「手動」の時）</span>
-        <span><kbd>Esc</kbd></span><span>ポーズ</span>` }),
+      h('div', { class: 'kbd-table', html: kbdRows() }),
+      h('div', { class: 'prose', html: 'キーとマウスのボタンは <b>設定 → キー設定</b> で自由に変更できます。PCでは画面のボタンが消え、<b>攻撃・スキルはマウスカーソルの方向へ</b>出ます（設定の「マウスで狙う」をオフにすると相手へ自動で向きます）。' }),
       h('div', { class: 'section-title' }, 'オンライン対戦'),
       h('div', { class: 'prose', html: `
         <b>遠くの人と（リンク）</b>：「リンクで部屋を作る」→ 表示されたリンクをLINEやDiscordで送る → 相手がリンクを開けば接続。ルームコード（6文字）を入力しても参加できます。部屋を作った人はその画面を開いたままにしてください。
@@ -75,6 +72,20 @@ export function howtoScreen(onBack: () => void): Screen {
     ),
   );
   return { el, onBack: () => (onBack(), true) };
+}
+
+/** The current (solo) key bindings as the help table rows. */
+function kbdRows(): string {
+  const k = keysFor('solo');
+  const kb = (codes: string[]) => codes.map((c) => `<kbd>${keyLabel(c)}</kbd>`).join('/') || '—';
+  const move = [...k.up.slice(0, 1), ...k.left.slice(0, 1), ...k.down.slice(0, 1), ...k.right.slice(0, 1)];
+  return `
+        <span>${kb(move)}</span><span>移動（自動ガードの時は、離すとガード）</span>
+        <span>${kb(k.atk)}</span><span>攻撃</span>
+        <span>${kb(k.s1)} ${kb(k.s2)}</span><span>S1 / S2</span>
+        <span>${kb(k.step)}</span><span>ステップ</span>
+        <span>${kb(k.guard)}</span><span>ガード（設定で「手動」の時）</span>
+        <span><kbd>Esc</kbd></span><span>ポーズ</span>`;
 }
 
 export function settingsScreen(onBack: () => void): Screen {
@@ -122,6 +133,20 @@ export function settingsScreen(onBack: () => void): Screen {
     }
   };
   drawG();
+  const touchSeg = h('div', { class: 'segmented' });
+  const drawT = () => {
+    touchSeg.innerHTML = '';
+    for (const [v, label] of [['auto', '自動'], ['show', '表示'], ['hide', '隠す']] as const) {
+      const b = h('button', { class: settings.touchControls === v ? 'on' : '' }, label);
+      b.onclick = () => {
+        sfx.ui();
+        saveSettings({ touchControls: v });
+        drawT();
+      };
+      touchSeg.append(b);
+    }
+  };
+  drawT();
   const el = h('div', { class: 'screen' },
     h('div', { class: 'topbar' }, backButton(onBack), h('h2', null, 'SETTINGS'), h('span', { class: 'sub' }, '設定')),
     h('div', { class: 'scroll' },
@@ -142,6 +167,12 @@ export function settingsScreen(onBack: () => void): Screen {
           ),
         ),
         h('div', { class: 'row-set' }, h('div', { class: 't' }, h('b', null, 'ガード'), h('small', null, '自動：立ち止まる（スティックを離す）とガード。手動：GUARDボタンを押している間だけガード（止まっていてもガードしない）')), guardSeg),
+        h('div', { class: 'row-set' }, h('div', { class: 't' }, h('b', null, '画面のボタン'), h('small', null, '自動：タッチ画面の時だけ表示（PCではキーボードとマウスで操作）')), touchSeg),
+        h('div', { class: 'row-set' },
+          h('div', { class: 't' }, h('b', null, 'キー設定'), h('small', null, 'キーボードとマウスのボタンを自由に割り当て（ひとり用・ローカル対戦の1P／2P）')),
+          h('button', { class: 'btn small primary', onclick: () => { sfx.ui(); show(keybindScreen(() => show(settingsScreen(onBack)))); } }, '編集'),
+        ),
+        toggle('mouseAim', 'マウスで狙う', 'PC（画面のボタンを出していない時）：攻撃・スキルはマウスカーソルの方向へ。オフ：相手へ自動で向く'),
         toggle('aimMode', 'ドラッグでエイム', '攻撃・スキルボタンを押したままドラッグで方向と距離を指定、離して発動。オフ：押した瞬間に発動'),
         toggle('dynamicCamera', 'ダイナミックカメラ', '近づくと寄って、形を大きく見せる'),
         toggle('reduceFlash', 'フラッシュを抑える', '画面の点滅・色収差を弱める（光過敏の方向け）'),

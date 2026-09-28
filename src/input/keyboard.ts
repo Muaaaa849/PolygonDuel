@@ -1,29 +1,29 @@
 // Keyboard + gamepad input (PC testing and local 2P, plan §12 phase 3).
 import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, IN_GUARD, quantizeDir } from '../core/input';
+import { settings } from '../app/settings';
 
-export interface KeyMap {
-  up: string[];
-  down: string[];
-  left: string[];
-  right: string[];
-  atk: string[];
-  s1: string[];
-  s2: string[];
-  step: string[];
-  /** Manual guard (used only when the guard setting is 'manual'). */
-  guard: string[];
-}
+export type KeyAction = 'up' | 'down' | 'left' | 'right' | 'atk' | 's1' | 's2' | 'step' | 'guard';
+export const KEY_ACTIONS: KeyAction[] = ['up', 'down', 'left', 'right', 'atk', 's1', 's2', 'step', 'guard'];
+export const KEY_ACTION_LABELS: Record<KeyAction, string> = {
+  up: '上', down: '下', left: '左', right: '右', atk: '攻撃', s1: 'スキル1', s2: 'スキル2', step: 'ステップ', guard: 'ガード（手動の時）',
+};
+
+/** Codes per action: KeyboardEvent.code, or 'Mouse0' / 'Mouse1' / 'Mouse2' for mouse buttons. */
+export type KeyMap = Record<KeyAction, string[]>;
+
+/** Key sets: one player (CPU, training, online), and the two sides of local 2P. */
+export type KeySet = 'solo' | 'p1' | 'p2';
 
 export const KEYS_SOLO: KeyMap = {
   up: ['KeyW', 'ArrowUp'],
   down: ['KeyS', 'ArrowDown'],
   left: ['KeyA', 'ArrowLeft'],
   right: ['KeyD', 'ArrowRight'],
-  atk: ['KeyJ', 'KeyZ'],
-  s1: ['KeyK', 'KeyX'],
-  s2: ['KeyL', 'KeyC'],
-  step: ['Space', 'Semicolon', 'ShiftLeft'],
-  guard: ['KeyU', 'KeyV'],
+  atk: ['KeyJ', 'Mouse0'],
+  s1: ['KeyK', 'Mouse2'],
+  s2: ['KeyL', 'KeyE'],
+  step: ['Space', 'ShiftLeft'],
+  guard: ['KeyU', 'KeyQ'],
 };
 
 export const KEYS_P1: KeyMap = {
@@ -35,6 +35,32 @@ export const KEYS_P2: KeyMap = {
   up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'],
   atk: ['Comma', 'Numpad1'], s1: ['Period', 'Numpad2'], s2: ['Slash', 'Numpad3'], step: ['ShiftRight', 'Numpad0'], guard: ['KeyM', 'Numpad4'],
 };
+
+export const DEFAULT_KEYS: Record<KeySet, KeyMap> = { solo: KEYS_SOLO, p1: KEYS_P1, p2: KEYS_P2 };
+
+/** The bindings in use for a key set: the player's own (settings) over the defaults. */
+export function keysFor(set: KeySet): KeyMap {
+  const own = settings.keys?.[set];
+  const out = {} as KeyMap;
+  for (const a of KEY_ACTIONS) out[a] = (own?.[a] ?? DEFAULT_KEYS[set][a]).slice(0, 2);
+  return out;
+}
+
+const KEY_NAMES: Record<string, string> = {
+  Space: 'Space', ShiftLeft: '左Shift', ShiftRight: '右Shift', ControlLeft: '左Ctrl', ControlRight: '右Ctrl', AltLeft: '左Alt', AltRight: '右Alt',
+  ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Enter: 'Enter', Tab: 'Tab', CapsLock: 'Caps',
+  Comma: ',', Period: '.', Slash: '/', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Backquote: '`',
+  Mouse0: '左クリック', Mouse1: 'ホイールクリック', Mouse2: '右クリック', Mouse3: 'マウス戻る', Mouse4: 'マウス進む',
+};
+
+/** Short display name of a binding code. */
+export function keyLabel(code: string): string {
+  if (KEY_NAMES[code]) return KEY_NAMES[code];
+  if (code.startsWith('Key')) return code.slice(3);
+  if (code.startsWith('Digit')) return code.slice(5);
+  if (code.startsWith('Numpad')) return `テンキー${code.slice(6)}`;
+  return code;
+}
 
 const down = new Set<string>();
 const pressedSince = new Set<string>();
@@ -57,12 +83,28 @@ function install(): void {
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => down.delete(e.code));
+  // mouse buttons count as keys ('Mouse0' …) — only on the battle field itself, never on menus,
+  // buttons or the on-screen touch controls (when those are shown, the mouse drives them instead)
+  const onField = (t: EventTarget | null) =>
+    t instanceof Element && !!t.closest('.battle, canvas') && !t.closest('button, input, a, .modal-back, .controls, .hud, .train-bar');
+  window.addEventListener('mousedown', (e) => {
+    if (!onField(e.target)) return;
+    const c = `Mouse${e.button}`;
+    if (!down.has(c)) pressedSince.add(c);
+    down.add(c);
+  });
+  window.addEventListener('mouseup', (e) => down.delete(`Mouse${e.button}`));
+  window.addEventListener('contextmenu', (e) => {
+    if (onField(e.target)) e.preventDefault();
+  });
   window.addEventListener('blur', () => down.clear());
 }
 
 export class KeyboardInput {
   used = false;
-  constructor(private map: KeyMap, private pad: number | null = 0) {
+  private map: KeyMap;
+  constructor(set: KeySet, private pad: number | null = 0) {
+    this.map = keysFor(set);
     install();
   }
 

@@ -3,7 +3,9 @@ import { chromium } from 'playwright';
 const OUT = process.env.OUT;
 const url = process.env.URL ?? 'http://localhost:5173/';
 const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+// PC=1: a desktop browser (mouse + keyboard, no touch) at 1280×720
+const pc = !!process.env.PC;
+const ctx = await b.newContext(pc ? { viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 } : { viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
 const p = await ctx.newPage();
 const errs = [];
 p.on('pageerror', (e) => errs.push('pageerror: ' + e.message));
@@ -17,6 +19,7 @@ for (const s of steps) {
   if (s.eval) await p.evaluate(s.eval);
   if (s.key) await p.keyboard.down(s.key);
   if (s.keyup) await p.keyboard.up(s.keyup);
+  if (s.mouse) { await p.mouse.move(s.mouse[0], s.mouse[1]); if (s.mouse[2] !== undefined) { await p.mouse.down({ button: s.mouse[2] }); await p.waitForTimeout(40); await p.mouse.up({ button: s.mouse[2] }); } }
   if (s.wait) await p.waitForTimeout(s.wait);
   if (s.shot) await p.screenshot({ path: `${OUT}/${String(i++).padStart(2, '0')}-${s.shot}.png` });
 }

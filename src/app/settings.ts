@@ -2,6 +2,9 @@
 // Everything can also be exported / imported as a JSON file (settings screen).
 import { sanitizeLayout, type ControlsLayout } from '../input/layout';
 
+/** Own key bindings per set (solo / local 1P / local 2P) and action; missing = default. */
+export type KeyBindings = Partial<Record<'solo' | 'p1' | 'p2', Partial<Record<string, string[]>>>>;
+
 export interface Settings {
   volume: number;
   haptics: boolean;
@@ -21,6 +24,12 @@ export interface Settings {
   playerName: string;
   /** Custom touch control layout (null = built-in). */
   layout: ControlsLayout | null;
+  /** Keyboard / mouse bindings (null = defaults). */
+  keys: KeyBindings | null;
+  /** On-screen touch controls: auto = only on touch devices. */
+  touchControls: 'auto' | 'show' | 'hide';
+  /** PC: attacks and skills go toward the mouse cursor (off: at the opponent). */
+  mouseAim: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -39,6 +48,9 @@ const DEFAULTS: Settings = {
   cpuLevel: 1,
   playerName: '',
   layout: null,
+  keys: null,
+  touchControls: 'auto',
+  mouseAim: true,
 };
 
 const KEY = 'polygon-duel.settings.v1';
@@ -77,7 +89,7 @@ export function onSettings(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
-const EXPORT_KEYS: (keyof Settings)[] = ['volume', 'haptics', 'lefty', 'buttonScale', 'quality', 'reduceFlash', 'dynamicCamera', 'aimMode', 'guardMode', 'showBrief', 'layout'];
+const EXPORT_KEYS: (keyof Settings)[] = ['volume', 'haptics', 'lefty', 'buttonScale', 'quality', 'reduceFlash', 'dynamicCamera', 'aimMode', 'guardMode', 'showBrief', 'layout', 'keys', 'touchControls', 'mouseAim'];
 
 /** Settings as a portable JSON file (controls layout included). */
 export function exportSettings(): string {
@@ -103,6 +115,14 @@ export function importSettings(text: string): void {
       (patch as Record<string, unknown>).layout = v === null ? null : sanitizeLayout(v);
       continue;
     }
+    if (k === 'keys') {
+      patch.keys = sanitizeKeys(v);
+      continue;
+    }
+    if (k === 'touchControls') {
+      if (v === 'auto' || v === 'show' || v === 'hide') patch.touchControls = v;
+      continue;
+    }
     if (k === 'guardMode') {
       if (v === 'auto' || v === 'manual') patch.guardMode = v;
       continue;
@@ -110,6 +130,31 @@ export function importSettings(text: string): void {
     if (typeof v === typeof DEFAULTS[k]) (patch as Record<string, unknown>)[k] = v;
   }
   saveSettings(patch);
+}
+
+/** Keep only well-formed bindings (arrays of up to 2 code strings). */
+export function sanitizeKeys(v: unknown): KeyBindings | null {
+  if (!v || typeof v !== 'object') return null;
+  const out: KeyBindings = {};
+  for (const set of ['solo', 'p1', 'p2'] as const) {
+    const m = (v as Record<string, unknown>)[set];
+    if (!m || typeof m !== 'object') continue;
+    const o: Partial<Record<string, string[]>> = {};
+    for (const [a, codes] of Object.entries(m as Record<string, unknown>)) {
+      if (Array.isArray(codes)) o[a] = codes.filter((c): c is string => typeof c === 'string' && c.length < 40).slice(0, 2);
+    }
+    out[set] = o;
+  }
+  return out;
+}
+
+/** Touch screen (phones, tablets): show the on-screen controls by default. */
+export function isTouchDevice(): boolean {
+  return matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints ?? 0) > 0;
+}
+
+export function showTouchControls(): boolean {
+  return settings.touchControls === 'show' || (settings.touchControls === 'auto' && isTouchDevice());
 }
 
 export function applySettingsToDom(): void {

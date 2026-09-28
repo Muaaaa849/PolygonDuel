@@ -12,13 +12,14 @@ import { PH_FIGHT, PH_INTRO, ST_FREE, ST_STEP, ST_ATTACK, type FighterState } fr
 import { BattleView } from '../../render/battle-view';
 import { app, recoverRenderer, setAmbient } from '../../render/pixi-app';
 import { TouchControls } from '../../input/touch';
-import { KeyboardInput, KEYS_P1, KEYS_P2, KEYS_SOLO } from '../../input/keyboard';
+import { KeyboardInput, keysFor, keyLabel } from '../../input/keyboard';
+import { IN_ATK, IN_S1, IN_S2, IN_AIM, aimBits, quantizeDir, AIM_DIRS } from '../../core/input';
 import { CpuPlayer, CPU_LEVELS, Dummy, DUMMY_MODES, type DummyMode } from '../../ai/cpu';
 import { sfx, vibrate } from '../../audio/sfx';
 import { RollbackSession } from '../../net/rollback';
 import { EventFilter } from '../../net/event-filter';
 import type { PeerLink } from '../../net/transport';
-import { settings, saveSettings } from '../settings';
+import { settings, saveSettings, showTouchControls } from '../settings';
 import { h, hex, modal, shapeIcon, toast, ICONS, SHAPE_INFO } from '../ui';
 import type { Screen } from '../router';
 import { FrameMeter } from './frame-meter';
@@ -48,6 +49,19 @@ export interface BattleConfig {
   guardModes?: [number, number];
   tutorial?: TutorialHooks;
   onExit: (a: ExitAction) => void;
+}
+
+/** PC: the keys in use, as a small legend at the bottom of the battle screen. */
+function keyLegend(): HTMLElement {
+  const k = keysFor('solo');
+  const first = (a: keyof typeof k) => (k[a][0] ? keyLabel(k[a][0]) : '—');
+  const all = (a: keyof typeof k) => k[a].map(keyLabel).join('/') || '—';
+  const move = `${first('up')}${first('left')}${first('down')}${first('right')}`;
+  const items: [string, string][] = [
+    ['移動', move], ['攻撃', all('atk')], ['S1', all('s1')], ['S2', all('s2')], ['ステップ', all('step')],
+    ['ガード', settings.guardMode === 'manual' ? all('guard') : '止まる'], ['ポーズ', 'Esc'],
+  ];
+  return h('div', { class: 'key-legend' }, ...items.map(([t, v]) => h('span', null, h('b', null, v), t)));
 }
 
 export function battleScreen(cfg: BattleConfig): Screen {
@@ -118,9 +132,38 @@ export function battleScreen(cfg: BattleConfig): Screen {
   }
 
   // ───────── input sources ─────────
-  const kb = new KeyboardInput(cfg.mode === 'local' ? KEYS_P1 : KEYS_SOLO, 0);
-  const kb2 = cfg.mode === 'local' ? new KeyboardInput(KEYS_P2, 1) : null;
-  const localInput = () => touch.poll() | kb.poll();
+  const kb = new KeyboardInput(cfg.mode === 'local' ? 'p1' : 'solo', 0);
+  const kb2 = cfg.mode === 'local' ? new KeyboardInput('p2', 1) : null;
+  // PC: no on-screen controls; a legend of the keys instead, and (optionally) aim with the mouse
+  const touchShown = showTouchControls();
+  if (!touchShown) {
+    touch.el.style.display = 'none';
+    root.append(keyLegend());
+  }
+  const mouseAim = !touchShown && settings.mouseAim && cfg.mode !== 'local' && cfg.mode !== 'tutorial';
+  const mouse = { x: 0, y: 0, seen: false };
+  const onMouseMove = (e: MouseEvent) => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    mouse.seen = true;
+  };
+  if (mouseAim) window.addEventListener('mousemove', onMouseMove);
+  let prevLocal = 0;
+  const localInput = () => {
+    let w = touch.poll() | kb.poll();
+    // mouse aim: a fresh ATK / S1 / S2 press carries the direction to the cursor (full reach).
+    // Only on the press frame, so the input stays constant while held (fewer online rollbacks).
+    const fresh = w & ~prevLocal & (IN_ATK | IN_S1 | IN_S2);
+    prevLocal = w;
+    if (mouseAim && mouse.seen && fresh && !(w & IN_AIM)) {
+      const p = view.screenOf(cfg.local);
+      const r = app.canvas.getBoundingClientRect();
+      const dx = mouse.x - r.left - p.x;
+      const dy = mouse.y - r.top - p.y;
+      if (dx * dx + dy * dy > 16 * 16) w |= aimBits(quantizeDir(dx, dy, AIM_DIRS), 3);
+    }
+    return w;
+  };
   let cpu: CpuPlayer | null = null;
   let dummy: Dummy | null = null;
   if (cfg.mode === 'cpu') cpu = new CpuPlayer(sim, oppIdx, CPU_LEVELS[cfg.cpuLevel ?? 1], Date.now() & 0xffff);
@@ -708,6 +751,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
     },
     dispose: () => {
       disposed = true;
+      window.removeEventListener('mousemove', onMouseMove);
       cancelAnimationFrame(raf);
       document.removeEventListener('visibilitychange', onVis);
       touch.dispose();

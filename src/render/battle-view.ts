@@ -189,6 +189,13 @@ export class BattleView {
     return Math.min(SYSTEM.cost.max * COST_UNIT, f.cost + (g?.cost ?? 0));
   }
 
+  /** Fighter i's position on screen (canvas css px). Called once per button press, not per frame. */
+  screenOf(i: number): { x: number; y: number } {
+    const f = this.sim.s.f[i];
+    const p = this.world.toGlobal({ x: toPx(f.x), y: toPx(f.y) });
+    return { x: p.x, y: p.y };
+  }
+
   colorOf(i: number): number {
     return this.fighters[i].color;
   }

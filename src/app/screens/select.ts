@@ -4,6 +4,7 @@ import { CHARACTERS } from '../../data/characters';
 import type { CharacterDef } from '../../data/types';
 import { CPU_LEVELS } from '../../ai/cpu';
 import { SYSTEM } from '../../data/system';
+import { keyLabel, keysFor } from '../../input/keyboard';
 import { settings, saveSettings } from '../settings';
 import { backButton, h, hex, shapeIcon } from '../ui';
 import { sfx } from '../../audio/sfx';
@@ -281,7 +282,12 @@ export function selectScreen(opts: SelectOptions): Screen {
     if (opts.mode === 'local') {
       cards.mark(stage === 0 ? p2 : p1, stage === 0 ? null : '1P');
       if (stage === 1) cards.mark(p1, '1P');
-      hint.textContent = stage === 0 ? '1P のキャラを選んでください（WASD + F/G/H + Shift）' : '2P のキャラを選んでください（矢印 + , . / + 右Shift）';
+      const keys = (set: 'p1' | 'p2') => {
+        const k = keysFor(set);
+        const f = (c: string[]) => (c[0] ? keyLabel(c[0]) : '—');
+        return `${f(k.up)}${f(k.left)}${f(k.down)}${f(k.right)} + ${f(k.atk)}/${f(k.s1)}/${f(k.s2)} + ${f(k.step)}`;
+      };
+      hint.textContent = stage === 0 ? `1P のキャラを選んでください（${keys('p1')}）` : `2P のキャラを選んでください（${keys('p2')}）`;
       confirm.textContent = stage === 0 ? '1P 決定' : '対戦開始';
     } else if (opts.mode === 'cpu') {
       hint.textContent = '';

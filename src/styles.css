@@ -2257,3 +2257,51 @@ kbd {
 .select-grid.dense .char-card .preview {
   min-height: 44px;
 }
+
+/* PC: key legend instead of the on-screen controls */
+.key-legend {
+  position: absolute;
+  left: calc(10px + var(--safe-l));
+  bottom: calc(10px + var(--safe-b));
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--muted);
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+.key-legend b {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  font-family: var(--display);
+  font-weight: 600;
+}
+
+/* key binding editor */
+.keybind-table {
+  display: grid;
+  grid-template-columns: 1fr 140px 140px;
+  gap: 6px 8px;
+  align-items: center;
+}
+.keybind-table .kb-action {
+  font-size: 13px;
+  color: var(--text);
+}
+.keyslot {
+  min-width: 0;
+  font-family: var(--display);
+}
+.keyslot.empty {
+  opacity: 0.5;
+}
+.keyslot.capturing {
+  border-color: var(--accent, #6ff3ff);
+  box-shadow: 0 0 12px rgba(111, 243, 255, 0.4);
+}
