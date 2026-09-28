@@ -87,6 +87,14 @@ export interface ProjectileSpec {
    * refill the gauge like melee blocks do: standing in guard against a volley is a slow loss.
    */
   guardDrain?: number;
+  /**
+   * Telekinetic pull (キネシスのサイコプル): instead of a flinch, the target is dragged to `to` u in
+   * front of the caster and held `stun` F (a normal combo follows). Once per combo; later pulls
+   * only deal `dmg` with the short `hitstun`. A target in a normal-attack motion (N1–N3 / GC / JA,
+   * startup included) reverses it: the caster is dragged to the target and held `reverseStun` F.
+   * Not a diamond: stepping into it is no bullet-just.
+   */
+  pull?: { to: number; stun: number; reverseStun: number };
 }
 
 /** A zone placed on the floor (レイのスタティックフィールド). */
@@ -175,12 +183,21 @@ export interface MoveDef {
   cancelHitOnly?: boolean;
   /** Knockdown launch distance (u) instead of the system's. */
   launch?: number;
+  /** Knocks down where the target stands (no launch slide). */
+  pinDown?: boolean;
+  /** Hits all around the attacker (a burst of radius `reach`), from the first active frame. */
+  radial?: boolean;
   /** Its guard pushback can slam the guard into the wall (wall damage while guarding). */
   wallOnGuard?: boolean;
   /** Power-up (ヴォルトのオーバーチャージ): on `frame`, attack damage +pct% until you take damage. */
   powerUp?: { frame: number; pct: number };
   /** Sets the shooting mode at its 1st frame (1 = on, 0 = off). */
   mode?: 0 | 1;
+  /**
+   * 0F skill: its effect (mode / powerUp) applies the frame the button is pressed, during any
+   * action (attacking, stepping, guarding…) without interrupting it. S/A/T are unused.
+   */
+  instant?: boolean;
   /** Short description for UI. */
   desc?: string;
 }
@@ -215,6 +232,8 @@ export interface CharacterDef {
   shooter?: { walk: number; shots: [string, string, string]; off: string; blast: string };
   /** S2 pressed from neutral / a step starts this extra move instead (skills[1] then only comes out of its cancelFrom moves). */
   s2Neutral?: string;
+  /** How the normals are drawn: a swung blade (default) or telekinesis (the hit area itself ripples). */
+  style?: 'blade' | 'psychic';
   /** Suggested combos for tutorial / move list. */
   combos: { route: string; cost: number; note: string }[];
   tips: string[];

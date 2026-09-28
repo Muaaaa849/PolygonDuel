@@ -6,7 +6,7 @@ import { Sim, getChar } from '../../core/sim';
 import { u } from '../../core/fixed';
 import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK } from '../../core/input';
 import { ST_FREE } from '../../core/state';
-import { M_N2, M_S1, M_STRIKE } from '../../core/compile';
+import { M_N2, M_N3, M_S1, M_STRIKE } from '../../core/compile';
 import { SYSTEM } from '../../data/system';
 import { CHARACTERS, charIndex } from '../../data/characters';
 import type { CharacterDef, MoveDef } from '../../data/types';
@@ -44,6 +44,35 @@ function scriptFor(c: CharacterDef, kind: DemoKind): Script {
         sim.s.f[1].x += d;
       },
       input: (t) => [t === 16 ? btn : t === 34 || t === 48 || t === 62 ? IN_ATK : t === 120 ? btn : 0, 0],
+    };
+  }
+  if (m.projectile?.pull) {
+    // pull the wandering dummy in from afar → 1 → 2 → 3 (pinned down) → burst
+    return {
+      dist: 5,
+      setup: (sim) => (sim.s.f[0].cost = 16),
+      input: (t, sim) => {
+        const me = sim.s.f[0];
+        const op = sim.s.f[1];
+        if (t === 16) return [btn | IN_STICK, shuffle(t)];
+        const dummy = op.statHitsTaken > 0 ? 0 : shuffle(t);
+        if (me.move === M_N3 && me.moveHit) return [t % 2 ? IN_S2 : 0, dummy];
+        if (t > 30 && t % 3 === 0 && op.st !== ST_FREE) return [IN_ATK, dummy];
+        return [0, dummy];
+      },
+    };
+  }
+  if (m.radial) {
+    // 1 → 2 → 3 pins the dummy down → the burst throws it away (OTG)
+    return {
+      dist: 1.5,
+      setup: (sim) => (sim.s.f[0].cost = 16),
+      input: (t, sim) => {
+        const me = sim.s.f[0];
+        const dummy = sim.s.f[1].statHitsTaken > 0 ? 0 : shuffle(t);
+        if (me.move === M_N3 && me.moveHit) return [t % 2 ? btn : 0, dummy];
+        return [t >= 20 && t < 110 && t % 4 === 0 ? IN_ATK : 0, dummy];
+      },
     };
   }
   if (m.field) {

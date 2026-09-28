@@ -61,10 +61,10 @@ export const ray: CharacterDef = {
   skills: [
     {
       id: 'modeShift', name: 'モード切替', kind: 'skill', shape: 'diamond',
-      desc: '射撃モードへ（コスト1）。射撃モード中にもう一度押すと通常モードへ（コスト0・10F）。2段目の後に押すと「切替ブラスト」',
-      cost: 1, S: 1, A: 0, T: 10, reach: 0, lunge: 0,
+      desc: '射撃モードへ（コスト1）。押した瞬間に切り替わり、攻撃中・ステップ中・ガード中でも使える。射撃モード中にもう一度押すと通常モードへ（コスト0）。2段目の後に押すと「切替ブラスト」',
+      cost: 1, S: 1, A: 0, T: 1, reach: 0, lunge: 0,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 0,
-      mode: 1, cancelFrom: ['n2', 'neutral'],
+      mode: 1, instant: true, cancelFrom: ['n2', 'neutral'],
     },
     {
       id: 'staticField', name: 'スタティックフィールド', kind: 'skill', shape: 'pentagon',
@@ -78,8 +78,8 @@ export const ray: CharacterDef = {
   extraMoves: [
     {
       id: 'modeOff', name: '通常モードへ', kind: 'skill', shape: 'square',
-      cost: 0, S: 1, A: 0, T: 10, reach: 0, lunge: 0,
-      dmg: 0, hitstun: 0, blockstun: 0, hitstop: 0, mode: 0,
+      cost: 0, S: 1, A: 0, T: 1, reach: 0, lunge: 0,
+      dmg: 0, hitstun: 0, blockstun: 0, hitstop: 0, mode: 0, instant: true,
     },
     {
       id: 'blast', name: '切替ブラスト', kind: 'skill', shape: 'diamond',

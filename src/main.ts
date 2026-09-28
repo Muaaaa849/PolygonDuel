@@ -1,3 +1,4 @@
+import { installFullscreenKeeper } from './app/fullscreen';
 import './styles.css';
 import { initPixi, setAmbient } from './render/pixi-app';
 import { fxSources, loadFx } from './render/fx-sprites';
@@ -95,6 +96,8 @@ async function boot(): Promise<void> {
   // go up to the GPU one per frame, so no hit in a fight ever waits for a texture upload
   void loadFx().then(() => warmTextures(pixi.renderer, fxSources()));
   window.addEventListener('pointerdown', () => unlockAudio(), { once: true });
+  // fullscreen chosen on the title comes back after sharing an invite / switching apps
+  installFullscreenKeeper();
 
   const hash = decodeURIComponent(location.hash || '');
   const room = /^#room=/i.test(hash) ? parseRoomCode(hash) : null;

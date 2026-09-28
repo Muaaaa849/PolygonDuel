@@ -379,6 +379,46 @@ button {
   margin: 10px 0;
   min-height: 0;
 }
+/* more characters than one row holds: every row keeps the one-row card height (a bit less, so
+   the next row peeks out) and the grid scrolls vertically, snapping row by row */
+.select-grid.rows {
+  container-type: size;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  scroll-snap-type: y proximity;
+  grid-auto-rows: max-content;
+  padding: 2px 2px 6px;
+  scrollbar-width: thin;
+}
+.select-grid.rows .char-card {
+  height: calc(100cqh - 8px);
+  scroll-snap-align: start;
+}
+.select-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.select-more {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  transform: translateX(-50%);
+  font-size: 11px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  color: var(--text);
+  background: rgba(10, 14, 30, 0.85);
+  border: 1px solid var(--line);
+  transition: opacity 0.2s;
+}
+.select-more.hide {
+  opacity: 0;
+  pointer-events: none;
+}
 .char-card {
   position: relative;
   display: flex;

@@ -20,8 +20,8 @@ import {
   type SimEvent,
   EV_MOVE, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN, EV_STEP,
   EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_WAKE, EV_GUARD, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END,
-  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER,
-  HF_COUNTER, HF_JA, HF_OTG, HF_KNOCKDOWN, HF_FORCED_DOWN, HF_SHOT, HF_PUNISH,
+  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL,
+  HF_COUNTER, HF_JA, HF_OTG, HF_KNOCKDOWN, HF_FORCED_DOWN, HF_SHOT, HF_PUNISH, HF_PULL,
 } from './events';
 
 const COMPILED: CChar[] = CHARACTERS.map((c, i) => compileCharacter(c, i));
@@ -141,7 +141,7 @@ export class Sim {
         kbDist: 0, kbAngle: 0, limited: 0, buff: 0, healUses: 0, csHit: 0,
         lastDir: i === 0 ? 0 : 16,
         aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, lungePct: 100, wallHits: 0, momStep: 0, momDir: 0,
-        ghostT: 0, ghostMode: 0, shootMode: 0, justNoMul: 0, wallGuard: 0, fieldT: 0, power: 0,
+        ghostT: 0, ghostMode: 0, shootMode: 0, justNoMul: 0, wallGuard: 0, fieldT: 0, power: 0, instLock: 0, pullUsed: 0,
       });
       for (let j = 0; j < MAX_SHOTS; j++) setShot(f, j, null);
       f.char = keepChar;
@@ -271,6 +271,7 @@ export class Sim {
     if (f.bufStep > 0) f.bufStep--;
     if (f.justWin > 0) f.justWin--;
     if (f.buff > 0) f.buff--;
+    this.tryInstant(i);
     f.sf++;
     if (f.st !== ST_ATTACK) f.momStep = 0;
     if (f.st !== ST_BLOCKSTUN) f.wallGuard = 0;
@@ -455,16 +456,70 @@ export class Sim {
     return sh && f.shootMode ? sh.shots[0] : M_N1;
   }
 
+  /**
+   * Instant (0F) skills: レイのモード切替 and ヴォルトのオーバーチャージ take effect the frame the
+   * button is pressed, whatever the fighter is doing (attacking, stepping, guarding, in guard
+   * stun…; not while being hit / downed), without interrupting it. A press that the current move
+   * can still cancel into its skill (N2 → blast, dash → turnback) is left for that. After one
+   * goes off the buttons are ignored for SYSTEM.instantLock frames, so a double tap never pays twice.
+   */
+  private tryInstant(i: number): void {
+    const f = this.s.f[i];
+    if (f.instLock > 0) f.instLock--;
+    if (!f.bufS1 && !f.bufS2) return;
+    const st = f.st;
+    if (st !== ST_FREE && st !== ST_ATTACK && st !== ST_STEP && st !== ST_BLOCKSTUN && st !== ST_JAM && st !== ST_WAKE) return;
+    const c = COMPILED[f.char];
+    // the current move can still cancel into this button's skill → leave the press to it
+    const reserved = (slot: number) => {
+      if (st !== ST_ATTACK || f.move < 0 || !(c.moves[slot].cancelFrom & (1 << f.move))) return false;
+      const cm = c.moves[f.move];
+      const end = Math.max(cm.cancel ? cm.cancel.b : 0, cm.cancelAny ? cm.cancelAny.b : 0);
+      return f.sf <= end;
+    };
+    if (f.bufS1) {
+      const slot = this.skillSlot(f, M_S1);
+      if (c.moves[slot].instant && !(c.shooter && reserved(M_S1))) {
+        f.bufS1 = f.aimS1 = 0;
+        if (f.instLock === 0) this.useInstant(i, slot);
+      }
+    }
+    if (f.bufS2) {
+      const slot = c.s2Neutral >= 0 ? c.s2Neutral : M_S2;
+      if (c.moves[slot].instant && !reserved(M_S2)) {
+        f.bufS2 = f.aimS2 = 0;
+        if (f.instLock === 0) this.useInstant(i, slot);
+      }
+    }
+  }
+
+  private useInstant(i: number, slot: number): void {
+    const f = this.s.f[i];
+    const m = COMPILED[f.char].moves[slot];
+    if (!this.canAfford(f, m)) return;
+    if (!f.infCost) f.cost -= m.cost;
+    f.instLock = SYSTEM.instantLock;
+    if (m.mode >= 0 && m.mode !== f.shootMode) {
+      f.shootMode = m.mode;
+      this.emit(EV_MODE, i, m.mode, 0, f.x, f.y);
+    }
+    if (m.powerUp) {
+      f.power = m.powerUp.pct;
+      this.emit(EV_POWER, i, 1, 0, f.x, f.y);
+    }
+  }
+
   /** Skill press out of neutral (`from` mask: CANCEL_NEUTRAL, or | CANCEL_STEP in a step). */
   private freeSkill(f: FighterState, mask: number): number {
     const c = COMPILED[f.char];
+    // (instant skills never start as moves: tryInstant handles those presses)
     if (f.bufS1 && c.moves[M_S1].cancelFrom & mask) {
       const r = this.skillSlot(f, M_S1);
-      if (this.canAfford(f, c.moves[r])) return r;
+      if (!c.moves[r].instant && this.canAfford(f, c.moves[r])) return r;
     }
     if (f.bufS2) {
       const s2 = c.s2Neutral >= 0 ? c.s2Neutral : M_S2;
-      if (c.moves[s2].cancelFrom & mask && this.canAfford(f, c.moves[s2])) return s2;
+      if (!c.moves[s2].instant && c.moves[s2].cancelFrom & mask && this.canAfford(f, c.moves[s2])) return s2;
     }
     return -1;
   }
@@ -769,7 +824,7 @@ export class Sim {
 
   private shotSpec(f: FighterState, n: number): NonNullable<CMove['proj']> {
     const c = COMPILED[f.char];
-    return c.moves[c.shooter ? c.shooter.shots[n - 1] : M_N1].proj!;
+    return c.moves[c.shooter ? c.shooter.shots[n - 1] : c.projSlot].proj!;
   }
 
   private clearShots(f: FighterState): void {
@@ -804,7 +859,7 @@ export class Sim {
         }
         if (open && segPointDist2(sh.x, sh.y, nx, ny, o.x, o.y) <= reach * reach) {
           setShot(f, j, null);
-          if (o.st === ST_STEP && o.sf <= SYSTEM.step.moveFrames) {
+          if (o.st === ST_STEP && o.sf <= SYSTEM.step.moveFrames && !p.pull) {
             this.bulletJust(i);
             break; // every bullet is gone
           }
@@ -846,6 +901,7 @@ export class Sim {
     const s = this.s;
     const f = s.f[i];
     const o = s.f[1 - i];
+    if (p.pull) return this.pullContact(i, p, ang, x, y);
     if (this.isDashing(o)) {
       // a bullet catches a dash too (×1.5)
       const dmg = this.rawDamage(f, o, idiv(p.dmg * Math.round(SYSTEM.just.mul * 100), 100));
@@ -887,6 +943,68 @@ export class Sim {
     this.shotCost(f, p);
     s.hitstop = Math.max(s.hitstop, SHOT_HITSTOP);
     this.emit(EV_HIT, i, dmg, HF_SHOT | (o.comboHits << 8), x, y);
+  }
+
+  /**
+   * Telekinetic pull (キネシスのサイコプル). Guarded: a short guard stun, nothing more. A target
+   * in a normal-attack motion (N1–N3 / GC / JA, even before its hitbox is out) turns it around:
+   * the caster is caught and dragged in front of the target, who gets a free combo. Otherwise the
+   * target is dragged in front of the caster and held long enough for a normal combo — once per
+   * combo; after that it is only a light hit (no N1 → N2 → pull loop).
+   */
+  private pullContact(i: number, p: NonNullable<CMove['proj']>, ang: number, x: number, y: number): void {
+    const s = this.s;
+    const f = s.f[i];
+    const o = s.f[1 - i];
+    const pl = p.pull!;
+    if (this.isGuarding(o)) {
+      const left = o.st === ST_BLOCKSTUN ? o.len - o.sf + 1 : 0;
+      o.st = ST_BLOCKSTUN;
+      o.sf = 1;
+      o.len = Math.max(left, p.blockstun);
+      o.gcQueued = 0;
+      o.move = -1;
+      if (o.guardF < SYSTEM.guard.startup) o.guardF = SYSTEM.guard.startup;
+      o.kbDist = p.guardPush;
+      o.kbAngle = ang;
+      o.guardQ = COMPILED[o.char].guardMaxQ;
+      o.statBlocks++;
+      s.hitstop = Math.max(s.hitstop, SHOT_BLOCKSTOP);
+      this.emit(EV_BLOCK, i, -1, 1, x, y);
+      return;
+    }
+    const dx = f.x - o.x;
+    const dy = f.y - o.y;
+    const dist = isqrt(dx * dx + dy * dy);
+    const om = o.st === ST_ATTACK ? this.moveOf(o) : null;
+    if (om && (om.kind === KIND_NORMAL || om.kind === KIND_GC || om.kind === KIND_JA)) {
+      // caught by the swing: the caster is the one dragged in
+      this.stagger(f, pl.reverseStun, Math.max(0, dist - pl.to), atan2A(-dy, -dx));
+      s.hitstop = Math.max(s.hitstop, SHOT_HITSTOP);
+      this.emit(EV_PULL, i, 1, 0, o.x, o.y);
+      return;
+    }
+    const dmg = this.damage(f, o, p.dmg, false);
+    this.gainHurtCost(o);
+    s.hitstop = Math.max(s.hitstop, SHOT_HITSTOP);
+    if (!f.pullUsed) {
+      f.pullUsed = 1;
+      const kb = Math.max(0, dist - pl.to);
+      const toward = atan2A(dy, dx);
+      if (o.st === ST_STUN) {
+        // (a stunned target stays stunned, only moved)
+        o.kbDist = kb;
+        o.kbAngle = toward;
+      } else this.stagger(o, pl.stun, kb, toward);
+      this.emit(EV_HIT, i, dmg, HF_SHOT | HF_PULL | (o.comboHits << 8), x, y);
+      this.emit(EV_PULL, i, 0, 0, o.x, o.y);
+      return;
+    }
+    // already pulled in this combo: a light hit that does not extend the combo
+    if (o.st === ST_HITSTUN || o.st === ST_STUN || o.st === ST_JAM) o.len = Math.max(o.len, o.sf - 1 + p.hitstun);
+    else this.stagger(o, p.hitstun, p.hitPush, ang);
+    this.emit(EV_HIT, i, dmg, HF_SHOT | (o.comboHits << 8), x, y);
+    this.emit(EV_PULL, i, 2, 0, o.x, o.y);
   }
 
   /** Bullets gain half a melee hit's cost (within the same per-combo cap). */
@@ -990,7 +1108,7 @@ export class Sim {
     const hit = f.moveHit === MH_HIT;
     const blocked = f.moveHit === MH_BLOCK;
     // contact-free chains / cancels: a shot's next shot, a dash's turnback
-    if (f.bufAtk && m.next >= 0 && this.inWin(m.chainAny, mf)) {
+    if (f.bufAtk && m.next >= 0 && this.inWin(m.chainAny, mf) && (!m.proj || f.shootMode)) {
       this.startMove(i, m.next, w, true);
       return true;
     }
@@ -1138,6 +1256,13 @@ export class Sim {
 
   /** Does the move's hitbox (thrust bar or swept fan so far) touch the defender? */
   private touches(a: FighterState, d: FighterState, m: CMove): boolean {
+    if (m.radial) {
+      // a burst all around (キネシスのサイコバースト)
+      const dx = d.x - a.x;
+      const dy = d.y - a.y;
+      const r = m.reach + HURT_R;
+      return dx * dx + dy * dy <= r * r;
+    }
     if (!m.isSweep) {
       const tx = a.x + offX(a.facing, m.reach);
       const ty = a.y + offY(a.facing, m.reach);
@@ -1316,8 +1441,14 @@ export class Sim {
         if (otg) {
           a.otgUsed = 1;
           flags |= HF_OTG;
-          d.kbDist = u(0.4);
-          d.kbAngle = away;
+          if (m.launch > 0) {
+            // a launcher picks the downed body up and throws it again (サイコバースト)
+            flags |= HF_KNOCKDOWN;
+            this.knockDown(d, away, m.launch);
+          } else {
+            d.kbDist = u(0.4);
+            d.kbAngle = away;
+          }
         } else if (m.knockdown || forced) {
           flags |= HF_KNOCKDOWN;
           if (forced) flags |= HF_FORCED_DOWN;
@@ -1397,7 +1528,8 @@ export class Sim {
     d.move = -1;
     d.guardF = 0;
     d.gcQueued = 0;
-    d.kbDist = launch > 0 ? launch : LAUNCH;
+    // (launch < 0: knocked down where it stands — キネシスの3段目)
+    d.kbDist = launch < 0 ? 0 : launch > 0 ? launch : LAUNCH;
     d.kbAngle = angle;
     const who = this.s.f[0] === d ? 0 : 1;
     this.emit(EV_KNOCKDOWN, who, 0, 0, d.x, d.y);
@@ -1516,6 +1648,7 @@ export class Sim {
         a.comboGain = 0;
         a.chainResetUsed = 0;
         a.otgUsed = 0;
+        a.pullUsed = 0;
       }
       if (s.trainingRefill && a.infCost) a.cost = COST_MAX;
     }

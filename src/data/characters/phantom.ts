@@ -55,7 +55,7 @@ export const phantom: CharacterDef = {
     {
       id: 'soulRipper', name: 'ソウルリッパー', kind: 'skill', shape: 'triangle',
       desc: 'ガード崩し。ガード中の相手をスタン',
-      cost: 2, S: 19, A: 3, T: 49, reach: 2.5, lunge: 1.0,
+      cost: 2, S: 29, A: 3, T: 59, reach: 2.5, lunge: 1.0,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 6,
       guardBreak: { crush: 70, dmgGuard: 30, dmgOpen: 25 },
       cancelFrom: ['n1', 'neutral'],

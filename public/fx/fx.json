@@ -414,5 +414,44 @@
    0.5
   ],
   "scale": 1.0
+ },
+ "psy_t": {
+  "file": "psy_t.webp",
+  "size": 320,
+  "count": 14,
+  "cols": 4,
+  "fps": 60,
+  "tint": true,
+  "anchor": [
+   0.5,
+   0.5
+  ],
+  "scale": 1.0
+ },
+ "psy_burst": {
+  "file": "psy_burst.webp",
+  "size": 384,
+  "count": 16,
+  "cols": 4,
+  "fps": 60,
+  "tint": false,
+  "anchor": [
+   0.5,
+   0.5
+  ],
+  "scale": 1.0
+ },
+ "psy_grip_t": {
+  "file": "psy_grip_t.webp",
+  "size": 256,
+  "count": 14,
+  "cols": 4,
+  "fps": 60,
+  "tint": true,
+  "anchor": [
+   0.5,
+   0.5
+  ],
+  "scale": 1.0
  }
 }

@@ -135,6 +135,10 @@ export interface FighterState {
   faceFoe: number;
   /** Attack power bonus in percent (ヴォルトのオーバーチャージ). Lasts until this fighter takes damage; 0 = none. */
   power: number;
+  /** Frames left during which instant-skill presses are ignored (double-tap guard). */
+  instLock: number;
+  /** This fighter's telekinetic pull already dragged the opponent in this combo (once per combo). */
+  pullUsed: number;
   /** Floor field owned by this fighter: frames left (0 = none), center. */
   fieldT: number;
   fieldX: number;
@@ -186,7 +190,7 @@ export function newFighter(): FighterState {
     chainResetUsed: 0, otgUsed: 0, comboHits: 0, comboFrames: 0, comboDmg: 0, downAge: 0, kbDist: 0, kbAngle: 0,
     limited: 0, buff: 0, healUses: 0, csHit: 0, prevIn: 0, lastDir: 0,
     aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, wallHits: 0, lungePct: 100, momStep: 0, momDir: 0,
-    shootMode: 0, justNoMul: 0, wallGuard: 0, manualGuard: 0, faceFoe: 0, power: 0,
+    shootMode: 0, justNoMul: 0, wallGuard: 0, manualGuard: 0, faceFoe: 0, power: 0, instLock: 0, pullUsed: 0,
     sh0n: 0, sh0x: 0, sh0y: 0, sh0a: 0, sh0r: 0, sh1n: 0, sh1x: 0, sh1y: 0, sh1a: 0, sh1r: 0, sh2n: 0, sh2x: 0, sh2y: 0, sh2a: 0, sh2r: 0,
     fieldT: 0, fieldX: 0, fieldY: 0,
     ghostT: 0, ghostMode: 0, ghostX: 0, ghostY: 0, ghostSx: 0, ghostSy: 0, ghostTx: 0, ghostTy: 0, ghostFace: 0, ghostAtk: 0,

@@ -10,7 +10,8 @@ import type { CharacterDef } from '../types';
 // (N1 after a guarded +2 dash beats the fastest GC) needs N1.S − 1 < 2 + GC.S − 1.
 // Dash rules (tests/newchars.test.ts): R9 +3 hit / +2 block, no normal-move combo; R10 turnback
 // after a guarded dash still loses to the fastest GC (v1.0: every GB 4F faster → the turnback
-// reaches the GC during its startup, where a GB only chips, and the GC lands); R12 turnback ≥ 21F;
+// reaches the GC during its startup, where a GB only chips, and the GC lands; v1.3: 28F, the GC
+// still lands first); R12 turnback ≥ 21F;
 // R13 dash always loses to an attack touching it; R14 (v0.9) the dash also comes out on its own.
 // v1.0 (user request): a dash that hits chains into the next dash (mash S1) — a skill-only
 // combo, 4 cost = 4 hits; dash damage ×0.8.
@@ -65,21 +66,21 @@ export const volt: CharacterDef = {
     {
       id: 'turnBack', name: 'ターンバック', kind: 'skill', shape: 'triangle',
       desc: 'ダッシュスラストの直後（8F以内）に押すと、振り返って背後の相手へガード崩し。何もしていない時に押すと「オーバーチャージ」',
-      cost: 1, S: 26, A: 3, T: 54, reach: 2.5, lunge: 0.6, autoAim: true,
+      cost: 1, S: 28, A: 3, T: 56, reach: 2.5, lunge: 0.6, autoAim: true,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 6,
       guardBreak: { crush: 60, dmgGuard: 30, dmgOpen: 20 },
       cancelFrom: ['dashThrust'],
     },
   ],
-  // S2 from neutral (not right after a dash): charge up. Pentagon = "hit me now" — the long,
-  // harmless startup is the price; once charged, every attack does +25% until Volt takes damage.
+  // S2 anywhere but right after a dash: charge up at once (v1.3: 0F, usable mid-action); every
+  // attack does +25% until Volt takes damage.
   extraMoves: [
     {
       id: 'overcharge', name: 'オーバーチャージ', kind: 'skill', shape: 'pentagon',
-      desc: '何もしていない時のS2。24F目に帯電し、次にダメージを受けるまで攻撃力+25%（重ねがけ不可）。溜め中は無防備',
-      cost: 2, S: 24, A: 0, T: 40, reach: 0, lunge: 0,
+      desc: '突進の直後以外のS2。押した瞬間に帯電し（攻撃中・ステップ中・ガード中でも）、次にダメージを受けるまで攻撃力+25%（重ねがけ不可）',
+      cost: 2, S: 1, A: 0, T: 1, reach: 0, lunge: 0,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 0,
-      powerUp: { frame: 24, pct: 25 },
+      powerUp: { frame: 1, pct: 25 }, instant: true,
       cancelFrom: ['neutral'],
     },
   ],

@@ -87,7 +87,7 @@ export const SHAPE_INFO: { shape: Shape; name: string; state: string; act: strin
   { shape: 'arrow', name: '矢印', state: 'ステップ', act: '硬直を狩れ', color: '#58f0a0' },
   { shape: 'square', name: '四角', state: '通常・移動中', act: '何でもできる', color: '#c7d0ea' },
   { shape: 'star', name: '星つき四角', state: 'スタン', act: 'フルコンボ！', color: '#ffd060' },
-  { shape: 'pentagon', name: '五角', state: '回復・バフ', act: '殴りに行け', color: '#b58cff' },
+  { shape: 'pentagon', name: '五角', state: '回復・バフ・引き寄せ', act: '殴りに行け', color: '#b58cff' },
 ];
 
 export const ICONS = {

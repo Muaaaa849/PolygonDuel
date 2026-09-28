@@ -138,6 +138,8 @@ export const SYSTEM = {
 
   /** Default input buffer for presses (frames). */
   buffer: 6,
+  /** After an instant skill (0F: レイのモード切替・ヴォルトのオーバーチャージ), its button is ignored this many frames (a double tap doesn't pay twice). */
+  instantLock: 20,
   /** Homing: first N startup frames may turn toward the opponent by at most `homingDeg`/F. */
   homingFrames: 8,
   homingDeg: 4,

@@ -837,6 +837,78 @@ def overcharge(size=256, n=14):
     save('overcharge', frames)
 
 
+def psy_hit(size=320, n=14):
+    """Kinesis's normals (white, tinted): no blade — the struck space itself. Space pinches inward
+    (streaks converge on the point), then releases as wobbling rings."""
+    x, y, r, th = grid(size)
+    frames = []
+    g = np.random.default_rng(1717)
+    streaks = [(g.uniform(0, 2 * math.pi), g.uniform(0.6, 1.0)) for _ in range(12)]
+    for k in range(n):
+        t = k / (n - 1)
+        inten = np.zeros_like(r)
+        # 1) pinch: short streaks rushing to the center (first third)
+        if t < 0.4:
+            tt = t / 0.4
+            for a, sp in streaks:
+                d = (1 - tt) * 0.95 * sp + 0.08
+                u = x * math.cos(a) + y * math.sin(a)
+                v = -x * math.sin(a) + y * math.cos(a)
+                inten += gauss(v, 0.012) * gauss(u - d, 0.09) * (0.6 + 0.8 * tt)
+        # 2) release: two wobbling rings (the space rippling back)
+        for j, delay in enumerate((0.25, 0.42)):
+            tt = np.clip((t - delay) / (1 - delay), 0, 1)
+            if tt <= 0:
+                continue
+            rad = (0.12 + 0.8 * ease_out(tt)) * (1 + 0.07 * np.sin(th * 6 + k * 0.9 + j))
+            inten += gauss(r - rad, 0.022 + 0.03 * tt) * (1 - tt) ** 1.3 * (1.4 - 0.4 * j)
+        inten += gauss(r, 0.1 + 0.1 * t) * max(0.0, 1 - abs(t - 0.3) * 2.5) * 1.6  # the grip flash
+        frames.append(rgba(glowify(inten, 3, 0.5), white_core=0.55))
+    save('psy_t', frames, tint=True)
+
+
+PINK = (1.0, 0.42, 0.82)
+
+
+def psy_burst(size=384, n=16):
+    """Kinesis S2 (pink): a telekinetic explosion — a heavy shock ring, the air inside rippling,
+    debris lines flung outward."""
+    x, y, r, th = grid(size)
+    frames = []
+    g = np.random.default_rng(2929)
+    rays = [(g.uniform(0, 2 * math.pi), g.uniform(0.5, 1.0)) for _ in range(16)]
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(t)
+        front = 0.1 + 0.85 * e
+        inten = gauss(r - front, 0.03 + 0.05 * t) * (1 - t) ** 1.1 * 2.2
+        inten += (r < front) * (0.5 + 0.5 * np.sin(r * 40 - k * 1.7)) * gauss(r - front * 0.6, 0.25) * (1 - t) ** 1.8 * 0.55
+        inten += gauss(r, 0.12) * (1 - t) ** 3 * 0.9
+        for a, sp in rays:
+            u = x * math.cos(a) + y * math.sin(a)
+            v = -x * math.sin(a) + y * math.cos(a)
+            head = front * (0.8 + 0.25 * sp)
+            inten += gauss(v, 0.01) * (u < head) * (u > head - 0.22) * (1 - t) ** 1.4 * 1.2
+        frames.append(rgba(glowify(inten, 4, 0.6), PINK, white_core=0.85))
+    save('psy_burst', frames)
+
+
+def psy_grip(size=256, n=14):
+    """Pull caught (white, tinted): a ring closing in on the target with spiral arms — seized."""
+    x, y, r, th = grid(size)
+    frames = []
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(t)
+        rad = 0.95 - 0.6 * e
+        inten = gauss(r - rad, 0.03) * (1 - t * 0.6) * 1.6
+        spiral = np.sin(th * 3 + r * 14 - k * 1.2)
+        inten += gauss(spiral - 0.9, 0.08) * (r < rad + 0.05) * (r > 0.12) * (1 - t) * 0.9
+        inten += gauss(r, 0.12) * max(0.0, t - 0.5) * 2.4 * (1 - t) * 3
+        frames.append(rgba(glowify(inten, 3, 0.5), white_core=0.5))
+    save('psy_grip_t', frames, tint=True)
+
+
 def danger_cyan():
     """Volt's guard-break (turnback) warning aura, in cyan."""
     danger(name='danger_c', color=CYAN)
@@ -884,6 +956,9 @@ if __name__ == '__main__':
     turnback()
     danger_cyan()
     overcharge()
+    psy_hit()
+    psy_burst()
+    psy_grip()
     with open(os.path.join(OUT, 'fx.json'), 'w') as f:
         json.dump(MANIFEST, f, indent=1)
     total = sum(os.path.getsize(os.path.join(OUT, m['file'])) for m in MANIFEST.values())

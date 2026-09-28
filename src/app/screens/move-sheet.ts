@@ -14,6 +14,7 @@ const cancelNames: Record<string, string> = { n1: '1段目', n2: '2段目', n3: 
 function facts(m: MoveDef, c?: CharacterDef): [string, string][] {
   const rows: [string, string][] = [];
   if (m.mode === 1 && c?.shooter) {
+    // (both switches are instant: see MoveDef.instant)
     // レイ S1: the shooting mode (the bullets and the blast are extra moves)
     const ex = (id: string) => c.extraMoves!.find((x) => x.id === id)!;
     const s1 = ex(c.shooter.shots[0]);
@@ -21,12 +22,31 @@ function facts(m: MoveDef, c?: CharacterDef): [string, string][] {
     const p = s1.projectile!;
     const off = ex(c.shooter.off);
     const bl = ex(c.shooter.blast);
-    rows.push(['切替', `射撃モードへ：コスト${m.cost}・全体${m.T}F／通常へ戻す：コスト${off.cost ?? 0}・全体${off.T}F（被弾しても維持、ラウンドごとに解除）`]);
+    rows.push(['切替', `射撃モードへ：コスト${m.cost}／通常へ戻す：コスト${off.cost ?? 0}。押した瞬間（0F）に切り替わる。攻撃中・ステップ中・ガード中でも使え、動きは止まらない（被弾しても維持、ラウンドごとに解除）`]);
     rows.push(['射撃（ATK）', `菱形の弾を最大3発。発射${p.at}F・全体${s1.T}F（3発目${s3.T}F）。次の発射は各発の${s1.chainAny![0]}〜${s1.chainAny![1]}F（遅らせられる）`]);
     rows.push(['弾', `速さ${p.speed}u/F・射程${p.range}u。ヒット${p.dmg}（硬直${p.hitstun}F・補正なし）／ガード0（${p.guardPush}u飛ばす、壁に触れると30）`]);
     rows.push(['弱点', 'ステップの移動中に弾へ飛び込まれると弾ジャスト：射手は弾切れ硬直、反撃（JA）が確定']);
     rows.push(['射撃中', `歩きが遅くなる（${c.shooter.walk}u/s）。1〜3段目は出ない（GC・JAは近接のまま）`]);
     rows.push(['切替ブラスト', `2段目のヒット／ガード後にS1：発生${bl.S}F・${bl.dmg}ダメージ＋ダウン（${bl.launch}u吹き飛ばす）、ガードでも${bl.pushback}u（壁で30）。射撃モードへ（コスト${bl.cost}）`]);
+    return rows;
+  }
+  if (m.projectile?.pull) {
+    const p = m.projectile;
+    const pl = p.pull!;
+    rows.push(['フレーム', `${p.at}F目に念力を放つ（全体${m.T}F）。速さ${p.speed}u/F・射程${p.range}u`]);
+    rows.push(['当たると', `${p.dmg}ダメージ＋目の前（${pl.to}u）まで引き寄せ、${pl.stun}F動けない → 通常攻撃が繋がる`]);
+    rows.push(['1コンボ1回', '引き寄せは相手がダウンするまでに1回だけ（2回目は軽いダメージのみ。1→2→S1のループはできない）']);
+    rows.push(['逆転', `相手が通常攻撃の動作中（判定が出る前も）なら、逆に自分が相手の前へ引き寄せられ、${pl.reverseStun}F動けない（相手のコンボが繋がる）`]);
+    rows.push(['止め方', 'ガードで止まる。弾ではないのでステップで飛び込んでもジャストにならない']);
+    rows.push(['コンボ', '1→2→S1→1→2→3→S2／S1→1→2→3→S2']);
+    return rows;
+  }
+  if (m.radial) {
+    rows.push(['フレーム', `発生${m.S}F／持続${m.A}F／全体${m.T}F`]);
+    rows.push(['範囲', `自分の周囲すべて（半径${m.reach}u）`]);
+    rows.push(['当たると', `${m.dmg}ダメージ＋ダウン、${m.launch}u吹き飛ばす（中央から外れていれば壁に叩きつけられて追加ダメージ）`]);
+    rows.push(['ダウン中にも', `倒れた相手にも当たる（ダウンから${SYSTEM.down.otgWindow}F以内・1コンボ1回）。3段目（その場でダウン）から繋がる`]);
+    rows.push(['弱点', 'ガードされると効かない（押し返すだけ）。硬直が長い']);
     return rows;
   }
   if (m.field) {
@@ -86,9 +106,8 @@ function facts(m: MoveDef, c?: CharacterDef): [string, string][] {
   // ヴォルト S2: from neutral the same button is another move (オーバーチャージ)
   const alt = c?.s2Neutral && m === c.skills[1] ? c.extraMoves?.find((x) => x.id === c.s2Neutral) : undefined;
   if (alt?.powerUp) {
-    rows.push([`何もしていない時：${alt.name}`, `五角・コスト${alt.cost}。${alt.powerUp.frame}F目に帯電（全体${alt.T}F）`]);
+    rows.push([`突進の直後以外：${alt.name}`, `コスト${alt.cost}。押した瞬間（0F）に帯電。攻撃中・ステップ中・ガード中でも使え、動きは止まらない`]);
     rows.push(['帯電中', `攻撃力+${alt.powerUp.pct}%（突進・通常技・崩しすべて）。次にダメージを受けると解除。重ねがけ不可、ラウンドごとに解除`]);
-    rows.push(['溜めの隙', '溜め中（五角）は無防備。離れてから使う']);
   }
   return rows;
 }
@@ -128,7 +147,9 @@ function normalsBlock(c: CharacterDef): HTMLElement {
       h('div', { class: 'ms-title' }, h('small', null, 'ATK'), h('b', null, '通常攻撃 1→2→3')),
     ),
     h('div', { class: 'ms-text' },
-      h('p', null, `円・前方70°の横振り。1段目は${side}から → 2段目は逆から → 3段目は一回転してダウン。1段目が当たれば3段目まで確定。空振りは硬直が短い（置いておける）。ステップ中に押すと、ステップの勢いのまま出る。`),
+      h('p', null, c.style === 'psychic'
+        ? `円・前方70°を念力でつかむ（棒は振らない。範囲と発生は横振りと同じ）。1段目は${side}から → 2段目は逆から → 3段目は周囲すべてを押さえつけ、相手を${n.n3.pinDown ? 'その場で' : ''}ダウンさせる（吹き飛ばさない。S2で追撃）。1段目が当たれば3段目まで確定。空振りは硬直が短い。`
+        : `円・前方70°の横振り。1段目は${side}から → 2段目は逆から → 3段目は一回転してダウン。1段目が当たれば3段目まで確定。空振りは硬直が短い（置いておける）。ステップ中に押すと、ステップの勢いのまま出る。`),
       h('div', { class: 'ms-ntable' },
         h('span'), h('small', null, '発生'), h('small', null, '全体'), h('small', null, '空振り'), h('small', null, '威力'), h('small', null, 'リーチ'),
         ...[n.n1, n.n2, n.n3].flatMap((m) => [h('b', null, m.name), h('span', null, `${m.S}F`), h('span', null, `${m.T}F`), h('span', null, `${whiffT(m)}F`), h('span', null, String(m.dmg)), h('span', null, `${m.reach}u`)]),

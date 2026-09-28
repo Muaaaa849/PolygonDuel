@@ -95,16 +95,18 @@ export interface CMove {
   /** Skill cancel on these frames even without contact. */
   cancelAny: CWindow | null;
   /** Bullet (milli-u; speed per frame; costGain in cost quarters). */
-  proj: { at: number; speed: number; range: number; radius: number; dmg: number; hitstun: number; blockstun: number; hitPush: number; guardPush: number; costGain: number; guardDrainPct: number } | null;
+  proj: { at: number; speed: number; range: number; radius: number; dmg: number; hitstun: number; blockstun: number; hitPush: number; guardPush: number; costGain: number; guardDrainPct: number; pull: { to: number; stun: number; reverseStun: number } | null } | null;
   /** Floor field (milli-u). */
   field: { at: number; radius: number; frames: number; maxDist: number; dmg: number; stun: number } | null;
   /** Dash: travel per active frame (milli-u), frame advantage on hit / block. */
   dash: { per: number; advHit: number; advBlock: number } | null;
-  /** Knockdown launch distance (milli-u), 0 = system default. */
+  /** Knockdown launch distance (milli-u), 0 = system default, -1 = down in place (pinDown). */
   launch: number;
+  radial: boolean;
   wallOnGuard: boolean;
   /** Shooting mode set on the 1st frame (-1 = unchanged). */
   mode: number;
+  instant: boolean;
   /** Hitbox exists at all. */
   hasHitbox: boolean;
   def: MoveDef | null;
@@ -125,6 +127,8 @@ export interface CChar {
   shooter: { walk: number; shots: number[]; off: number; blast: number } | null;
   /** S2 from neutral / a step starts this slot (-1 = S2 itself). */
   s2Neutral: number;
+  /** A non-shooter's projectile move (its bullets' spec), -1 = none. */
+  projSlot: number;
   moves: CMove[];
 }
 
@@ -210,15 +214,18 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
           dmg: m.projectile.dmg, hitstun: m.projectile.hitstun, blockstun: m.projectile.blockstun,
           hitPush: u(m.projectile.hitPush), guardPush: u(m.projectile.guardPush), costGain: Math.round(m.projectile.costGain * COST_UNIT),
           guardDrainPct: Math.round((m.projectile.guardDrain ?? 0) * 100),
+          pull: m.projectile.pull ? { to: u(m.projectile.pull.to), stun: m.projectile.pull.stun, reverseStun: m.projectile.pull.reverseStun } : null,
         }
       : null,
     field: m.field
       ? { at: m.field.at, radius: u(m.field.radius), frames: m.field.frames, maxDist: u(m.field.maxDist), dmg: m.field.dmg, stun: m.field.stun }
       : null,
     dash: m.dash ? { per: Math.trunc(u(m.dash.dist) / Math.max(1, m.A)), advHit: m.dash.advHit, advBlock: m.dash.advBlock } : null,
-    launch: m.launch ? u(m.launch) : 0,
+    launch: m.pinDown ? -1 : m.launch ? u(m.launch) : 0,
+    radial: !!m.radial,
     wallOnGuard: !!m.wallOnGuard,
     mode: m.mode ?? -1,
+    instant: !!m.instant,
     hasHitbox: m.A > 0 && m.reach > 0,
     def: m,
   };
@@ -287,6 +294,7 @@ export function compileCharacter(def: CharacterDef, idx: number): CChar {
         }
       : null,
     s2Neutral: def.s2Neutral ? slotIds[def.s2Neutral] : -1,
+    projSlot: moves.findIndex((m) => !!m.proj),
     moves,
   };
 }

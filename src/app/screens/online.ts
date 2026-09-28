@@ -8,6 +8,7 @@ import { Relay, RELAY_ICE, newRoomCode, parseRoomCode, roomLink, roomPeerId, ROO
 import { extractCode } from '../../net/qr-signaling';
 import { CHARACTERS } from '../../data/characters';
 import { settings, saveSettings } from '../settings';
+import { leavingPage } from '../fullscreen';
 import { backButton, h, hex, ICONS, shapeIcon, toast } from '../ui';
 import { renderQr, QrScanner } from '../qr-view';
 import { show, type Screen } from '../router';
@@ -97,8 +98,10 @@ function copyButton(text: string, label = 'コードをコピー'): HTMLElement 
   const b = h('button', { class: 'btn small' }, h('span', { html: ICONS.copy, style: 'width:14px;height:14px;display:inline-flex' }), label);
   b.onclick = async () => {
     try {
-      if (navigator.share && /^https?:/.test(text)) await navigator.share({ title: 'POLYGON DUEL', url: text });
-      else await navigator.clipboard.writeText(text);
+      if (navigator.share && /^https?:/.test(text)) {
+        leavingPage();
+        await navigator.share({ title: 'POLYGON DUEL', url: text });
+      } else await navigator.clipboard.writeText(text);
       toast('コピーしました');
     } catch {
       /* cancelled */
@@ -319,6 +322,7 @@ function shareButtons(code: string): HTMLElement {
     const share = h('button', { class: 'btn primary' }, h('span', { html: ICONS.link, class: 'bi' }), '共有（LINE・Discord…）');
     share.onclick = async () => {
       try {
+        leavingPage();
         await navigator.share({ title: 'POLYGON DUEL', text, url });
       } catch {
         /* cancelled */

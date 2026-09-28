@@ -2,10 +2,10 @@
 import { Sim, CTL_MANUAL_GUARD, CTL_FACE_FOE } from '../../core/sim';
 import { CHARACTERS } from '../../data/characters';
 import { SYSTEM } from '../../data/system';
-import { M_S1, SH, SHAPES } from '../../core/compile';
+import { M_S1, SH, SHAPES, KIND_SKILL } from '../../core/compile';
 import {
   type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE,
-  EV_KNOCKDOWN, EV_STEP, EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END, EV_POWER,
+  EV_KNOCKDOWN, EV_STEP, EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END, EV_POWER, EV_PULL,
   EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, HF_COUNTER, HF_KNOCKDOWN, HF_PUNISH, HF_SHOT,
 } from '../../core/events';
 import { PH_FIGHT, PH_INTRO, ST_FREE, ST_STEP, ST_ATTACK, type FighterState } from '../../core/state';
@@ -104,7 +104,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
     if (f.st !== ST_FREE && f.st !== ST_STEP) return false;
     if (id === 'atk' && f.justWin > 0) return false; // just attack auto-targets
     const m = sim.char(cfg.local).moves[slotFor(id)];
-    return (m.hasHitbox || !!m.proj || !!m.field) && !m.autoAim;
+    return (m.hasHitbox || !!m.proj || !!m.field) && !m.autoAim && !m.radial;
   };
   /** The move a button starts from neutral (shooting mode: ATK = shot, S1 = back to normal). */
   const slotFor = (id: string) => {
@@ -281,7 +281,12 @@ export function battleScreen(cfg: BattleConfig): Screen {
         sfx.blink();
         break;
       case EV_SHOT:
-        sfx.shot(e.a);
+        if (sim.char(e.who).shooter) sfx.shot(e.a);
+        else sfx.psyShot();
+        break;
+      case EV_PULL:
+        if (e.a !== 2) sfx.grip(e.a === 1);
+        if (e.a === 1 && involvesLocal(e.who)) vibrate(25);
         break;
       case EV_MODE:
         sfx.mode(e.a === 1);
@@ -316,6 +321,8 @@ export function battleScreen(cfg: BattleConfig): Screen {
         if (m && !m.ghost && !m.proj) {
           const shape = SHAPES[m.shape];
           if (m.dash) sfx.dash();
+          else if (m.radial) sfx.psyBurst();
+          else if (m.kind !== KIND_SKILL && sim.char(e.who).def.style === 'psychic') sfx.psy();
           else if (shape === 'triangle' || shape === 'pentagon' || shape === 'hexagon' || shape === 'diamond') sfx.startup(shape);
           else sfx.whoosh();
         }

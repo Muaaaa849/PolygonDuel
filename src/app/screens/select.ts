@@ -34,7 +34,8 @@ function preview(c: CharacterDef): { canvas: HTMLCanvasElement; stop: () => void
   const draw = (now: number) => {
     raf = requestAnimationFrame(draw);
     // 60Hz content: skip extra frames of 90/120Hz screens; nothing to draw under the move sheet
-    if (now - last < 15 || moveSheetOpen()) return;
+    // (cards scrolled out of view rest too)
+    if (now - last < 15 || moveSheetOpen() || canvas.dataset.off === '1') return;
     t += Math.min(now - last, 100) / (1000 / 60);
     last = now;
     const r = canvas.getBoundingClientRect();
@@ -111,17 +112,30 @@ function preview(c: CharacterDef): { canvas: HTMLCanvasElement; stop: () => void
       ctx.arc(0, 0, reach, Math.min(a0, a1), Math.max(a0, a1));
       ctx.closePath();
       ctx.fill();
-      ctx.rotate(a1);
-      ctx.strokeStyle = col;
-      ctx.lineCap = 'round';
-      ctx.lineWidth = 9 * dpr;
-      ctx.beginPath();
-      ctx.moveTo(edge, 0);
-      ctx.lineTo(reach, 0);
-      ctx.stroke();
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 3 * dpr;
-      ctx.stroke();
+      if (c.style === 'psychic') {
+        // telekinesis: rings ripple out from the grip point instead of a swung blade
+        const gx = reach * 0.62;
+        const k = (f - n1.S) / (n1.A + 4);
+        for (let q = 0; q < 3; q++) {
+          ctx.strokeStyle = q === 0 ? '#fff' : col;
+          ctx.lineWidth = (3 - q * 0.6) * dpr;
+          ctx.beginPath();
+          ctx.arc(gx, 0, (6 + (18 + q * 10) * k) * dpr, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      } else {
+        ctx.rotate(a1);
+        ctx.strokeStyle = col;
+        ctx.lineCap = 'round';
+        ctx.lineWidth = 9 * dpr;
+        ctx.beginPath();
+        ctx.moveTo(edge, 0);
+        ctx.lineTo(reach, 0);
+        ctx.stroke();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3 * dpr;
+        ctx.stroke();
+      }
     } else if (f < 1) {
       ctx.fillStyle = 'rgba(255,255,255,.6)';
       ctx.beginPath();
@@ -155,9 +169,15 @@ export interface CardsApi {
   stop: () => void;
 }
 
+/** Cards per row on the select screens; more characters wrap into rows below (vertical scroll). */
+const SELECT_COLS = 6;
+
 export function charCards(onSelect: (i: number) => void, initial = 0): CardsApi {
-  // 4+ characters: a denser card (one-line theme, one skill per row)
-  const grid = h('div', { class: `select-grid${CHARACTERS.length >= 4 ? ' dense' : ''}`, style: `--n:${CHARACTERS.length}` });
+  // 4+ characters: a denser card (one-line theme, one skill per row). Up to 6 per row; more
+  // characters wrap into further rows of the same card size (scroll vertically) — the 7th sits
+  // under the first.
+  const cols = Math.min(CHARACTERS.length, SELECT_COLS);
+  const grid = h('div', { class: `select-grid${CHARACTERS.length >= 4 ? ' dense' : ''}${CHARACTERS.length > cols ? ' rows' : ''}`, style: `--n:${cols}` });
   const stops: (() => void)[] = [];
   const cards: HTMLElement[] = [];
   const badges: (HTMLElement | null)[] = CHARACTERS.map(() => null);
@@ -208,11 +228,32 @@ export function charCards(onSelect: (i: number) => void, initial = 0): CardsApi 
     cards.push(card);
     grid.append(card);
   });
+  // previews of cards scrolled out of view stop drawing
+  const io = typeof IntersectionObserver === 'function'
+    ? new IntersectionObserver((es) => es.forEach((e) => ((e.target as HTMLElement).querySelector('canvas')!.dataset.off = e.isIntersecting ? '0' : '1')), { root: grid })
+    : null;
+  cards.forEach((c) => io?.observe(c));
+  stops.push(() => io?.disconnect());
+  // more rows below: a hint that scrolls to them (hidden once the bottom is reached)
+  let el: HTMLElement = grid;
+  if (CHARACTERS.length > cols) {
+    const more = h('button', { class: 'select-more', 'aria-label': 'ほかのキャラクター' }, '▼ ほかのキャラ');
+    more.onclick = () => {
+      sfx.ui();
+      grid.scrollBy({ top: grid.clientHeight, behavior: 'smooth' });
+    };
+    const sync = () => more.classList.toggle('hide', grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 4);
+    grid.addEventListener('scroll', sync, { passive: true });
+    requestAnimationFrame(sync);
+    el = h('div', { class: 'select-wrap' }, grid, more);
+  }
   const api: CardsApi = {
-    el: grid,
+    el,
     select(i) {
       sel = i;
       cards.forEach((c, k) => c.classList.toggle('selected', k === i));
+      // (a selection in another row scrolls into view once the grid is on screen)
+      requestAnimationFrame(() => cards[i].isConnected && cards[i].scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
     },
     selected: () => sel,
     mark(i, label) {

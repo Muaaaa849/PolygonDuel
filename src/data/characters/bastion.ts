@@ -48,7 +48,7 @@ export const bastion: CharacterDef = {
     {
       id: 'shieldBash', name: 'シールドバッシュ', kind: 'skill', shape: 'triangle',
       desc: '2.2u突進のガード崩し',
-      cost: 2, S: 23, A: 4, T: 55, reach: 2.5, lunge: 2.2, lungeFrom: 8,
+      cost: 2, S: 31, A: 4, T: 63, reach: 2.5, lunge: 2.2, lungeFrom: 16,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 6,
       guardBreak: { crush: 80, dmgGuard: 40, dmgOpen: 30 },
       cancelFrom: ['neutral'],

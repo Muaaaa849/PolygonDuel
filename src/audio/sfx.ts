@@ -185,6 +185,28 @@ export const sfx = {
       tone(900, 0.2, 'sawtooth', 0.05, 120);
     }
   },
+  /** Telekinetic strike (キネシスの通常技): a warped, low hum that bends upward — no swish of a blade. */
+  psy() {
+    tone(160, 0.16, 'sine', 0.14, 420);
+    tone(170, 0.16, 'triangle', 0.05, 440);
+    noise(0.1, 700, 1.5, 0.05, 'bandpass', 1600);
+  },
+  /** Pull orb sent: a wobbling glassy warble. */
+  psyShot() {
+    tone(700, 0.22, 'sine', 0.08, 380);
+    tone(740, 0.22, 'sine', 0.05, 360);
+  },
+  /** Pull caught (a = 0 dragged in, 1 reversed): a rubbery snap + drag. */
+  grip(reversed: boolean) {
+    tone(reversed ? 300 : 520, 0.08, 'square', 0.08, reversed ? 120 : 1000);
+    noise(0.25, 900, 1, 0.14, 'bandpass', reversed ? 200 : 2400, 0.04);
+  },
+  /** Psycho burst: a deep boom with a hollow ring. */
+  psyBurst() {
+    tone(90, 0.45, 'sine', 0.5, 35);
+    tone(620, 0.35, 'triangle', 0.06, 220);
+    noise(0.4, 1200, 0.6, 0.35, 'lowpass', 150);
+  },
   /** Jammed (out of ammo): the dry "カチッ" of an empty trigger. */
   jam() {
     tone(2600, 0.02, 'square', 0.12);

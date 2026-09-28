@@ -11,7 +11,7 @@ import {
 import {
   type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN,
   EV_STEP, EV_HEAL, EV_KO, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END, HF_COUNTER, HF_JA, HF_OTG,
-  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, HF_SHOT, HF_PUNISH,
+  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL, HF_SHOT, HF_PUNISH,
 } from '../core/events';
 import { Morph, SHAPE_RADII, toPoints } from './shapes';
 import { Vfx } from './vfx';
@@ -93,6 +93,7 @@ export class BattleView {
   private borderAtRest = false;
   private wallWaves: { p0: number; t: number; amp: number; color: number }[] = [];
   private streaks: { x0: number; y0: number; x1: number; y1: number; life: number; color: number }[] = [];
+  private tethers: { from: number; to: number; life: number; color: number }[] = [];
   /** Just-dodge slow motion: monochrome world, impact frames. */
   private mono = new ColorMatrixFilter();
   private monoAmt = 0;
@@ -490,6 +491,21 @@ export class BattleView {
         }
         break;
       }
+      case EV_PULL: {
+        // a = 0 the target is dragged in, 1 the caster is caught instead, 2 no pull (used up)
+        const caught = e.a === 1 ? e.who : 1 - e.who;
+        const f = s.f[caught];
+        if (e.a === 2) {
+          this.vfx.ring(toPx(f.x), toPx(f.y), col, 30, 60, 10, 3);
+          break;
+        }
+        const tint = e.a === 1 ? this.fighters[1 - e.who].color : col;
+        this.fx.spawn('psy_grip_t', { x: toPx(f.x), y: toPx(f.y), size: 2.2 * PX, tint, follow: () => ({ x: toPx(this.sim.s.f[caught].x), y: toPx(this.sim.s.f[caught].y) }) });
+        this.tethers.push({ from: 1 - caught, to: caught, life: 22, color: tint });
+        this.vfx.text(e.a === 1 ? 'CAUGHT!' : 'PULL', toPx(f.x), toPx(f.y) - 110, e.a === 1 ? 0xffffff : col, 24, 40, -0.6);
+        if (e.a === 1) this.flashScreen(col, 0.12);
+        break;
+      }
       case EV_JAM: {
         const f = s.f[e.who];
         this.vfx.text('JAM', toPx(f.x), toPx(f.y) - 100, 0xb0b6c8, 28, 50, -0.4);
@@ -754,6 +770,7 @@ export class BattleView {
     for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.drawFighter(i, dtFrames, frozen);
     for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.drawPower(i);
     this.drawShots();
+    this.drawTethers(fxDt);
     for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.stateFx(i, newFrame && !frozen);
     // illusion decoys: to the opponent they ARE the fighter; the owner sees a translucent ghost
     for (let i = 0; i < 2; i++) {
@@ -882,7 +899,14 @@ export class BattleView {
     if (m) {
       const reach = (m.reach / 1000) * PX;
       // swing smear, spawned on the first active frame
-      if (m.isSweep && m.id !== 'blast' && f.sf >= m.S && f.sf < m.S + m.A && fv.slashFor !== fv.instance) {
+      if (m.isSweep && m.id !== 'blast' && f.sf >= m.S && f.sf < m.S + m.A && fv.slashFor !== fv.instance && this.psychic(i)) {
+        // telekinesis: no blade — the struck space pinches and ripples (the spin = the whole area)
+        fv.slashFor = fv.instance;
+        const spin = Math.abs(m.sweepTo - m.sweepFrom) >= 1024;
+        const d = spin ? 0 : reach * 0.62;
+        this.fx.spawn('psy_t', { x: x + cos * d, y: y + sin * d, size: spin ? reach * 2.4 : reach * 1.5, tint: fv.color, alpha: 0.85 });
+        if (spin) this.addShake(6);
+      } else if (m.isSweep && m.id !== 'blast' && f.sf >= m.S && f.sf < m.S + m.A && fv.slashFor !== fv.instance) {
         fv.slashFor = fv.instance;
         const spin = Math.abs(m.sweepTo - m.sweepFrom) >= 1024;
         const name = spin ? 'spin' : 'slash';
@@ -945,6 +969,14 @@ export class BattleView {
             this.streaks.push({ x0: fv.dashFrom.x, y0: fv.dashFrom.y, x1: x, y1: y, life: 12, color: fv.color });
             fv.dashFrom = null;
           }
+          break;
+        case 'psychoBurst':
+          once(f.sf >= m.S, () => {
+            const r = (m.reach / 1000 + 0.5) * PX;
+            this.fx.spawn('psy_burst', { x, y, size: r * 2.2, alpha: 0.7 });
+            this.vfx.ring(x, y, fv.color, 20, r, 16, 6);
+            this.addShake(12);
+          });
           break;
         case 'shieldBash':
           once(f.sf >= m.S, () => this.fx.spawn('bash', { x: x + cos * 60, y: y + sin * 60, size: 3.2 * PX, rot: face }));
@@ -1083,41 +1115,15 @@ export class BattleView {
     }
   }
 
-  /**
-   * Overcharge (ヴォルト): while charging, sparks converge on the body from a shrinking ring;
-   * while powered, jagged arcs crawl over a bright double halo (re-rolled each frame).
-   */
+  /** Overcharge (ヴォルト): while powered, jagged arcs crawl over a bright double halo (re-rolled each frame). */
   private drawPower(i: number): void {
     const f = this.sim.s.f[i];
-    const m = this.sim.moveOf(f);
-    const charging = !!m && !!m.powerUp && f.sf < m.powerUp.frame;
-    if (!charging && f.power <= 0) return;
+    if (f.power <= 0) return;
     const g = this.glow;
     const cx = toPx(f.x);
     const cy = toPx(f.y);
     const col = this.fighters[i].color;
     const low = this.quality === 'low';
-    if (charging) {
-      const k = f.sf / m!.powerUp!.frame; // 0 → 1
-      const r = (1.7 - 1.1 * k) * PX;
-      g.circle(cx, cy, r).stroke({ width: 3, color: col, alpha: 0.35 + 0.5 * k });
-      const n = low ? 5 : 9;
-      for (let b = 0; b < n; b++) {
-        const a0 = (b / n) * Math.PI * 2 + this.t * 0.07;
-        let px = cx + Math.cos(a0) * r;
-        let py = cy + Math.sin(a0) * r;
-        g.moveTo(px, py);
-        // a jagged bolt toward the body
-        for (let q = 1; q <= 3; q++) {
-          const rr = r * (1 - q / 3.6);
-          px = cx + Math.cos(a0) * rr + (Math.random() - 0.5) * 18;
-          py = cy + Math.sin(a0) * rr + (Math.random() - 0.5) * 18;
-          g.lineTo(px, py);
-        }
-      }
-      g.stroke({ width: 2, color: 0xe8fdff, alpha: 0.5 + 0.4 * k });
-      return;
-    }
     const pulse = 0.5 + 0.5 * Math.sin(this.t * 0.35);
     const r0 = 0.62 * PX;
     g.circle(cx, cy, r0 + 4 * pulse).stroke({ width: 3, color: col, alpha: 0.55 });
@@ -1159,6 +1165,24 @@ export class BattleView {
         const a = b.a * ANG_TO_RAD;
         const c = Math.cos(a);
         const sn = Math.sin(a);
+        if (!this.sim.char(i).shooter) {
+          // telekinetic grip (サイコプル): a spinning pentagon orb with a wavering tail
+          const r = 0.3 * PX;
+          for (let k = 1; k <= 4; k++) {
+            const bk = k * 0.2 * PX;
+            const wob = Math.sin(this.t * 0.6 + k) * 6;
+            gl.circle(x - c * bk - sn * wob, y - sn * bk + c * wob, r * (1 - k * 0.18)).fill({ color: col, alpha: 0.2 - k * 0.035 });
+          }
+          gl.circle(x, y, r * 1.5).fill({ color: col, alpha: 0.3 });
+          const pent: number[] = [];
+          for (let k = 0; k < 5; k++) {
+            const t = this.t * 0.25 + (k / 5) * Math.PI * 2;
+            pent.push(x + Math.cos(t) * r, y + Math.sin(t) * r);
+          }
+          g.poly(pent).fill({ color: col, alpha: 0.85 }).stroke({ width: 3, color: 0xffffff, alpha: 0.9, join: 'round' });
+          if (this.showHitboxes) g.circle(x, y, 0.3 * PX).stroke({ width: 2, color: 0xff3050, alpha: 0.9 });
+          continue;
+        }
         const L = 0.34 * PX;
         const W = 0.17 * PX;
         gl.moveTo(x - c * 0.9 * PX, y - sn * 0.9 * PX).lineTo(x, y).stroke({ width: 16, color: col, alpha: 0.28, cap: 'round' });
@@ -1174,7 +1198,8 @@ export class BattleView {
   private drawTrail(i: number, dt: number, record: boolean): void {
     const fv = this.fvOf(i);
     const f = this.fOf(i)!;
-    const tip = this.sim.hitboxOf(f);
+    const hm = f.st === ST_ATTACK ? this.sim.moveOf(f) : null;
+    const tip = hm && (hm.radial || (hm.isSweep && this.psychic(i))) ? null : this.sim.hitboxOf(f);
     if (tip && record) {
       const ex = toPx(f.x) + Math.cos(f.facing * ANG_TO_RAD) * 0.5 * PX;
       const ey = toPx(f.y) + Math.sin(f.facing * ANG_TO_RAD) * 0.5 * PX;
@@ -1342,6 +1367,57 @@ export class BattleView {
       const reach = (m.reach / 1000) * PX;
       const danger = m.shape === SH.triangle;
       const col = danger ? 0xffd060 : 0xffffff;
+      if (m.radial) {
+        // burst all around: the circle fills in during startup, then flashes
+        if (f.sf < m.S) {
+          const p = Math.min(1, f.sf / (m.S - 1));
+          glow.circle(x, y, reach).fill({ color: fv.color, alpha: 0.05 + 0.15 * p });
+          g.circle(x, y, reach).stroke({ width: 2.5, color: fv.color, alpha: 0.3 + 0.5 * p });
+          g.circle(x, y, edge + (reach - edge) * (1 - p)).stroke({ width: 3, color: 0xffffff, alpha: 0.4 + 0.5 * p });
+        } else if (f.sf < m.S + m.A) {
+          glow.circle(x, y, reach).fill({ color: fv.color, alpha: 0.14 });
+          g.circle(x, y, reach).stroke({ width: 6, color: 0xffffff, alpha: 0.8 });
+        }
+        return;
+      }
+      if (m.isSweep && this.psychic(i)) {
+        // telekinesis: the fan shows where, a grip point gathers and bursts — nothing is swung
+        const from = a + m.sweepFrom * ANG_TO_RAD;
+        const to = a + m.sweepTo * ANG_TO_RAD;
+        const spin = Math.abs(m.sweepTo - m.sweepFrom) >= 1024;
+        const pts: number[] = [x, y];
+        const steps = spin ? 48 : 16;
+        for (let k = 0; k <= steps; k++) {
+          const t = spin ? (k / steps) * Math.PI * 2 : from + ((to - from) * k) / steps;
+          pts.push(x + Math.cos(t) * reach, y + Math.sin(t) * reach);
+        }
+        const fx0 = spin ? x : x + cos * reach * 0.62;
+        const fy0 = spin ? y : y + sin * reach * 0.62;
+        if (f.sf < m.S) {
+          const p = Math.min(1, f.sf / (m.S - 1));
+          glow.poly(pts).fill({ color: fv.color, alpha: 0.05 + 0.13 * p });
+          g.poly(pts.slice(2)).stroke({ width: 2.5, color: fv.color, alpha: 0.25 + 0.5 * p });
+          // rings closing in on the grip point
+          const rr = (spin ? reach : reach * 0.55) * (1 - 0.8 * p);
+          for (let k = 0; k < 2; k++) {
+            const r = rr * (1 + k * 0.45) + 6;
+            g.circle(fx0, fy0, r).stroke({ width: 2.5, color: mix(fv.color, 0xffffff, 0.4), alpha: (0.3 + 0.55 * p) * (1 - k * 0.4) });
+          }
+          glow.circle(fx0, fy0, 8 + 10 * p).fill({ color: fv.color, alpha: 0.35 + 0.4 * p });
+        } else if (f.sf < m.S + m.A) {
+          // the space it covered so far shivers; the grip point flashes
+          const cur = this.sim.swingAngle(m, f.sf);
+          const lo = a + Math.min(m.sweepFrom, cur) * ANG_TO_RAD;
+          const hi = a + Math.max(m.sweepFrom, cur) * ANG_TO_RAD;
+          for (let q = 1; q <= 3; q++) {
+            const r = reach * (0.3 + 0.23 * q) + Math.sin(this.t * 0.9 + q) * 5;
+            g.moveTo(x + Math.cos(lo) * r, y + Math.sin(lo) * r).arc(x, y, r, lo, hi).stroke({ width: 4, color: q === 3 ? 0xffffff : fv.color, alpha: 0.85 });
+          }
+          glow.poly(pts).fill({ color: fv.color, alpha: 0.28 });
+          glow.circle(fx0, fy0, 26).fill({ color: 0xffffff, alpha: 0.5 });
+        }
+        return;
+      }
       if (m.isSweep) {
         const from = a + m.sweepFrom * ANG_TO_RAD;
         const to = a + m.sweepTo * ANG_TO_RAD;
@@ -1543,6 +1619,45 @@ export class BattleView {
       const r = 0.72 * PX + Math.sin(this.t * 0.4) * 4;
       ov.circle(ox, oy, r).stroke({ width: 4, color: 0xffffff, alpha: 0.9 });
       gl.circle(ox, oy, r).stroke({ width: 14, color: col, alpha: 0.35 });
+    }
+  }
+
+  /** Telekinetic fighter (キネシス): normals are drawn as gripped space, not a swung blade. */
+  private psychic(i: number): boolean {
+    return this.sim.char(i & 1).def.style === 'psychic';
+  }
+
+  /** Pull tethers (サイコプル): a wavering line from the one pulling to the one being dragged. */
+  private drawTethers(dt: number): void {
+    const tt = this.tethers;
+    if (tt.length === 0) return;
+    const g = this.glow;
+    for (let k = tt.length - 1; k >= 0; k--) {
+      const t = tt[k];
+      t.life -= dt;
+      if (t.life <= 0) {
+        tt.splice(k, 1);
+        continue;
+      }
+      const a = this.sim.s.f[t.from];
+      const b = this.sim.s.f[t.to];
+      const ax = toPx(a.x);
+      const ay = toPx(a.y);
+      const bx = toPx(b.x);
+      const by = toPx(b.y);
+      const len = Math.hypot(bx - ax, by - ay) || 1;
+      const nx = -(by - ay) / len;
+      const ny = (bx - ax) / len;
+      const al = Math.min(1, t.life / 10);
+      for (let w = 0; w < 2; w++) {
+        g.moveTo(ax, ay);
+        for (let q = 1; q <= 12; q++) {
+          const p = q / 12;
+          const off = Math.sin(p * Math.PI * 3 + this.t * 0.8 + w * 2) * 10 * Math.sin(p * Math.PI);
+          g.lineTo(ax + (bx - ax) * p + nx * off, ay + (by - ay) * p + ny * off);
+        }
+        g.stroke({ width: w ? 3 : 10, color: w ? 0xffffff : t.color, alpha: (w ? 0.8 : 0.4) * al });
+      }
     }
   }
 

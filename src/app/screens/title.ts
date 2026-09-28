@@ -1,3 +1,4 @@
+import { enterFullscreen } from '../fullscreen';
 import { h, ICONS, shapeIcon, SHAPE_INFO } from '../ui';
 import { sfx, unlockAudio } from '../../audio/sfx';
 import { settings } from '../settings';
@@ -75,7 +76,7 @@ export function titleScreen(a: TitleActions): Screen {
     const fs = h('button', { class: 'btn small ghost', style: 'position:absolute;left:calc(12px + var(--safe-l));bottom:calc(6px + var(--safe-b));font-size:11px;color:var(--muted)' },
       h('span', { html: ICONS.expand, style: 'width:16px;height:16px;display:inline-flex' }), '全画面にする');
     fs.onclick = () => {
-      void document.documentElement.requestFullscreen?.().then(() => (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })?.lock?.('landscape').catch(() => undefined)).catch(() => undefined);
+      enterFullscreen();
     };
     el.append(fs);
   }

@@ -29,7 +29,7 @@ export const CPU_LEVELS: CpuLevel[] = [
   { name: 'HARD', react: 13, accuracy: 0.85, gc: 0.9, confirm: 1, aggression: 0.03 },
 ];
 
-const PREFERRED: Record<string, number> = { blaze: 2.6, zephyr: 3.3, bastion: 2.6, phantom: 3.0, ray: 2.5, volt: 2.9 };
+const PREFERRED: Record<string, number> = { blaze: 2.6, zephyr: 3.3, bastion: 2.6, phantom: 3.0, ray: 2.5, volt: 2.9, kinesis: 2.3 };
 const FIELD_W = SYSTEM.field.w;
 const FIELD_H = SYSTEM.field.h;
 
@@ -56,7 +56,7 @@ export class CpuPlayer {
   private stepIn = false;
   /** Bullets already reacted to (slot:number:direction). */
   private shotSeen = '';
-  private shotReaction: 'guard' | 'step' | 'take' | null = null;
+  private shotReaction: 'guard' | 'step' | 'take' | 'swing' | null = null;
   /** Ray: the frame of the current shot to fire the next one on (-1 = stop). */
   private nextShotAt = -1;
   private shotFor = -1;
@@ -173,6 +173,8 @@ export class CpuPlayer {
         }
         return me.sf === this.nextShotAt - 1 ? IN_ATK : 0;
       }
+      // kinesis: the pull landed → the normals connect
+      if (m.proj?.pull && op.st === ST_HITSTUN) return mash();
       // ray: 1 → 2 → switch blast (sends them far, into shooting range / the wall)
       if (id === 'ray' && me.move === M_N2 && me.moveHit === MH_HIT && me.cost >= COST_UNIT && this.wallBehind(op, me.facing) && this.rng.chance(0.6)) return IN_S1;
       // volt: after a guarded dash, rock-paper-scissors (N1 / turnback / guard)
@@ -194,9 +196,13 @@ export class CpuPlayer {
       if (me.moveHit === MH_HIT && m.next >= 0 && this.rng.chance(this.level.confirm)) {
         // blaze sometimes extends with S1 after N2
         if (me.move === M_N2 && c.def.id === 'blaze' && me.cost >= c.moves[M_S1].cost && !me.chainResetUsed && this.rng.chance(0.5)) return IN_S1;
+        // kinesis extends with the pull (once per combo) when the burst stays affordable after it
+        if (me.move === M_N2 && c.moves[M_S1].proj?.pull && !me.pullUsed && me.cost >= c.moves[M_S1].cost + c.moves[M_S2].cost && this.rng.chance(0.6)) return IN_S1;
         return mash();
       }
       if (me.moveHit === MH_HIT && me.move === M_N3 && c.def.id === 'zephyr' && me.cost >= COST_UNIT) return IN_S1;
+      // kinesis: N3 pins them down → burst them away (into the wall if close)
+      if (me.moveHit === MH_HIT && me.move === M_N3 && c.moves[M_S2].radial && me.cost >= c.moves[M_S2].cost) return this.t % 2 ? IN_S2 : 0;
       if (me.moveHit === MH_HIT && m.chainReset && !me.chainResetUsed) return mash();
       if (me.moveHit === MH_BLOCK && me.move === M_N1) {
         // mixup after a blocked N1: mostly stop, sometimes a read
@@ -253,8 +259,12 @@ export class CpuPlayer {
         // stepping into a bullet is a timing read (harder than seeing a triangle)
         const correct = this.rng.chance(this.level.accuracy * 0.5);
         const wall = this.wallBehind(me, inc.a);
-        this.shotReaction = correct && canStep ? 'step' : wall ? 'take' : 'guard';
+        // a telekinetic pull (キネシス) is no diamond: swing into it (it drags her in) or guard
+        const pull = !!this.sim.char(1 - this.me).moves[this.sim.char(1 - this.me).projSlot]?.proj?.pull;
+        if (pull) this.shotReaction = correct ? 'swing' : 'guard';
+        else this.shotReaction = correct && canStep ? 'step' : wall ? 'take' : 'guard';
       }
+      if (this.shotReaction === 'swing') return inc.d < 1.6 ? IN_ATK | IN_STICK | toward : IN_STICK | toward;
       const back = (dirIndex(-Math.cos((inc.a / 1024) * Math.PI * 2), -Math.sin((inc.a / 1024) * Math.PI * 2)) + 32) % 32;
       if (this.shotReaction === 'step' && inc.d < 1.7 && canStep) return IN_STEP | IN_STICK | back;
       if (this.shotReaction === 'take') return IN_STICK | ((back + 8) % 32);
@@ -316,6 +326,13 @@ export class CpuPlayer {
       const oc = c.moves[c.s2Neutral];
       const far = dist > 5 || (op.st === ST_DOWN && dist > 3);
       if (far && me.cost >= oc.cost + (me.cost >= 3 * COST_UNIT ? COST_UNIT : 0) && this.rng.chance(0.03)) return IN_S2;
+    }
+
+    // ── kinesis: pull from mid range when they are neither swinging (it reverses) nor guarding
+    if (c.moves[M_S1].proj?.pull && me.cost >= c.moves[M_S1].cost && dist > 3 && dist < 7) {
+      const swinging = seen.st === ST_ATTACK;
+      const guarding = op.st === ST_FREE && op.guardF > 0;
+      if (!swinging && !guarding && this.rng.chance(0.04)) return IN_S1 | IN_STICK | toward;
     }
 
     // ── ray: modes, shots, field

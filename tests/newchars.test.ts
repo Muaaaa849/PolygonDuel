@@ -8,7 +8,7 @@ import { M_N1, M_GC, M_S1, M_S2 } from '../src/core/compile';
 import { u } from '../src/core/fixed';
 import { SYSTEM } from '../src/data/system';
 import {
-  EV_RIPOSTE, EV_STEP, EV_GUARD_BREAK, EV_JUST, EV_JAM, EV_WALL, EV_SHOT, EV_SHOCK, EV_CRUSH, EV_MOVE, EV_FIELD,
+  EV_RIPOSTE, EV_STEP, EV_GUARD_BREAK, EV_MODE, EV_JUST, EV_JAM, EV_WALL, EV_SHOT, EV_SHOCK, EV_CRUSH, EV_MOVE, EV_FIELD,
   HF_SHOT, HF_PUNISH, HF_JA,
 } from '../src/core/events';
 import {
@@ -238,13 +238,26 @@ describe('レイ: 弾', () => {
 });
 
 describe('レイ: モード切替・ブラスト・フィールド', () => {
+  it('v1.3: the mode switch works mid-attack without interrupting it; after N2 S1 is still the blast', () => {
+    const sc = new Scenario('ray', 'blaze', 2);
+    sc.run(60, (me, _o, _s, t) => (t === 0 ? IN_ATK : me.st === ST_ATTACK && me.sf === 3 ? IN_S1 : 0), (me) => (me.statHitsTaken > 0 ? 0 : stick(16)));
+    expect(sc.s.f[0].shootMode).toBe(1);
+    expect(sc.moves(0).length).toBe(1);
+    expect(sc.hits(0).length).toBe(1); // the N1 still landed
+    const bl = new Scenario('ray', 'blaze', 2);
+    bl.run(120, sequence('AA1'), (me) => (me.statHitsTaken > 0 ? 0 : stick(16)));
+    expect(bl.moves(0).map((e) => e.a)).toEqual([M_N1, M_N1 + 1, ray.shooter!.blast]);
+  });
+
   it('S1 costs 1 into shooting mode, 0 back; the mode survives hits and resets each round', () => {
     const sc = new Scenario('ray', 'blaze', 6);
     const c0 = sc.s.f[0].cost;
-    sc.run(20, (_m, _o, _s, t) => (t === 0 ? IN_S1 : 0), guard);
+    sc.run(1, () => IN_S1, guard);
+    // v1.3: 0F — switched the frame it is pressed, no move
     expect(sc.s.f[0].shootMode).toBe(1);
+    expect(sc.s.f[0].st).toBe(ST_FREE);
+    sc.run(19, () => 0, guard);
     expect(sc.s.f[0].cost).toBe(c0 - 4);
-    expect(sc.s.f[0].st).toBe(ST_FREE); // 14F
     sc.run(20, (_m, _o, _s, t) => (t === 20 ? IN_S1 : 0), guard);
     expect(sc.s.f[0].shootMode).toBe(0);
     expect(sc.s.f[0].cost).toBe(c0 - 4);
@@ -525,10 +538,11 @@ describe('ヴォルト', () => {
   });
 
   it('turnback only right after a dash', () => {
-    // from neutral, S2 is the overcharge (never the turnback)
+    // from neutral, S2 is the (instant) overcharge — never the turnback, and no move starts
     const sc = new Scenario('volt', 'blaze', 3);
     sc.run(30, (_m, _o, _s, t) => (t === 0 ? IN_S2 : 0), guard);
-    expect(sc.moves(0).map((e) => e.a)).toEqual([volt.s2Neutral]);
+    expect(sc.moves(0).length).toBe(0);
+    expect(sc.s.f[0].power).toBe(25);
     // too late (after the 8F window)
     const late = new Scenario('volt', 'blaze', 4).run(100, dashBot(0, (me) => (me.move === M_S1 && me.sf === 21 ? IN_S2 : 0)), guard);
     expect(late.moves(0).some((e) => e.a === M_S2)).toBe(false);
@@ -540,16 +554,33 @@ describe('ヴォルト', () => {
     const walkIn: Bot = (me) => (me.statHitsTaken > 0 ? 0 : stick(16));
     const mashS1: Bot = (_m, _o, _s, t) => (t % 2 ? 0 : IN_S1);
 
-    it('costs 2, is a harmless pentagon, and charges on its frame', () => {
+    it('v1.3: costs 2 and charges the frame S2 is pressed (0F), without starting a move', () => {
       expect(oc.cost).toBe(2 * 4);
-      expect(oc.hasHitbox).toBe(false);
-      expect(oc.def!.shape).toBe('pentagon');
+      expect(oc.instant).toBe(true);
       const sc = new Scenario('volt', 'blaze', 6);
-      sc.run(oc.powerUp!.frame - 1, (_m, _o, _s, t) => (t === 0 ? IN_S2 : 0), guard);
-      expect(sc.s.f[0].power).toBe(0);
-      sc.run(1, guard, guard);
+      sc.run(1, () => IN_S2, guard);
       expect(sc.s.f[0].power).toBe(25);
       expect(sc.s.f[0].cost).toBe(0); // start 2 − 2
+      expect(sc.s.f[0].st).toBe(ST_FREE);
+      expect(sc.moves(0).length).toBe(0);
+    });
+
+    it('v1.3: works during any action — an attack, a step, guard stun — without interrupting it', () => {
+      // mid-N1: the swing goes on and lands for 50 (40 × 1.25)
+      const a = new Scenario('volt', 'blaze', 2);
+      a.run(60, (me, _o, _s, t) => (t === 0 ? IN_ATK : me.st === ST_ATTACK && me.sf === 5 ? IN_S2 : 0), (me) => (me.statHitsTaken > 0 ? 0 : stick(16)));
+      expect(a.moves(0).length).toBe(1);
+      expect(a.hits(0).map((e) => e.a)).toEqual([50]);
+      // mid-step: the step keeps going
+      const b = new Scenario('volt', 'blaze', 6);
+      b.run(20, (me, _o, _s, t) => (t === 0 ? IN_STEP | stick(8) : me.st === ST_STEP && me.sf === 4 ? IN_S2 : 0), guard);
+      expect(b.s.f[0].power).toBe(25);
+      expect(b.events(EV_STEP, 0).length).toBe(1);
+      // in guard stun
+      const c = new Scenario('volt', 'blaze', 2);
+      c.run(40, (me) => (me.st === ST_BLOCKSTUN && me.sf === 2 ? IN_S2 : 0), (_m, _o, _s, t) => (t === 0 ? IN_ATK : 0));
+      expect(c.blocks(1).length).toBe(1);
+      expect(c.s.f[0].power).toBe(25);
     });
 
     it('+25% to every attack until Volt takes damage (dash ×4: 55/55/55/44)', () => {
@@ -574,16 +605,28 @@ describe('ヴォルト', () => {
       expect(sc.s.f[0].power).toBe(0);
     });
 
-    it('while charged S2 does nothing (no stacking); hit during the charge = no power', () => {
+    it('while charged S2 does nothing (no stacking); a double tap pays once; not while being hit', () => {
       const sc = new Scenario('volt', 'blaze', 6);
       sc.s.f[0].power = 25;
       sc.s.f[0].cost = 16;
       sc.run(30, (_m, _o, _s, t) => (t === 0 ? IN_S2 : 0), guard);
       expect(sc.moves(0).length).toBe(0);
       expect(sc.s.f[0].cost).toBe(16);
-      // Blaze punishes the pentagon before it charges
+      // double tap: the 2nd press within the lock is swallowed (not buffered either)
+      const d = new Scenario('ray', 'blaze', 6);
+      d.s.f[0].cost = 16;
+      d.run(30, (_m, _o, _s, t) => (t === 0 || t === 6 ? IN_S1 : 0), guard);
+      expect(d.s.f[0].shootMode).toBe(1);
+      expect(d.s.f[0].cost).toBe(12);
+      expect(d.events(EV_MODE, 0).length).toBe(1);
+      // after the lock a new press works again
+      d.run(10, (_m, _o, _s, t) => (t === 30 + SYSTEM.instantLock ? IN_S1 : 0), guard);
+      d.run(10, (_m, _o, _s, t) => (t === 40 ? IN_S1 : 0), guard);
+      expect(d.events(EV_MODE, 0).length).toBe(2);
+      expect(d.s.f[0].shootMode).toBe(0);
+      // being hit: no charge
       const p = new Scenario('volt', 'blaze', 2);
-      p.run(60, (_m, _o, _s, t) => (t === 0 ? IN_S2 : 0), (_m, _o, _s, t) => (t === 1 ? IN_ATK : 0));
+      p.run(30, (me) => (me.st === ST_HITSTUN ? IN_S2 : stick(8)), (_m, _o, _s, t) => (t === 0 ? IN_ATK : 0));
       expect(p.hits(1).length).toBe(1);
       expect(p.s.f[0].power).toBe(0);
     });
