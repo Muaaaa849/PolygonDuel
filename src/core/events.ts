@@ -40,7 +40,7 @@ export const EV_SHOCK = 28;
 export const EV_JAM = 29;
 /** Power-up (ヴォルトのオーバーチャージ): a = 1 gained (x/y = body), 0 lost (took damage). */
 export const EV_POWER = 30;
-/** Telekinetic pull landed: who = caster, a = 0 dragged the target in, 1 reversed (the caster got dragged), 2 no pull (already used); x/y = target. */
+/** Telekinetic pull landed: who = caster, a = 0 dragged the target in, 1 reversed (the caster got dragged), 2 no pull (already used), 3 dragged a guard in (no combo); x/y = target. */
 export const EV_PULL = 31;
 
 export const EV_NAMES: Record<number, string> = {

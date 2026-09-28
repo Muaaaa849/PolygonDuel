@@ -952,7 +952,9 @@ export class Sim {
   }
 
   /**
-   * Telekinetic pull (キネシスのサイコプル). Guarded: a short guard stun, nothing more. A target
+   * Telekinetic pull (キネシスのサイコプル). Guarded (v1.5): the guard is dragged in front of the
+   * caster too, but takes no damage, gets only a short guard stun (no combo follows — both are
+   * just point blank) and the guard gauge is NOT refilled (unlike a blocked attack). A target
    * in a normal-attack motion (N1–N3 / GC / JA, even before its hitbox is out) turns it around:
    * the caster is caught and dragged in front of the target, who gets a free combo. Otherwise the
    * target is dragged in front of the caster and held long enough for a normal combo — once per
@@ -963,6 +965,9 @@ export class Sim {
     const f = s.f[i];
     const o = s.f[1 - i];
     const pl = p.pull!;
+    const dx = f.x - o.x;
+    const dy = f.y - o.y;
+    const dist = isqrt(dx * dx + dy * dy);
     if (this.isGuarding(o)) {
       const left = o.st === ST_BLOCKSTUN ? o.len - o.sf + 1 : 0;
       o.st = ST_BLOCKSTUN;
@@ -971,17 +976,16 @@ export class Sim {
       o.gcQueued = 0;
       o.move = -1;
       if (o.guardF < SYSTEM.guard.startup) o.guardF = SYSTEM.guard.startup;
-      o.kbDist = p.guardPush;
-      o.kbAngle = ang;
-      o.guardQ = COMPILED[o.char].guardMaxQ;
+      // dragged in all the same (guard up), but nothing else: no damage, no gauge refill
+      o.kbDist = Math.max(0, dist - pl.to);
+      o.kbAngle = atan2A(dy, dx);
+      o.wallGuard = 0;
       o.statBlocks++;
       s.hitstop = Math.max(s.hitstop, SHOT_BLOCKSTOP);
       this.emit(EV_BLOCK, i, -1, 1, x, y);
+      this.emit(EV_PULL, i, 3, 0, o.x, o.y);
       return;
     }
-    const dx = f.x - o.x;
-    const dy = f.y - o.y;
-    const dist = isqrt(dx * dx + dy * dy);
     const om = o.st === ST_ATTACK ? this.moveOf(o) : null;
     if (om && (om.kind === KIND_NORMAL || om.kind === KIND_GC || om.kind === KIND_JA)) {
       // caught by the swing: the caster is the one dragged in

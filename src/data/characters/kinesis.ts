@@ -8,7 +8,8 @@ import type { CharacterDef } from '../types';
 //  S1 サイコプル (pentagon = "hit me"): a slow psychic grip. It drags the target in front of
 //     her for a full normal combo (once per combo: 1→2→S1→1→2→3→S2 works, 1→2→S1 loops don't);
 //     a target caught in a normal-attack motion (startup included) drags HER in instead, and
-//     combos her. Guard stops it. Stepping into it is no bullet-just (it is not a diamond).
+//     combos her. Guarded (v1.5): still dragged in, but no damage, no gauge refill, no combo —
+//     both simply end up point blank. Stepping into it is no bullet-just (it is not a diamond).
 //  S2 サイコバースト (circle): a burst all around. Guard nullifies it; otherwise knockdown and a
 //     7u launch (off center → into the wall), also on a downed target (OTG): S1→1→2→3→S2.
 // Combo timing (tests/newchars.test.ts): N2 hit (14) + cancel [17,26] + shot at 8 → pulled
@@ -54,7 +55,7 @@ export const kinesis: CharacterDef = {
   skills: [
     {
       id: 'psychoPull', name: 'サイコプル', kind: 'skill', shape: 'pentagon',
-      desc: '念力を飛ばし、当たった相手を目の前まで引き寄せる（通常攻撃が繋がる。1コンボ1回）。相手が通常攻撃の動作中だと、逆に自分が引き寄せられる。ガードで止まる',
+      desc: '念力を飛ばし、当たった相手を目の前まで引き寄せる（通常攻撃が繋がる。1コンボ1回）。相手が通常攻撃の動作中だと、逆に自分が引き寄せられる。ガードされても引き寄せるが、ダメージもコンボも無し（至近距離になるだけ）',
       cost: 2, S: 8, A: 0, T: 26, reach: 0, lunge: 0,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 0,
       projectile: {

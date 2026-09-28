@@ -8,7 +8,7 @@ import { M_N1, M_N2, M_N3, M_S1, M_S2 } from '../src/core/compile';
 import { u } from '../src/core/fixed';
 import { SYSTEM } from '../src/data/system';
 import { EV_PULL, EV_KNOCKDOWN, EV_JUST, EV_WALL, EV_BLOCK } from '../src/core/events';
-import { ST_ATTACK, ST_FREE, ST_HITSTUN } from '../src/core/state';
+import { ST_ATTACK, ST_BLOCKSTUN, ST_FREE, ST_HITSTUN } from '../src/core/state';
 
 const K = getChar(charIndex('kinesis'));
 const hitThenGuard: Bot = (me) => (me.statHitsTaken > 0 ? 0 : stick(16));
@@ -96,12 +96,26 @@ describe('キネシス', () => {
     expect(sc.hits(1).length).toBe(3); // Blaze's 1→2→3 on the dragged-in caster
   });
 
-  it('guard stops the pull; stepping into it is no bullet-just (it is not a diamond)', () => {
+  it('v1.5: a guarded pull still drags the guard in — no damage, no gauge refill, no combo; stepping into it is no bullet-just', () => {
     const g = new Scenario('kinesis', 'blaze', 4);
-    g.run(60, (_m, _o, _s, t) => (t === 0 ? IN_S1 : 0), guard);
-    expect(g.events(EV_BLOCK, 0).length).toBe(1);
-    expect(g.events(EV_PULL, 0).length).toBe(0);
-    expect(dist(g)).toBeGreaterThan(3.5);
+    const drained = Math.round(g.s.f[1].guardQ / 2);
+    g.s.f[1].guardQ = drained;
+    const hp0 = g.s.f[1].hp;
+    let guardAtPull = -1;
+    g.run(80, (me, _o, _s, t) => (t === 0 ? IN_S1 : me.st === ST_FREE && t % 2 === 0 ? IN_ATK : 0), (me) => {
+      if (guardAtPull < 0 && me.st === ST_BLOCKSTUN) guardAtPull = me.guardQ;
+      return 0;
+    });
+    expect(g.events(EV_BLOCK, 0).length).toBeGreaterThanOrEqual(1);
+    expect(g.events(EV_PULL, 0).map((e) => e.a)).toEqual([3]);
+    expect(g.s.f[1].hp).toBe(hp0); // no damage (the N1 afterwards is guarded too)
+    expect(guardAtPull).toBeLessThan(drained); // not refilled by the pull (it kept draining)
+    expect(g.hits(0).length).toBe(0); // no guaranteed combo: the follow-up N1 is guarded
+    expect(g.blocks(0).length).toBeGreaterThanOrEqual(2);
+    // both end up point blank
+    const g2 = new Scenario('kinesis', 'blaze', 4);
+    g2.run(40, (_m, _o, _s, t) => (t === 0 ? IN_S1 : 0), guard);
+    expect(dist(g2)).toBeLessThan(1.5);
     const st = new Scenario('kinesis', 'blaze', 4);
     st.run(60, (_m, _o, _s, t) => (t === 0 ? IN_S1 : 0), (me, op) => (op.move === M_S1 && op.sf === 12 && me.st === ST_FREE ? IN_STEP | stick(16) : stick(16)));
     expect(st.events(EV_JUST, 1).length).toBe(0);
