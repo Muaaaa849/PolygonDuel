@@ -17,6 +17,8 @@ export interface Settings {
   aimMode: boolean;
   /** Guard: 'auto' = stand still (stick released) to guard; 'manual' = hold the GUARD button. */
   guardMode: 'auto' | 'manual';
+  /** Attacks / skills pressed while moving (no aim): 'foe' = toward the opponent, 'stick' = the way you move. */
+  attackDir: 'foe' | 'stick';
   showBrief: boolean;
   tutorialDone: boolean;
   lastChar: string;
@@ -42,6 +44,7 @@ const DEFAULTS: Settings = {
   dynamicCamera: true,
   aimMode: true,
   guardMode: 'auto',
+  attackDir: 'foe',
   showBrief: true,
   tutorialDone: false,
   lastChar: 'blaze',
@@ -89,7 +92,7 @@ export function onSettings(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
-const EXPORT_KEYS: (keyof Settings)[] = ['volume', 'haptics', 'lefty', 'buttonScale', 'quality', 'reduceFlash', 'dynamicCamera', 'aimMode', 'guardMode', 'showBrief', 'layout', 'keys', 'touchControls', 'mouseAim'];
+const EXPORT_KEYS: (keyof Settings)[] = ['volume', 'haptics', 'lefty', 'buttonScale', 'quality', 'reduceFlash', 'dynamicCamera', 'aimMode', 'guardMode', 'attackDir', 'showBrief', 'layout', 'keys', 'touchControls', 'mouseAim'];
 
 /** Settings as a portable JSON file (controls layout included). */
 export function exportSettings(): string {
@@ -121,6 +124,10 @@ export function importSettings(text: string): void {
     }
     if (k === 'touchControls') {
       if (v === 'auto' || v === 'show' || v === 'hide') patch.touchControls = v;
+      continue;
+    }
+    if (k === 'attackDir') {
+      if (v === 'foe' || v === 'stick') patch.attackDir = v;
       continue;
     }
     if (k === 'guardMode') {

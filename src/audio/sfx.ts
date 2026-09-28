@@ -174,6 +174,17 @@ export const sfx = {
     for (let i = 0; i < 4; i++) noise(0.05, 4000 + i * 900, 4, 0.22, 'bandpass', 1200, i * 0.035);
     tone(90, 0.25, 'sawtooth', 0.15, 60);
   },
+  /** Overcharge: a rising electric whine that snaps into a crackle (on); a dying fizz when a hit discharges it (off). */
+  power(on: boolean) {
+    if (on) {
+      tone(220, 0.3, 'sawtooth', 0.07, 1760);
+      for (let i = 0; i < 3; i++) noise(0.06, 5200 + i * 700, 4, 0.2, 'bandpass', 1600, 0.22 + i * 0.04);
+      tone(1760, 0.18, 'triangle', 0.08, 2640, 0.22);
+    } else {
+      noise(0.25, 3000, 2, 0.14, 'bandpass', 400);
+      tone(900, 0.2, 'sawtooth', 0.05, 120);
+    }
+  },
   /** Jammed (out of ammo): the dry "カチッ" of an empty trigger. */
   jam() {
     tone(2600, 0.02, 'square', 0.12);

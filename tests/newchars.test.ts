@@ -1,7 +1,7 @@
 // レイ（射撃）／ヴォルト（ステップ）の規約 R1〜R14 と、新しい仕組み（弾・弾ジャスト・弾切れ・
 // ガード時の壁ダメージ・フィールド・ステップ3つ・突進の必敗・ターンバック）。
 import { describe, expect, it } from 'vitest';
-import { Scenario, guard, stick, hold, type Bot, IN_ATK, IN_S1, IN_S2, IN_STEP } from './harness';
+import { Scenario, guard, stick, hold, sequence, type Bot, IN_ATK, IN_S1, IN_S2, IN_STEP } from './harness';
 import { getChar } from '../src/core/sim';
 import { charIndex, CHARACTERS } from '../src/data/characters';
 import { M_N1, M_GC, M_S1, M_S2 } from '../src/core/compile';
@@ -525,12 +525,85 @@ describe('ヴォルト', () => {
   });
 
   it('turnback only right after a dash', () => {
+    // from neutral, S2 is the overcharge (never the turnback)
     const sc = new Scenario('volt', 'blaze', 3);
     sc.run(30, (_m, _o, _s, t) => (t === 0 ? IN_S2 : 0), guard);
-    expect(sc.moves(0).length).toBe(0);
+    expect(sc.moves(0).map((e) => e.a)).toEqual([volt.s2Neutral]);
     // too late (after the 8F window)
     const late = new Scenario('volt', 'blaze', 4).run(100, dashBot(0, (me) => (me.move === M_S1 && me.sf === 21 ? IN_S2 : 0)), guard);
     expect(late.moves(0).some((e) => e.a === M_S2)).toBe(false);
     expect(late.events(EV_MOVE, 0).length).toBe(1);
+  });
+
+  describe('v1.2: オーバーチャージ（何もしていない時のS2）', () => {
+    const oc = volt.moves[volt.s2Neutral];
+    const walkIn: Bot = (me) => (me.statHitsTaken > 0 ? 0 : stick(16));
+    const mashS1: Bot = (_m, _o, _s, t) => (t % 2 ? 0 : IN_S1);
+
+    it('costs 2, is a harmless pentagon, and charges on its frame', () => {
+      expect(oc.cost).toBe(2 * 4);
+      expect(oc.hasHitbox).toBe(false);
+      expect(oc.def!.shape).toBe('pentagon');
+      const sc = new Scenario('volt', 'blaze', 6);
+      sc.run(oc.powerUp!.frame - 1, (_m, _o, _s, t) => (t === 0 ? IN_S2 : 0), guard);
+      expect(sc.s.f[0].power).toBe(0);
+      sc.run(1, guard, guard);
+      expect(sc.s.f[0].power).toBe(25);
+      expect(sc.s.f[0].cost).toBe(0); // start 2 − 2
+    });
+
+    it('+25% to every attack until Volt takes damage (dash ×4: 55/55/55/44)', () => {
+      const sc = new Scenario('volt', 'blaze', 3);
+      sc.s.f[0].power = 25;
+      sc.s.f[0].cost = 16;
+      sc.run(240, mashS1, walkIn);
+      expect(sc.hits(0).map((e) => e.a)).toEqual([55, 55, 55, 44]);
+      expect(sc.s.f[0].power).toBe(25); // dealing damage keeps it
+      // N1 → N2 → N3 ×1.25
+      const n = new Scenario('volt', 'blaze', 2);
+      n.s.f[0].power = 25;
+      n.run(200, sequence('AAA'), (me) => (me.statHitsTaken > 0 ? 0 : stick(16)));
+      expect(n.hits(0).map((e) => e.a)).toEqual([50, 45, 77]);
+    });
+
+    it('taking any damage ends it', () => {
+      const sc = new Scenario('volt', 'blaze', 2);
+      sc.s.f[0].power = 25;
+      sc.run(60, hold(stick(8)), (_m, _o, _s, t) => (t === 0 ? IN_ATK : 0));
+      expect(sc.hits(1).length).toBe(1);
+      expect(sc.s.f[0].power).toBe(0);
+    });
+
+    it('while charged S2 does nothing (no stacking); hit during the charge = no power', () => {
+      const sc = new Scenario('volt', 'blaze', 6);
+      sc.s.f[0].power = 25;
+      sc.s.f[0].cost = 16;
+      sc.run(30, (_m, _o, _s, t) => (t === 0 ? IN_S2 : 0), guard);
+      expect(sc.moves(0).length).toBe(0);
+      expect(sc.s.f[0].cost).toBe(16);
+      // Blaze punishes the pentagon before it charges
+      const p = new Scenario('volt', 'blaze', 2);
+      p.run(60, (_m, _o, _s, t) => (t === 0 ? IN_S2 : 0), (_m, _o, _s, t) => (t === 1 ? IN_ATK : 0));
+      expect(p.hits(1).length).toBe(1);
+      expect(p.s.f[0].power).toBe(0);
+    });
+
+    it('right after a dash S2 is still the turnback guard break', () => {
+      const sc = new Scenario('volt', 'blaze', 4);
+      sc.s.f[0].cost = 16;
+      sc.run(120, dashBot(0, (me) => (me.move === M_S1 && me.sf === 15 ? IN_S2 : 0)), guard);
+      expect(sc.moves(0).map((e) => e.a)).toEqual([M_S1, M_S2]);
+      expect(sc.events(EV_CRUSH, 0).length).toBe(1);
+      expect(sc.s.f[0].power).toBe(0);
+    });
+
+    it('power resets at the next round', () => {
+      const sc = new Scenario('volt', 'blaze', 2);
+      sc.s.f[0].power = 25;
+      sc.s.f[1].hp = 0;
+      sc.run(300, () => 0, guard, () => sc.s.round === 2);
+      expect(sc.s.round).toBe(2);
+      expect(sc.s.f[0].power).toBe(0);
+    });
   });
 });

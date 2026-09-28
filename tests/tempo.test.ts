@@ -2,9 +2,9 @@
 // a short guard gauge that every blocked attack refills.
 import { describe, expect, it } from 'vitest';
 import { Scenario, stick, IN_ATK, IN_S2, IN_STEP, type Bot } from './harness';
-import { getChar } from '../src/core/sim';
+import { getChar, CTL_FACE_FOE, CTL_MANUAL_GUARD } from '../src/core/sim';
 import { CHARACTERS, charIndex } from '../src/data/characters';
-import { M_N1, M_S2 } from '../src/core/compile';
+import { M_N1, M_S1, M_S2 } from '../src/core/compile';
 import { EV_CRUSH, EV_GUARD_BREAK } from '../src/core/events';
 import { ST_ATTACK, ST_FREE, ST_STEP, ST_STUN } from '../src/core/state';
 import { SYSTEM } from '../src/data/system';
@@ -85,17 +85,17 @@ describe('guard setting (v0.9)', () => {
     const atk: Bot = (_m, _o, _s, t) => (t === 0 ? IN_ATK : 0);
     // standing still, no GUARD → the hit lands
     const a = new Scenario('blaze', 'bastion', 1.6);
-    a.sim.setGuardModes([0, 1]);
+    a.sim.setControlModes([0, 1]);
     a.run(60, atk, () => 0);
     expect(a.hits(0).length).toBe(1);
     // GUARD held while pushing the stick → blocked
     const b = new Scenario('blaze', 'bastion', 1.6);
-    b.sim.setGuardModes([0, 1]);
+    b.sim.setControlModes([0, 1]);
     b.run(60, atk, () => IN_GUARD | stick(8));
     expect(b.blocks(0).length).toBe(1);
     // standing still in manual mode never drains the gauge
     const c = new Scenario('blaze', 'bastion', 2);
-    c.sim.setGuardModes([0, 1]);
+    c.sim.setControlModes([0, 1]);
     c.run(200, () => 0, () => 0);
     expect(c.events(EV_GUARD_BREAK, 1).length).toBe(0);
     expect(c.events(EV_GUARD_BREAK, 0).length).toBe(1); // (the auto side idles in guard and breaks)
@@ -107,10 +107,32 @@ describe('guard setting (v0.9)', () => {
 
   it('the guard mode survives into the next round', () => {
     const sc = new Scenario('blaze', 'bastion', 2);
-    sc.sim.setGuardModes([1, 0]);
+    sc.sim.setControlModes([1, 0]);
     sc.s.f[1].hp = 0;
     sc.run(400, () => 0, () => 0, () => sc.s.round === 2);
     expect(sc.s.round).toBe(2);
     expect(sc.s.f[0].manualGuard).toBe(1);
+  });
+
+  it('v1.2 attack direction: with CTL_FACE_FOE an attack pressed while moving swings at the opponent', () => {
+    // walking down (stick 8 = +y), then ATK without aim; the opponent is to the right
+    const walkAtk: Bot = (_m, _o, _s, t) => stick(8) | (t === 5 ? IN_ATK : 0);
+    const foe = new Scenario('blaze', 'bastion', 2);
+    foe.sim.setControlModes([CTL_FACE_FOE, 0]);
+    foe.run(40, walkAtk, () => 0);
+    expect(foe.blocks(0).length + foe.hits(0).length).toBe(1);
+    // the stick setting: the swing goes where you walk (down) and misses
+    const st = new Scenario('blaze', 'bastion', 2);
+    st.run(40, walkAtk, () => 0);
+    expect(st.blocks(0).length + st.hits(0).length).toBe(0);
+    // the bits are independent and kept per fighter
+    const both = new Scenario('blaze', 'bastion', 2);
+    both.sim.setControlModes([CTL_FACE_FOE | CTL_MANUAL_GUARD, CTL_FACE_FOE]);
+    expect([both.s.f[0].faceFoe, both.s.f[0].manualGuard, both.s.f[1].faceFoe, both.s.f[1].manualGuard]).toEqual([1, 1, 1, 0]);
+  });
+
+  it('v1.2 costs: Ray static field 2, Bastion riposte 2', () => {
+    expect(getChar(charIndex('ray')).moves[M_S2].cost).toBe(2 * 4);
+    expect(getChar(charIndex('bastion')).moves[M_S1].cost).toBe(2 * 4);
   });
 });

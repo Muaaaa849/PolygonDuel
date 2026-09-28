@@ -1,11 +1,11 @@
 // Battle screen: fixed 60-tick loop, input sources, events → effects/sound, HUD, pause & result.
-import { Sim } from '../../core/sim';
+import { Sim, CTL_MANUAL_GUARD, CTL_FACE_FOE } from '../../core/sim';
 import { CHARACTERS } from '../../data/characters';
 import { SYSTEM } from '../../data/system';
-import { M_S1, M_S2, SH, SHAPES } from '../../core/compile';
+import { M_S1, SH, SHAPES } from '../../core/compile';
 import {
   type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE,
-  EV_KNOCKDOWN, EV_STEP, EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END,
+  EV_KNOCKDOWN, EV_STEP, EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END, EV_POWER,
   EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, HF_COUNTER, HF_KNOCKDOWN, HF_PUNISH, HF_SHOT,
 } from '../../core/events';
 import { PH_FIGHT, PH_INTRO, ST_FREE, ST_STEP, ST_ATTACK, type FighterState } from '../../core/state';
@@ -45,8 +45,8 @@ export interface BattleConfig {
   local: 0 | 1;
   cpuLevel?: number;
   online?: { link: PeerLink; inputDelay: number };
-  /** Guard mode per side (0 auto, 1 manual). Online: agreed at the start; otherwise from settings. */
-  guardModes?: [number, number];
+  /** Control settings per side (bits CTL_MANUAL_GUARD / CTL_FACE_FOE). Online: agreed at the start; otherwise from settings. */
+  controlModes?: [number, number];
   tutorial?: TutorialHooks;
   onExit: (a: ExitAction) => void;
 }
@@ -64,14 +64,20 @@ function keyLegend(): HTMLElement {
   return h('div', { class: 'key-legend' }, ...items.map(([t, v]) => h('span', null, h('b', null, v), t)));
 }
 
+/** This device's control settings as CTL_* bits (also sent to the online opponent). */
+export function myControlModes(tutorial = false): number {
+  return (settings.guardMode === 'manual' && !tutorial ? CTL_MANUAL_GUARD : 0) | (settings.attackDir === 'foe' ? CTL_FACE_FOE : 0);
+}
+
 export function battleScreen(cfg: BattleConfig): Screen {
   const training = cfg.mode === 'training' || cfg.mode === 'tutorial';
   const sim = new Sim(cfg.chars[0], cfg.chars[1], { training });
   if (training) sim.skipIntro();
-  // guard setting: this device's player(s) use the settings (the tutorial teaches the auto guard)
-  const myGuard = settings.guardMode === 'manual' && cfg.mode !== 'tutorial' ? 1 : 0;
-  const guardModes: [number, number] = cfg.guardModes ?? (cfg.mode === 'local' ? [myGuard, myGuard] : cfg.local === 0 ? [myGuard, 0] : [0, myGuard]);
-  sim.setGuardModes(guardModes);
+  // control settings: this device's player(s) use the settings (the tutorial teaches the auto guard);
+  // the CPU / dummy keeps auto guard and stick-direction attacks
+  const myCtl = myControlModes(cfg.mode === 'tutorial');
+  const controlModes: [number, number] = cfg.controlModes ?? (cfg.mode === 'local' ? [myCtl, myCtl] : cfg.local === 0 ? [myCtl, 0] : [0, myCtl]);
+  sim.setControlModes(controlModes);
   const defs = [CHARACTERS[cfg.chars[0]], CHARACTERS[cfg.chars[1]]];
   const oppIdx = (1 - cfg.local) as 0 | 1;
 
@@ -103,21 +109,30 @@ export function battleScreen(cfg: BattleConfig): Screen {
   /** The move a button starts from neutral (shooting mode: ATK = shot, S1 = back to normal). */
   const slotFor = (id: string) => {
     const f = sim.s.f[cfg.local];
-    return id === 'atk' ? sim.atkSlot(f) : id === 's1' ? sim.skillSlot(f, M_S1) : M_S2;
+    return id === 'atk' ? sim.atkSlot(f) : id === 's1' ? sim.skillSlot(f, M_S1) : sim.s2Slot(f);
   };
-  touch.setManualGuard(guardModes[cfg.local] === 1);
+  touch.setManualGuard((controlModes[cfg.local] & CTL_MANUAL_GUARD) !== 0);
   const localDef = defs[cfg.local];
   const skillLook = (i: number) => ({ shape: localDef.skills[i].shape, label: `S${i + 1}`, cost: localDef.skills[i].cost });
-  touch.setButtons({ atk: { shape: 'circle', label: 'ATTACK' }, s1: skillLook(0), s2: skillLook(1), step: { shape: 'arrow', label: 'STEP' } });
-  // shooters: ATK / S1 change their look with the mode
-  let shownMode = 0;
+  /** S2's look for the move it would start now (ヴォルト: overcharge from neutral, turnback after a dash). */
+  const s2Look = () => {
+    const d = sim.char(cfg.local).moves[sim.s2Slot(sim.s.f[cfg.local])].def!;
+    return { shape: d.shape, label: 'S2', cost: d.cost };
+  };
+  touch.setButtons({ atk: { shape: 'circle', label: 'ATTACK' }, s1: skillLook(0), s2: s2Look(), step: { shape: 'arrow', label: 'STEP' } });
+  // shooters: ATK / S1 change their look with the mode; S2 follows what it would start
+  let shownKey = 0;
   const syncModeButtons = () => {
-    const mode = sim.s.f[cfg.local].shootMode;
-    if (mode === shownMode || !sim.char(cfg.local).shooter) return;
-    shownMode = mode;
-    touch.setButtons(mode
-      ? { atk: { shape: 'diamond', label: 'SHOT' }, s1: { shape: 'square', label: '通常へ' }, s2: skillLook(1), step: { shape: 'arrow', label: 'STEP' } }
-      : { atk: { shape: 'circle', label: 'ATTACK' }, s1: skillLook(0), s2: skillLook(1), step: { shape: 'arrow', label: 'STEP' } });
+    const f = sim.s.f[cfg.local];
+    const key = f.shootMode * 64 + sim.s2Slot(f) + 1;
+    if (key === shownKey || shownKey === 0) {
+      shownKey = key;
+      return;
+    }
+    shownKey = key;
+    touch.setButtons(f.shootMode
+      ? { atk: { shape: 'diamond', label: 'SHOT' }, s1: { shape: 'square', label: '通常へ' }, s2: s2Look(), step: { shape: 'arrow', label: 'STEP' } }
+      : { atk: { shape: 'circle', label: 'ATTACK' }, s1: skillLook(0), s2: s2Look(), step: { shape: 'arrow', label: 'STEP' } });
   };
 
   const bannerLayer = h('div');
@@ -280,6 +295,9 @@ export function battleScreen(cfg: BattleConfig): Screen {
         break;
       case EV_JAM:
         sfx.jam();
+        break;
+      case EV_POWER:
+        sfx.power(e.a === 1);
         break;
       case EV_GHOST:
         // sounds exactly like what the decoy pretends to do
@@ -703,10 +721,10 @@ export function battleScreen(cfg: BattleConfig): Screen {
     syncModeButtons();
     const av = (slot: number) => {
       const m = c.moves[slot === M_S1 ? sim.skillSlot(f, M_S1) : slot];
-      const ok = (f.infCost || f.cost >= m.cost) && (m.usesPerRound === 0 || f.healUses < m.usesPerRound);
+      const ok = (f.infCost || f.cost >= m.cost) && (m.usesPerRound === 0 || f.healUses < m.usesPerRound) && !(m.powerUp && f.power > 0);
       return ok ? 'ready' : 'off';
     };
-    touch.setAvailability({ s1: av(M_S1), s2: av(M_S2), step: f.steps > 0 ? 'ok' : 'off' });
+    touch.setAvailability({ s1: av(M_S1), s2: av(sim.s2Slot(f)), step: f.steps > 0 ? 'ok' : 'off' });
     // just-dodge slow motion: the attack button pulses ("press now → blink attack")
     touch.setPrompt('atk', sim.s.slow > 0 && sim.s.slowWho === cfg.local && f.justWin > 0);
   }

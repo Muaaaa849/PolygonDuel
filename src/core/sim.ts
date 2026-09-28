@@ -20,7 +20,7 @@ import {
   type SimEvent,
   EV_MOVE, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN, EV_STEP,
   EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_WAKE, EV_GUARD, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END,
-  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM,
+  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER,
   HF_COUNTER, HF_JA, HF_OTG, HF_KNOCKDOWN, HF_FORCED_DOWN, HF_SHOT, HF_PUNISH,
 } from './events';
 
@@ -67,16 +67,22 @@ export interface SimOptions {
   training?: boolean;
 }
 
+/** Control setting bits (setControlModes): manual guard (hold GUARD), attacks face the opponent while moving. */
+export const CTL_MANUAL_GUARD = 1;
+export const CTL_FACE_FOE = 2;
+
 export class Sim {
   s: GameState;
   events: SimEvent[] = [];
   /** Training-mode behaviour (not part of the synced state; only used offline). */
   training: boolean;
 
-  /** Guard mode per fighter (0 auto, 1 manual). Set before the match starts; part of the state. */
-  setGuardModes(modes: readonly [number, number]): void {
-    this.s.f[0].manualGuard = modes[0] ? 1 : 0;
-    this.s.f[1].manualGuard = modes[1] ? 1 : 0;
+  /** Control settings per fighter (bits: CTL_MANUAL_GUARD, CTL_FACE_FOE). Set before the match starts; part of the state. */
+  setControlModes(modes: readonly [number, number]): void {
+    for (let i = 0; i < 2; i++) {
+      this.s.f[i].manualGuard = modes[i] & CTL_MANUAL_GUARD ? 1 : 0;
+      this.s.f[i].faceFoe = modes[i] & CTL_FACE_FOE ? 1 : 0;
+    }
   }
 
   constructor(charA: number, charB: number, opts: SimOptions = {}) {
@@ -135,7 +141,7 @@ export class Sim {
         kbDist: 0, kbAngle: 0, limited: 0, buff: 0, healUses: 0, csHit: 0,
         lastDir: i === 0 ? 0 : 16,
         aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, lungePct: 100, wallHits: 0, momStep: 0, momDir: 0,
-        ghostT: 0, ghostMode: 0, shootMode: 0, justNoMul: 0, wallGuard: 0, fieldT: 0,
+        ghostT: 0, ghostMode: 0, shootMode: 0, justNoMul: 0, wallGuard: 0, fieldT: 0, power: 0,
       });
       for (let j = 0; j < MAX_SHOTS; j++) setShot(f, j, null);
       f.char = keepChar;
@@ -401,6 +407,7 @@ export class Sim {
     const who = s.f[0] === f ? 0 : 1;
     const a = s.f[1 - who];
     f.hp = s.trainingRefill ? Math.max(1, f.hp - dmg) : Math.max(0, f.hp - dmg);
+    this.losePower(f, dmg);
     f.comboDmg += dmg;
     a.statDmg += dmg;
     s.hitstop = Math.max(s.hitstop, W.hitstop);
@@ -418,6 +425,7 @@ export class Sim {
 
   private canAfford(f: FighterState, m: CMove): boolean {
     if (m.ghost && f.ghostT > 0) return false;
+    if (m.powerUp && f.power > 0) return false;
     if (!f.infCost && f.cost < m.cost) return false;
     if (m.usesPerRound > 0 && f.healUses >= m.usesPerRound) return false;
     return true;
@@ -434,6 +442,13 @@ export class Sim {
     return f.shootMode ? sh.off : slot;
   }
 
+  /** The move S2 starts now (UI): skills[1], or `s2Neutral` unless the current move can cancel into skills[1]. */
+  s2Slot(f: FighterState): number {
+    const c = COMPILED[f.char];
+    if (c.s2Neutral < 0) return M_S2;
+    return f.st === ST_ATTACK && f.move >= 0 && c.moves[M_S2].cancelFrom & (1 << f.move) ? M_S2 : c.s2Neutral;
+  }
+
   /** The move ATK starts from neutral / a step: N1, or the 1st shot in shooting mode. */
   atkSlot(f: FighterState): number {
     const sh = COMPILED[f.char].shooter;
@@ -447,7 +462,10 @@ export class Sim {
       const r = this.skillSlot(f, M_S1);
       if (this.canAfford(f, c.moves[r])) return r;
     }
-    if (f.bufS2 && c.moves[M_S2].cancelFrom & mask && this.canAfford(f, c.moves[M_S2])) return M_S2;
+    if (f.bufS2) {
+      const s2 = c.s2Neutral >= 0 ? c.s2Neutral : M_S2;
+      if (c.moves[s2].cancelFrom & mask && this.canAfford(f, c.moves[s2])) return s2;
+    }
     return -1;
   }
 
@@ -572,7 +590,7 @@ export class Sim {
     }
     // which button started it (shots = ATK; mode off / blast = S1)
     const sh = c.shooter;
-    const btn = mi === M_N1 || mi === M_JA || m.proj ? 1 : mi === M_S1 || (sh && (mi === sh.off || mi === sh.blast)) ? 2 : mi === M_S2 ? 3 : 0;
+    const btn = mi === M_N1 || mi === M_JA || m.proj ? 1 : mi === M_S1 || (sh && (mi === sh.off || mi === sh.blast)) ? 2 : mi === M_S2 || mi === c.s2Neutral ? 3 : 0;
     const aim = btn === 1 ? f.aimAtk : btn === 2 ? f.aimS1 : btn === 3 ? f.aimS2 : 0;
     if (btn === 1) f.bufAtk = f.aimAtk = 0;
     else if (btn === 2) f.bufS1 = f.aimS1 = 0;
@@ -589,7 +607,7 @@ export class Sim {
     // Direction: auto-aim moves (GC/JA) face the opponent; an aimed press goes exactly
     // where it was aimed (fresh attacks and skills, also skill cancels) with no homing
     // and its reach level scaling the lunge; chained moves keep facing; other fresh
-    // attacks go where the stick points, or at the opponent (plan §4).
+    // attacks go where the stick points (at the opponent with the faceFoe setting), or at the opponent (plan §4).
     f.aimed = 0;
     f.lungePct = 100;
     // (a dash chained out of a dash turns back toward the one it just passed)
@@ -604,7 +622,7 @@ export class Sim {
       f.facing = (aim - 1) & (ANG - 1);
       f.aimed = 1;
       f.lungePct = aimLungePct((aim - 1) >> 10);
-    } else if (!chained) f.facing = w & IN_STICK ? dirAngle(w) : this.angleTo(i);
+    } else if (!chained) f.facing = w & IN_STICK && !f.faceFoe ? dirAngle(w) : this.angleTo(i);
     this.emit(EV_MOVE, i, mi, 0, f.x, f.y);
     if (m.mode >= 0 && m.mode !== f.shootMode) {
       f.shootMode = m.mode;
@@ -1018,6 +1036,10 @@ export class Sim {
     }
     if (m.proj && mf === m.proj.at) this.fire(i, m);
     if (m.field && mf === m.field.at) this.placeField(i, m);
+    if (m.powerUp && mf === m.powerUp.frame) {
+      f.power = m.powerUp.pct;
+      this.emit(EV_POWER, i, 1, 0, f.x, f.y);
+    }
     if (m.heal && mf === m.heal.frame) {
       const c = COMPILED[f.char];
       f.hp = Math.min(c.hp, f.hp + m.heal.hp);
@@ -1354,9 +1376,17 @@ export class Sim {
   /** Flat damage outside the combo count / scaling (bullets, shocks, guard walls). */
   private rawDamage(a: FighterState, d: FighterState, dmg: number): number {
     d.hp = this.s.trainingRefill ? Math.max(1, d.hp - dmg) : Math.max(0, d.hp - dmg);
+    this.losePower(d, dmg);
     d.comboDmg += dmg;
     a.statDmg += dmg;
     return dmg;
+  }
+
+  /** Any damage taken ends the power-up (オーバーチャージ). */
+  private losePower(d: FighterState, dmg: number): void {
+    if (d.power === 0 || dmg <= 0) return;
+    d.power = 0;
+    this.emit(EV_POWER, this.s.f[0] === d ? 0 : 1, 0, 0, d.x, d.y);
   }
 
   private knockDown(d: FighterState, angle: number, launch = 0): void {
@@ -1379,11 +1409,13 @@ export class Sim {
     const scale = sc[Math.min(d.comboHits, sc.length - 1)];
     const ja = a.jaChain ? Math.round(SYSTEM.just.mul * 100) : 100;
     const ctr = counter ? Math.round(SYSTEM.counterHit.dmgMul * 100) : 100;
-    const dmg = idiv(base * ja * ctr * scale, 1000000);
+    // (オーバーチャージ: +power% on top; the product stays well inside 2^53)
+    const dmg = idiv(base * ja * ctr * scale * (100 + a.power), 100000000);
     d.comboHits++;
     d.comboDmg += dmg;
     if (this.s.trainingRefill) d.hp = Math.max(1, d.hp - dmg);
     else d.hp = Math.max(0, d.hp - dmg);
+    this.losePower(d, dmg);
     a.statDmg += dmg;
     d.statHitsTaken++;
     if (d.comboHits > a.statMaxCombo) a.statMaxCombo = d.comboHits;

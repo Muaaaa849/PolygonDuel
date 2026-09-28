@@ -69,7 +69,7 @@ export const ray: CharacterDef = {
     {
       id: 'staticField', name: 'スタティックフィールド', kind: 'skill', shape: 'pentagon',
       desc: '狙った場所（最大6u先、タップで相手の足元）に3.5秒間の電場。中でステップすると感電（45ダメージ＋よろけ）',
-      cost: 1, S: 18, A: 0, T: 28, reach: 0, lunge: 0,
+      cost: 2, S: 18, A: 0, T: 28, reach: 0, lunge: 0,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 0,
       field: { at: 18, radius: 2.4, frames: 210, maxDist: 6, dmg: 45, stun: 30 },
       cancelFrom: ['neutral'],

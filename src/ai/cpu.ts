@@ -227,7 +227,7 @@ export class CpuPlayer {
       if (this.stepIn && dist < myReach + 1.2) {
         this.stepIn = false;
         const s2 = c.moves[M_S2];
-        if (s2.gb && me.cost >= s2.cost && this.hexFrames > 6 && this.rng.chance(0.5)) return IN_S2 | IN_STICK | toward;
+        if (s2.gb && c.s2Neutral < 0 && me.cost >= s2.cost && this.hexFrames > 6 && this.rng.chance(0.5)) return IN_S2 | IN_STICK | toward;
         return IN_ATK | IN_STICK | toward;
       }
       return 0;
@@ -310,6 +310,14 @@ export class CpuPlayer {
       if (!riposte && ((seenAtk && this.rng.chance(0.35)) || (this.hexFrames > 20 && me.cost >= 2 * COST_UNIT && this.rng.chance(0.03)))) return IN_S1 | IN_STICK | toward;
     }
 
+    // ── volt: overcharge from a safe distance (the pentagon startup gets punished up close),
+    // keeping a dash's worth of cost when there is room
+    if (c.s2Neutral >= 0 && me.power === 0 && op.st !== ST_STEP) {
+      const oc = c.moves[c.s2Neutral];
+      const far = dist > 5 || (op.st === ST_DOWN && dist > 3);
+      if (far && me.cost >= oc.cost + (me.cost >= 3 * COST_UNIT ? COST_UNIT : 0) && this.rng.chance(0.03)) return IN_S2;
+    }
+
     // ── ray: modes, shots, field
     if (c.def.id === 'ray') {
       if (me.shootMode) {
@@ -351,7 +359,8 @@ export class CpuPlayer {
     // break a long guard
     if (this.hexFrames > 40 && dist < 3.2) {
       const s2 = c.moves[M_S2];
-      if (s2.gb && me.cost >= s2.cost && this.rng.chance(0.08)) return IN_S2 | IN_STICK | toward;
+      // (ヴォルト's S2 from neutral is the overcharge, not its guard break)
+      if (s2.gb && c.s2Neutral < 0 && me.cost >= s2.cost && this.rng.chance(0.08)) return IN_S2 | IN_STICK | toward;
       const s1 = c.moves[M_S1];
       if (s1.gb && me.cost >= s1.cost && this.rng.chance(0.08)) return IN_S1 | IN_STICK | toward;
     }

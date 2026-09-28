@@ -11,7 +11,7 @@ import {
 import {
   type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN,
   EV_STEP, EV_HEAL, EV_KO, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END, HF_COUNTER, HF_JA, HF_OTG,
-  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, HF_SHOT, HF_PUNISH,
+  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, HF_SHOT, HF_PUNISH,
 } from '../core/events';
 import { Morph, SHAPE_RADII, toPoints } from './shapes';
 import { Vfx } from './vfx';
@@ -470,6 +470,26 @@ export class BattleView {
         this.addShake(10);
         break;
       }
+      case EV_POWER: {
+        const f = s.f[e.who];
+        const fx0 = toPx(f.x);
+        const fy0 = toPx(f.y);
+        if (e.a) {
+          // charged: a burst of lightning and an expanding ring
+          this.fx.spawn('overcharge', { x: fx0, y: fy0, size: 2.6 * PX, alpha: 0.9 });
+          this.fx.spawn('ripple_t', { x: fx0, y: fy0, size: 3 * PX, tint: col });
+          this.vfx.ring(fx0, fy0, 0xe8fdff, 24, 130, 18, 5);
+          this.vfx.spark(fx0, fy0, col, 14, 20, 26, 3);
+          this.vfx.text('OVERCHARGE', fx0, fy0 - 135, col, 26, 44, -0.6);
+          att.flash = 3;
+        } else {
+          // discharged by a hit: the stored charge sprays out
+          this.vfx.spark(fx0, fy0, col, 10, 16, 20, 3);
+          this.vfx.ring(fx0, fy0, col, 50, 20, 14, 3);
+          this.vfx.text('DISCHARGE', fx0, fy0 - 135, 0x9fb6c0, 20, 36, -0.5);
+        }
+        break;
+      }
       case EV_JAM: {
         const f = s.f[e.who];
         this.vfx.text('JAM', toPx(f.x), toPx(f.y) - 100, 0xb0b6c8, 28, 50, -0.4);
@@ -732,6 +752,7 @@ export class BattleView {
     }
     this.drawFields();
     for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.drawFighter(i, dtFrames, frozen);
+    for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.drawPower(i);
     this.drawShots();
     for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.stateFx(i, newFrame && !frozen);
     // illusion decoys: to the opponent they ARE the fighter; the owner sees a translucent ghost
@@ -1059,6 +1080,66 @@ export class BattleView {
         }
         g.stroke({ width: 2, color: 0xfff3b0, alpha: 0.7 * k });
       }
+    }
+  }
+
+  /**
+   * Overcharge (ヴォルト): while charging, sparks converge on the body from a shrinking ring;
+   * while powered, jagged arcs crawl over a bright double halo (re-rolled each frame).
+   */
+  private drawPower(i: number): void {
+    const f = this.sim.s.f[i];
+    const m = this.sim.moveOf(f);
+    const charging = !!m && !!m.powerUp && f.sf < m.powerUp.frame;
+    if (!charging && f.power <= 0) return;
+    const g = this.glow;
+    const cx = toPx(f.x);
+    const cy = toPx(f.y);
+    const col = this.fighters[i].color;
+    const low = this.quality === 'low';
+    if (charging) {
+      const k = f.sf / m!.powerUp!.frame; // 0 → 1
+      const r = (1.7 - 1.1 * k) * PX;
+      g.circle(cx, cy, r).stroke({ width: 3, color: col, alpha: 0.35 + 0.5 * k });
+      const n = low ? 5 : 9;
+      for (let b = 0; b < n; b++) {
+        const a0 = (b / n) * Math.PI * 2 + this.t * 0.07;
+        let px = cx + Math.cos(a0) * r;
+        let py = cy + Math.sin(a0) * r;
+        g.moveTo(px, py);
+        // a jagged bolt toward the body
+        for (let q = 1; q <= 3; q++) {
+          const rr = r * (1 - q / 3.6);
+          px = cx + Math.cos(a0) * rr + (Math.random() - 0.5) * 18;
+          py = cy + Math.sin(a0) * rr + (Math.random() - 0.5) * 18;
+          g.lineTo(px, py);
+        }
+      }
+      g.stroke({ width: 2, color: 0xe8fdff, alpha: 0.5 + 0.4 * k });
+      return;
+    }
+    const pulse = 0.5 + 0.5 * Math.sin(this.t * 0.35);
+    const r0 = 0.62 * PX;
+    g.circle(cx, cy, r0 + 4 * pulse).stroke({ width: 3, color: col, alpha: 0.55 });
+    g.circle(cx, cy, r0 + 14 + 6 * pulse).stroke({ width: 2, color: 0xe8fdff, alpha: 0.25 });
+    // arcs crawling around the body
+    const n = low ? 2 : 4;
+    for (let b = 0; b < n; b++) {
+      if (Math.random() > 0.7) continue;
+      const a0 = Math.random() * Math.PI * 2;
+      const span = 0.6 + Math.random() * 0.9;
+      g.moveTo(cx + Math.cos(a0) * r0, cy + Math.sin(a0) * r0);
+      for (let q = 1; q <= 4; q++) {
+        const a = a0 + (span * q) / 4;
+        const rr = r0 + 6 + Math.random() * 22;
+        g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+      }
+      g.stroke({ width: 2.5, color: 0xe8fdff, alpha: 0.85 });
+    }
+    // two sparks orbiting
+    for (let b = 0; b < 2; b++) {
+      const a = this.t * 0.18 + b * Math.PI;
+      g.circle(cx + Math.cos(a) * (r0 + 12), cy + Math.sin(a) * (r0 + 12), 4).fill({ color: 0xffffff, alpha: 0.9 });
     }
   }
 

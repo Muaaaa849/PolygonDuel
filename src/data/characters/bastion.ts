@@ -40,7 +40,7 @@ export const bastion: CharacterDef = {
     {
       id: 'riposte', name: 'リポスト', kind: 'skill', shape: 'hexagon',
       desc: '当て身。円を受けると即反撃で相手をよろけさせ、引き寄せて2段目→3段目へ繋がる。成立するとコストが戻る。三角には負ける',
-      cost: 1, S: 3, A: 22, T: 42, reach: 0, lunge: 0,
+      cost: 2, S: 3, A: 22, T: 42, reach: 0, lunge: 0,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 14,
       counterStance: { from: 3, to: 24, dmg: 70, strikeT: 22, stagger: 30, chain: [6, 14], pull: 1.4, refund: 1 },
       cancelFrom: ['n1', 'n2', 'neutral'],
@@ -57,7 +57,7 @@ export const bastion: CharacterDef = {
   combos: [
     { route: '1→2→3', cost: 0, note: '1回の読み勝ちが重い' },
     { route: 'S2(クラッシュ)→1→2→3', cost: 2, note: '遠くでガードを固めた相手に' },
-    { route: 'S1(リポスト成立)→2→3', cost: 1, note: '210＋ダウン。成立でコストが戻る（ガード→GCより痛い）' },
+    { route: 'S1(リポスト成立)→2→3', cost: 2, note: '210＋ダウン。成立でコスト1が戻る（ガード→GCより痛い）' },
     { route: 'JA→2→3', cost: 0, note: '全キャラ最大の一撃' },
   ],
   tips: [

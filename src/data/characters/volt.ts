@@ -14,6 +14,8 @@ import type { CharacterDef } from '../types';
 // R13 dash always loses to an attack touching it; R14 (v0.9) the dash also comes out on its own.
 // v1.0 (user request): a dash that hits chains into the next dash (mash S1) — a skill-only
 // combo, 4 cost = 4 hits; dash damage ×0.8.
+// v1.2 (user request): S2 right after a dash is still the turnback (GB); S2 from neutral is a new
+// power-up, オーバーチャージ (cost 2): attack +25% until Volt next takes damage.
 export const volt: CharacterDef = {
   id: 'volt',
   name: 'ヴォルト',
@@ -62,23 +64,38 @@ export const volt: CharacterDef = {
     },
     {
       id: 'turnBack', name: 'ターンバック', kind: 'skill', shape: 'triangle',
-      desc: 'ダッシュスラストの直後（8F以内）だけ。振り返って背後の相手へガード崩し',
+      desc: 'ダッシュスラストの直後（8F以内）に押すと、振り返って背後の相手へガード崩し。何もしていない時に押すと「オーバーチャージ」',
       cost: 1, S: 26, A: 3, T: 54, reach: 2.5, lunge: 0.6, autoAim: true,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 6,
       guardBreak: { crush: 60, dmgGuard: 30, dmgOpen: 20 },
       cancelFrom: ['dashThrust'],
     },
   ],
+  // S2 from neutral (not right after a dash): charge up. Pentagon = "hit me now" — the long,
+  // harmless startup is the price; once charged, every attack does +25% until Volt takes damage.
+  extraMoves: [
+    {
+      id: 'overcharge', name: 'オーバーチャージ', kind: 'skill', shape: 'pentagon',
+      desc: '何もしていない時のS2。24F目に帯電し、次にダメージを受けるまで攻撃力+25%（重ねがけ不可）。溜め中は無防備',
+      cost: 2, S: 24, A: 0, T: 40, reach: 0, lunge: 0,
+      dmg: 0, hitstun: 0, blockstun: 0, hitstop: 0,
+      powerUp: { frame: 24, pct: 25 },
+      cancelFrom: ['neutral'],
+    },
+  ],
+  s2Neutral: 'overcharge',
   combos: [
     { route: '1→2→3', cost: 0, note: '基本（火力は低め）' },
     { route: 'S1→S1→S1→S1', cost: 4, note: '突進が当たったらS1連打。コストの数だけ繋がる（4回で167）。通常技には繋がらない' },
     { route: 'S1（ヒット）', cost: 1, note: '44。+3F' },
     { route: 'ステップ→S1(ガード)→S2(クラッシュ)→1→2→3', cost: 2, note: '裏に抜けてからの崩し' },
     { route: 'JA→2→3', cost: 0, note: 'ジャスト回避から' },
+    { route: 'S2(オーバーチャージ)→…', cost: 2, note: '以降の攻撃すべて+25%（被弾で解除）。突進×4なら55+55+55+43' },
   ],
   tips: [
     '相手が振った瞬間（判定が出る前）に突進で刺す。ステップは3回あるので、突進とは別に動き回れる',
     '攻撃を置かれると最悪（×1.5で食らう）。六角（ガード・リポスト構え）には突進せず、突進→ターンバック',
     '突進をガードされた後は +2F。1段目・ターンバック・ガードのじゃんけん',
+    '離れている時にS2でオーバーチャージ。溜め（五角）を見られたら殴られるので、距離を取ってから',
   ],
 };

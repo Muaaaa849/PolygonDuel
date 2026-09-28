@@ -803,6 +803,40 @@ def turnback(size=320, n=14):
     save('turnback', frames)
 
 
+def overcharge(size=256, n=14):
+    """Volt's overcharge: bolts burst outward from the body, and a pentagon (buff) ring expands."""
+    x, y, r, th = grid(size)
+    frames = []
+    g = np.random.default_rng(4242)
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(t)
+        inten = gauss(r, 0.14 + 0.08 * e) * (1 - t) ** 1.5 * 2.0  # core flash
+        flick = 1.0 if k % 3 != 2 else 0.5
+        reach = 0.25 + 0.7 * e
+        for b in range(7):
+            a0 = b / 7 * 2 * math.pi + g.uniform(-0.2, 0.2)
+            pts = [(0.0, 0.0)]
+            for j in range(1, 7):
+                d = reach * j / 6
+                a = a0 + g.uniform(-0.22, 0.22)
+                pts.append((math.cos(a) * d, math.sin(a) * d))
+            best = np.full(r.shape, 9.0, np.float32)
+            for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+                ex, ey = x2 - x1, y2 - y1
+                L2 = ex * ex + ey * ey + 1e-9
+                tt = np.clip(((x - x1) * ex + (y - y1) * ey) / L2, 0, 1)
+                d = np.sqrt((x - (x1 + ex * tt)) ** 2 + (y - (y1 + ey * tt)) ** 2)
+                best = np.minimum(best, d)
+            inten += (np.exp(-(best / 0.011) ** 2) * 1.5 + np.exp(-(best / 0.045) ** 2) * 0.35) * flick * (1 - t) ** 0.8
+        # pentagon ring (the buff shape), expanding and fading
+        pr = 0.3 + 0.6 * e
+        pent = np.cos(math.pi / 5) / np.cos(np.mod(th + math.pi / 2, 2 * math.pi / 5) - math.pi / 5)
+        inten += gauss(r - pr * pent, 0.018 + 0.02 * t) * (1 - t) ** 1.2 * 1.6
+        frames.append(rgba(glowify(inten, 3, 0.55), CYAN, white_core=0.9))
+    save('overcharge', frames)
+
+
 def danger_cyan():
     """Volt's guard-break (turnback) warning aura, in cyan."""
     danger(name='danger_c', color=CYAN)
@@ -849,6 +883,7 @@ if __name__ == '__main__':
     shock()
     turnback()
     danger_cyan()
+    overcharge()
     with open(os.path.join(OUT, 'fx.json'), 'w') as f:
         json.dump(MANIFEST, f, indent=1)
     total = sum(os.path.getsize(os.path.join(OUT, m['file'])) for m in MANIFEST.values())

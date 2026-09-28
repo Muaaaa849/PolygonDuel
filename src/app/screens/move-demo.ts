@@ -53,14 +53,19 @@ function scriptFor(c: CharacterDef, kind: DemoKind): Script {
   if (m.dash || m.cancelFrom?.includes('dashThrust')) {
     // step → dash through the guarding dummy (→ turnback crush → combo)
     const turn = !m.dash;
+    // (ヴォルト S2: overcharge from neutral first, so the loop shows both uses of the button)
+    const oc = turn && !!c.s2Neutral;
+    const t0 = oc ? 44 : 20;
     return {
       dist: 3.8,
+      setup: oc ? (sim) => (sim.s.f[0].cost = 16) : undefined,
       input: (t, sim) => {
         const me = sim.s.f[0];
-        if (t === 20) return [IN_STEP | IN_STICK, 0];
-        if (t === 23) return [IN_S1 | IN_STICK, 0];
+        if (oc && t === 4) return [IN_S2, 0];
+        if (t === t0) return [IN_STEP | IN_STICK, 0];
+        if (t === t0 + 3) return [IN_S1 | IN_STICK, 0];
         if (turn && me.move === M_S1 && me.sf === 12) return [IN_S2, 0];
-        if (turn && t > 70 && t % 5 === 0 && sim.s.f[1].st !== ST_FREE) return [IN_ATK, 0];
+        if (turn && t > t0 + 50 && t % 5 === 0 && sim.s.f[1].st !== ST_FREE) return [IN_ATK, 0];
         return [0, 0];
       },
     };

@@ -14,7 +14,7 @@ import { show, type Screen } from '../router';
 import { setAmbient } from '../../render/pixi-app';
 import { sfx, unlockAudio } from '../../audio/sfx';
 import { charCards } from './select';
-import { battleScreen } from './battle';
+import { battleScreen, myControlModes } from './battle';
 
 export interface OnlineNav {
   title: () => void;
@@ -55,7 +55,10 @@ export function onlineHome(nav: OnlineNav): Screen {
     show(roomJoinScreen(nav, c));
   };
   joinBtn.onclick = joinCode;
-  codeIn.onkeydown = (e) => e.key === 'Enter' && joinCode();
+  // (block body: an on* handler that returns false cancels the key — no typing at all)
+  codeIn.onkeydown = (e) => {
+    if (e.key === 'Enter') joinCode();
+  };
   const el = h('div', { class: 'screen' },
     h('div', { class: 'topbar' }, backButton(() => { sfx.back(); nav.title(); }), h('h2', null, 'ONLINE'), h('span', { class: 'sub' }, '2台で対戦')),
     h('div', { class: 'online-body' },
@@ -670,9 +673,10 @@ export function onlineSelect(nav: OnlineNav, link: PeerLink, isHost: boolean, pr
   let theirs = -1;
   let myReady = false;
   let theirReady = false;
-  let theirGuard = 0;
+  let theirCtl = 0;
   let started = false;
-  const myGuard = () => (settings.guardMode === 'manual' ? 1 : 0);
+  const myCtl = () => myControlModes();
+  const ctlBits = (v: unknown) => (typeof v === 'number' ? v & 3 : 0);
   const status = h('div', { class: 'hint' });
   const readyBtn = h('button', { class: 'btn primary' }, '準備OK');
   const badge = h('span', { class: 'badge good' }, h('span', { class: 'dot' }), '接続中');
@@ -691,7 +695,7 @@ export function onlineSelect(nav: OnlineNav, link: PeerLink, isHost: boolean, pr
   };
   const setReady = (v: boolean) => {
     myReady = v;
-    link.sendCtrl({ t: 'ready', v, c: mine, g: myGuard() });
+    link.sendCtrl({ t: 'ready', v, c: mine, g: myCtl() });
     refresh();
     maybeStart();
   };
@@ -708,8 +712,8 @@ export function onlineSelect(nav: OnlineNav, link: PeerLink, isHost: boolean, pr
   function maybeStart(): void {
     if (!isHost || !myReady || !theirReady || started || theirs < 0) return;
     const delay = inputDelay();
-    // each player's guard setting (host = 1P) goes into both simulations
-    const guard: [number, number] = [myGuard(), theirGuard];
+    // each player's control settings (guard / attack direction; host = 1P) go into both simulations
+    const guard: [number, number] = [myCtl(), theirCtl];
     link.sendCtrl({ t: 'start', chars: [mine, theirs], delay, guard });
     begin([mine, theirs], delay, guard);
   }
@@ -725,7 +729,7 @@ export function onlineSelect(nav: OnlineNav, link: PeerLink, isHost: boolean, pr
         chars,
         local,
         online: { link, inputDelay: delay },
-        guardModes: guard,
+        controlModes: guard,
         onExit: (a) => {
           if (a === 'title') {
             link.close();
@@ -748,13 +752,13 @@ export function onlineSelect(nav: OnlineNav, link: PeerLink, isHost: boolean, pr
       case 'ready':
         theirs = m.c as number;
         theirReady = !!m.v;
-        theirGuard = m.g === 1 ? 1 : 0;
+        theirCtl = ctlBits(m.g);
         if (theirReady) sfx.ui();
         break;
       case 'start': {
         const chars = m.chars as [number, number];
         const g = Array.isArray(m.guard) ? (m.guard as number[]) : [0, 0];
-        begin(chars, m.delay as number, [g[0] === 1 ? 1 : 0, g[1] === 1 ? 1 : 0]);
+        begin(chars, m.delay as number, [ctlBits(g[0]), ctlBits(g[1])]);
         return;
       }
       case 'hello':

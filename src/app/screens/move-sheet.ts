@@ -83,6 +83,13 @@ function facts(m: MoveDef, c?: CharacterDef): [string, string][] {
     rows.push(['出せる場面', from.join('・') + (normal ? '（通常技はヒット／ガード時にキャンセル）' : m.cancelFrom.includes('dashThrust') ? '（持続が終わってから8F以内。ヒット・ガード・空振りどれでも）' : '')]);
   }
   rows.push(['エイム', m.reach > 0 && m.A > 0 ? `ボタンをドラッグで方向${m.lunge > 0 ? 'と突進距離' : ''}を指定できる` : 'その場で発動（エイム不要）']);
+  // ヴォルト S2: from neutral the same button is another move (オーバーチャージ)
+  const alt = c?.s2Neutral && m === c.skills[1] ? c.extraMoves?.find((x) => x.id === c.s2Neutral) : undefined;
+  if (alt?.powerUp) {
+    rows.push([`何もしていない時：${alt.name}`, `五角・コスト${alt.cost}。${alt.powerUp.frame}F目に帯電（全体${alt.T}F）`]);
+    rows.push(['帯電中', `攻撃力+${alt.powerUp.pct}%（突進・通常技・崩しすべて）。次にダメージを受けると解除。重ねがけ不可、ラウンドごとに解除`]);
+    rows.push(['溜めの隙', '溜め中（五角）は無防備。離れてから使う']);
+  }
   return rows;
 }
 

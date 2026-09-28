@@ -177,6 +177,8 @@ export interface MoveDef {
   launch?: number;
   /** Its guard pushback can slam the guard into the wall (wall damage while guarding). */
   wallOnGuard?: boolean;
+  /** Power-up (ヴォルトのオーバーチャージ): on `frame`, attack damage +pct% until you take damage. */
+  powerUp?: { frame: number; pct: number };
   /** Sets the shooting mode at its 1st frame (1 = on, 0 = off). */
   mode?: 0 | 1;
   /** Short description for UI. */
@@ -211,6 +213,8 @@ export interface CharacterDef {
    * off, from N2 it becomes `blast`); in the mode ATK fires `shots` (a chain of up to 3).
    */
   shooter?: { walk: number; shots: [string, string, string]; off: string; blast: string };
+  /** S2 pressed from neutral / a step starts this extra move instead (skills[1] then only comes out of its cancelFrom moves). */
+  s2Neutral?: string;
   /** Suggested combos for tutorial / move list. */
   combos: { route: string; cost: number; note: string }[];
   tips: string[];

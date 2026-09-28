@@ -989,6 +989,11 @@ button {
 .mode-badge.on {
   display: inline-block;
 }
+.mode-badge.power {
+  color: #7df3ff;
+  border-color: rgba(34, 211, 238, 0.7);
+  box-shadow: 0 0 6px rgba(34, 211, 238, 0.45);
+}
 .clock {
   font-family: var(--display);
   font-weight: 700;

@@ -87,6 +87,7 @@ export interface CMove {
   chainReset: CWindow | null;
   otg: boolean;
   heal: { frame: number; hp: number; buffFrames: number; walkPct: number; stepRegenMul: number } | null;
+  powerUp: { frame: number; pct: number } | null;
   /** Illusion (stopDist in milli-u). */
   ghost: { approach: number; stopDist: number; frames: number } | null;
   /** ATK chains to `next` on these frames even without contact (連射). */
@@ -122,6 +123,8 @@ export interface CChar {
   stepStock: number;
   /** Shooting-mode character: walk in the mode (milli-u / tick) and move slots. */
   shooter: { walk: number; shots: number[]; off: number; blast: number } | null;
+  /** S2 from neutral / a step starts this slot (-1 = S2 itself). */
+  s2Neutral: number;
   moves: CMove[];
 }
 
@@ -197,6 +200,7 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     chainReset: win(m.chainReset),
     otg: !!m.otg,
     heal: m.heal ? { ...m.heal } : null,
+    powerUp: m.powerUp ? { ...m.powerUp } : null,
     ghost: m.ghost ? { approach: m.ghost.approach, stopDist: u(m.ghost.stopDist), frames: m.ghost.frames } : null,
     chainAny: win(m.chainAny),
     cancelAny: win(m.cancelAny),
@@ -282,6 +286,7 @@ export function compileCharacter(def: CharacterDef, idx: number): CChar {
           blast: slotIds[def.shooter.blast],
         }
       : null,
+    s2Neutral: def.s2Neutral ? slotIds[def.s2Neutral] : -1,
     moves,
   };
 }

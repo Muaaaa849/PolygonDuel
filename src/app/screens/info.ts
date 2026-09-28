@@ -133,6 +133,20 @@ export function settingsScreen(onBack: () => void): Screen {
     }
   };
   drawG();
+  const dirSeg = h('div', { class: 'segmented' });
+  const drawD = () => {
+    dirSeg.innerHTML = '';
+    for (const [v, label] of [['foe', '相手へ'], ['stick', '移動方向へ']] as const) {
+      const b = h('button', { class: settings.attackDir === v ? 'on' : '' }, label);
+      b.onclick = () => {
+        sfx.ui();
+        saveSettings({ attackDir: v });
+        drawD();
+      };
+      dirSeg.append(b);
+    }
+  };
+  drawD();
   const touchSeg = h('div', { class: 'segmented' });
   const drawT = () => {
     touchSeg.innerHTML = '';
@@ -167,12 +181,13 @@ export function settingsScreen(onBack: () => void): Screen {
           ),
         ),
         h('div', { class: 'row-set' }, h('div', { class: 't' }, h('b', null, 'ガード'), h('small', null, '自動：立ち止まる（スティックを離す）とガード。手動：GUARDボタンを押している間だけガード（止まっていてもガードしない）')), guardSeg),
+        h('div', { class: 'row-set' }, h('div', { class: 't' }, h('b', null, '攻撃の向き'), h('small', null, '移動しながら攻撃・スキルを押した時（エイムしていない時）。相手へ：移動中でも相手の方へ振る。移動方向へ：動いている方向へ振る')), dirSeg),
         h('div', { class: 'row-set' }, h('div', { class: 't' }, h('b', null, '画面のボタン'), h('small', null, '自動：タッチ画面の時だけ表示（PCではキーボードとマウスで操作）')), touchSeg),
         h('div', { class: 'row-set' },
           h('div', { class: 't' }, h('b', null, 'キー設定'), h('small', null, 'キーボードとマウスのボタンを自由に割り当て（ひとり用・ローカル対戦の1P／2P）')),
           h('button', { class: 'btn small primary', onclick: () => { sfx.ui(); show(keybindScreen(() => show(settingsScreen(onBack)))); } }, '編集'),
         ),
-        toggle('mouseAim', 'マウスで狙う', 'PC（画面のボタンを出していない時）：攻撃・スキルはマウスカーソルの方向へ。オフ：相手へ自動で向く'),
+        toggle('mouseAim', 'マウスで狙う', 'PC（画面のボタンを出していない時）：攻撃・スキルはマウスカーソルの方向へ。オフ：「攻撃の向き」の設定に従う'),
         toggle('aimMode', 'ドラッグでエイム', '攻撃・スキルボタンを押したままドラッグで方向と距離を指定、離して発動。オフ：押した瞬間に発動'),
         toggle('dynamicCamera', 'ダイナミックカメラ', '近づくと寄って、形を大きく見せる'),
         toggle('reduceFlash', 'フラッシュを抑える', '画面の点滅・色収差を弱める（光過敏の方向け）'),
