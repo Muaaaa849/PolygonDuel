@@ -12,7 +12,7 @@ function play(a: number, b: number, seed: number) {
   const cb = new CpuPlayer(sim, 1, CPU_LEVELS[2], seed + 1000);
   const count = { hit: 0, block: 0, crush: 0, just: 0 };
   let frames = 0;
-  while (sim.s.phase !== PH_MATCH_OVER && frames < 60 * 60 * 6) {
+  while (sim.s.phase !== PH_MATCH_OVER && frames < 60 * 60 * 12) {
     sim.step(ca.input(), cb.input());
     for (const e of sim.events) {
       if (e.type === EV_HIT) count.hit++;

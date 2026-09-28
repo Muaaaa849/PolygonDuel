@@ -29,7 +29,7 @@ export function buildHud(sim: Sim, view: BattleView, tags: [string, string]) {
     );
     return { side, fill, lag, hp, wins, pips, steps, mode, last: { hp: -1, win: -1, cost: -1, steps: -1, mode: -1 } };
   });
-  const clock = h('div', { class: 'clock' }, '60');
+  const clock = h('div', { class: 'clock' }, String(SYSTEM.round.seconds));
   const clockSub = h('small', null, 'ROUND 1');
   const clockWrap = h('div', { class: 'hud-center' }, clock, clockSub);
   el.append(sides[0].side, clockWrap, sides[1].side);

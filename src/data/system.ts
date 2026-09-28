@@ -128,7 +128,7 @@ export const SYSTEM = {
   comboForceDownFrames: 240,
 
   round: {
-    seconds: 60,
+    seconds: 120,
     winsNeeded: 2,
     introFirst: 180,
     intro: 100,
