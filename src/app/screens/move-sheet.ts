@@ -7,6 +7,7 @@ import { MoveDemo, type DemoKind } from './move-demo';
 import { SYSTEM } from '../../data/system';
 import { h, hex, modal, shapeIcon, SHAPE_INFO } from '../ui';
 import { sfx } from '../../audio/sfx';
+import { app } from '../../render/pixi-app';
 
 const cancelNames: Record<string, string> = { n1: '1段目', n2: '2段目', n3: '3段目', neutral: '通常時' };
 
@@ -88,9 +89,14 @@ function normalsBlock(c: CharacterDef): HTMLElement {
   );
 }
 
+let sheetOpen = false;
+/** A move sheet covers the screen (menu animations underneath can rest). */
+export const moveSheetOpen = (): boolean => sheetOpen;
+
 /** Open the move sheet for character `c`, showing skill `focus` (0 / 1). */
 export function openMoveSheet(c: CharacterDef, focus = 0): void {
   sfx.ui();
+  sheetOpen = true;
   const kinds: DemoKind[] = ['s1', 's2', 'normals'];
   const blocks = [skillBlock(c, c.skills[0], 0), skillBlock(c, c.skills[1], 1), normalsBlock(c)];
   const detail = h('div');
@@ -119,9 +125,15 @@ export function openMoveSheet(c: CharacterDef, focus = 0): void {
     ...c.combos.map((x) => h('div', { class: 'ms-combo' }, h('b', null, x.route), h('span', null, `${x.cost ? `コスト${x.cost}・` : ''}${x.note}`))),
   );
   const tips = h('ul', { class: 'ms-tips' }, ...c.tips.map((t) => h('li', null, t)));
+  // the menu canvas sits under the sheet's blurred backdrop while the demo draws its own:
+  // freeze it (one WebGL canvas animating at a time, and the blur is not redone every frame)
+  const menuTicking = app.ticker.started;
+  if (menuTicking) app.ticker.stop();
   const close = () => {
     demo.destroy();
     m.close();
+    sheetOpen = false;
+    if (menuTicking) app.ticker.start();
   };
   const m = modal(
     h('div', { class: 'list move-sheet', style: `--c:${hex(c.color)}` },

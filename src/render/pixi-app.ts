@@ -1,8 +1,49 @@
 // Single Pixi application. Menus show an ambient polygon field; battles mount their own scene.
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, FilterSystem, Graphics, type Renderer, type Ticker } from 'pixi.js';
 import { SHAPE_RADII, N } from './shapes';
 
 export let app: Application;
+
+// ── Pixi 8.21 workaround: a resize could leave the battle permanently blank ──
+// FilterSystem.push() asks _findFilterResolution() AFTER pushing, so for a nested filter
+// (the shockwaves on the field, inside the bloomed world) it reads its own stack slot's
+// inputTexture — left over from the previous frame and already returned to the TexturePool.
+// Since 8.21 every renderer resize prunes idle screen-sized pool textures (destroys them), so
+// that stale texture's source is null → TypeError mid-render → the filter stack index stays
+// pushed → every later filtered frame throws: the battle canvas freezes / goes black while the
+// sim and sound go on, and the next battle too. Rotating the phone or the browser bar showing
+// during a shockwave was enough. A missing texture now falls back to the root resolution
+// (what a fresh stack slot gets on its first frame anyway).
+type FilterStackInternals = {
+  _filterStack: { skip: boolean; inputTexture?: { source?: { _resolution: number } | null } | null }[];
+  _filterStackIndex: number;
+};
+(FilterSystem.prototype as unknown as { _findFilterResolution: (root: number) => number })._findFilterResolution = function (
+  this: FilterStackInternals,
+  root: number,
+): number {
+  let i = this._filterStackIndex - 1;
+  while (i > 0 && this._filterStack[i].skip) --i;
+  const src = i > 0 ? this._filterStack[i].inputTexture?.source : null;
+  return src ? src._resolution : root;
+};
+
+/** After a render threw midway: unwind the filter stack it left pushed, so the next frame can draw. */
+export function recoverRenderer(r: Renderer): void {
+  const fs = (r as unknown as { filter?: FilterStackInternals }).filter;
+  if (fs) fs._filterStackIndex = 0;
+}
+
+/**
+ * At most 60 frames per second for a Pixi ticker (menus, the move-sheet demo). The game is
+ * 60Hz; a 90/120/144Hz screen would draw 2x+ the frames for nothing but heat and battery.
+ * Pixi truncates the frame delta to whole ms before comparing, so maxFPS = 60 (16.67ms)
+ * drops a 120Hz screen to 40fps; a 16ms minimum (62.5) gives a steady 60 there and still
+ * draws every frame at 60Hz. Skipped frames' time is carried into the next deltaMS.
+ */
+export function cap60(ticker: Ticker): void {
+  ticker.maxFPS = 62.5;
+}
 
 export async function initPixi(): Promise<Application> {
   app = new Application();
@@ -16,6 +57,7 @@ export async function initPixi(): Promise<Application> {
     powerPreference: 'high-performance',
   });
   document.getElementById('stage')!.append(app.canvas);
+  cap60(app.ticker);
   // If the GPU drops the WebGL context (memory pressure on phones) the canvas goes blank
   // while the game keeps running. Pixi restores it; meanwhile say what is happening.
   const note = document.createElement('div');

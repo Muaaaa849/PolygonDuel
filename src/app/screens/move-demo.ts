@@ -10,6 +10,7 @@ import { SYSTEM } from '../../data/system';
 import { CHARACTERS, charIndex } from '../../data/characters';
 import type { CharacterDef, MoveDef } from '../../data/types';
 import { BattleView } from '../../render/battle-view';
+import { cap60 } from '../../render/pixi-app';
 
 export type DemoKind = 's1' | 's2' | 'normals';
 
@@ -90,6 +91,7 @@ export class MoveDemo {
       return;
     }
     this.host.append(this.app.canvas);
+    cap60(this.app.ticker);
     this.ready = true;
     this.reset();
     this.app.ticker.add((tk) => this.tick(tk.deltaMS));

@@ -1,8 +1,20 @@
 // QR rendering (crisp, mixed-mode segments) and camera scanning.
-// iOS has no BarcodeDetector, so jsQR is bundled as the fallback (plan §9-1).
+// iOS has no BarcodeDetector, so jsQR is the fallback (plan §9-1). It is ~130KB, so it is
+// its own chunk, fetched only when a scanner actually needs it (not at startup).
 import qrcode from 'qrcode-generator';
-import jsQR from 'jsqr';
 import { h } from './ui';
+
+type JsQr = typeof import('jsqr').default;
+let jsQrLoad: Promise<JsQr | null> | null = null;
+/** The decoder, or null if it could not be fetched (retried on the next scan). */
+const loadJsQr = (): Promise<JsQr | null> =>
+  (jsQrLoad ??= import('jsqr').then(
+    (m) => m.default,
+    () => {
+      jsQrLoad = null;
+      return null;
+    },
+  ));
 
 /** Render `prefix` (byte mode) + `code` (alphanumeric mode) to a canvas. */
 export function renderQr(code: string, prefix = ''): HTMLCanvasElement {
@@ -50,6 +62,7 @@ export class QrScanner {
         this.detector = null;
       }
     }
+    if (!this.detector) void loadJsQr(); // start fetching while the camera warms up
     void this.video.play().catch(() => undefined);
     this.timer = window.setInterval(() => void this.scan(), 120);
   }
@@ -71,7 +84,8 @@ export class QrScanner {
           this.detector = null;
         }
       }
-      if (!text) {
+      const jsQR = text ? null : await loadJsQr();
+      if (jsQR) {
         const vw = this.video.videoWidth;
         const vh = this.video.videoHeight;
         const k = Math.min(1, 720 / Math.max(vw, vh));

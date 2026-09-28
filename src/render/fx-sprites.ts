@@ -1,7 +1,7 @@
 // Pre-baked effect sprite sheets (tools/fx/gen_fx.py → public/fx/*.webp).
 // Loaded in the background after boot; the game runs fine before they arrive
 // (procedural effects in vfx.ts still play), sprites just join in once ready.
-import { Assets, Container, Rectangle, Sprite, Texture } from 'pixi.js';
+import { Assets, Container, Rectangle, Sprite, Texture, type TextureSource } from 'pixi.js';
 
 interface SheetMeta {
   file: string;
@@ -57,6 +57,9 @@ export function loadFx(lowRes = fxWantsLowRes()): Promise<void> {
 
 export const fxReady = (name: string): boolean => sheets.has(name);
 
+/** Every loaded sheet's texture source (for the GPU warm-up, render/warmup.ts). */
+export const fxSources = (): TextureSource[] => [...sheets.values()].map((s) => s.frames[0].source);
+
 export interface FxOpts {
   x: number;
   y: number;
@@ -83,10 +86,14 @@ export class FxHandle {
   }
 }
 
+/** Finished sprites kept for reuse (a hit spawns several; no create/destroy churn mid-fight). */
+const POOL_MAX = 48;
+
 /** A container of animated sprite effects, advanced by the battle view's clock. */
 export class FxLayer {
   root = new Container();
   private live: FxHandle[] = [];
+  private pool: Sprite[] = [];
   /** Global size / count multiplier from the quality tier. */
   density = 1;
   /** Animation speed (dev screenshots freeze with 0). */
@@ -95,7 +102,8 @@ export class FxLayer {
   spawn(name: string, o: FxOpts): FxHandle | null {
     const sh = sheets.get(name);
     if (!sh) return null;
-    const sp = new Sprite(sh.frames[0]);
+    const sp = this.pool.pop() ?? new Sprite();
+    sp.texture = sh.frames[0];
     sp.anchor.set(sh.meta.anchor[0], sh.meta.anchor[1]);
     const k = o.size / sh.px;
     sp.scale.set(k, o.flipY ? -k : k);
@@ -103,11 +111,17 @@ export class FxLayer {
     sp.position.set(o.x, o.y);
     sp.alpha = o.alpha ?? 1;
     sp.blendMode = o.blend ?? 'add';
-    if (o.tint !== undefined) sp.tint = o.tint;
+    sp.tint = o.tint ?? 0xffffff;
     this.root.addChild(sp);
     const h = new FxHandle(sp, sh.frames, sh.meta.fps, o);
     this.live.push(h);
     return h;
+  }
+
+  private recycle(sp: Sprite): void {
+    sp.removeFromParent();
+    if (this.pool.length < POOL_MAX) this.pool.push(sp);
+    else sp.destroy();
   }
 
   update(dtFrames: number): void {
@@ -117,7 +131,7 @@ export class FxLayer {
       let f = Math.max(0, Math.floor(h.t));
       if (h.opts.loop) f %= h.frames.length;
       if (h.dead || f >= h.frames.length) {
-        h.sprite.destroy();
+        this.recycle(h.sprite);
         this.live.splice(i, 1);
         continue;
       }
@@ -141,7 +155,14 @@ export class FxLayer {
   }
 
   clear(): void {
-    for (const h of this.live) h.sprite.destroy();
+    for (const h of this.live) this.recycle(h.sprite);
     this.live.length = 0;
+  }
+
+  /** Free every sprite, pooled ones included (the root is destroyed by its owner). */
+  destroy(): void {
+    this.clear();
+    for (const sp of this.pool) sp.destroy();
+    this.pool.length = 0;
   }
 }

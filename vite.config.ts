@@ -32,7 +32,11 @@ function serviceWorker(): Plugin {
       // precache the manifest + phone-size sheets; full-size sheets are cached on first use
       const fxDir = join(import.meta.dirname, 'public/fx');
       const fx = ['fx/fx.json', ...readdirSync(join(fxDir, 'lo')).map((f) => `fx/lo/${f}`)];
-      const files = [...Object.keys(bundle).filter((f) => !f.endsWith('.map')), ...fx];
+      // fonts: only the latin woff2 files are ever used (every browser here reads woff2, and the
+      // UI has no Thai / Vietnamese / accented text); the rest would be ~150KB of install download
+      // for nothing — if a page ever needs one, the runtime cache still picks it up
+      const unusedFont = (f: string) => /\.woff$/.test(f) || /chakra-petch-(thai|vietnamese|latin-ext)-/.test(f);
+      const files = [...Object.keys(bundle).filter((f) => !f.endsWith('.map') && !unusedFont(f)), ...fx];
       const src = readFileSync(join(import.meta.dirname, 'src/sw-template.js'), 'utf8')
         .replace('__CACHE__', `polygon-duel-${BUILD_HASH}-${Date.now().toString(36)}`)
         .replace('__FILES__', JSON.stringify(['./', ...files, 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png']));

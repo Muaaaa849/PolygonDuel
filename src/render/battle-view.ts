@@ -83,9 +83,9 @@ export class BattleView {
   private world = new Container();
   private field = new Container();
   private fieldG = new Graphics();
-  private fieldFx = new Graphics();
   /** Arena edge, redrawn every frame so wall impacts can ripple along it. */
   private borderG = new Graphics();
+  private borderAtRest = false;
   private wallWaves: { p0: number; t: number; amp: number; color: number }[] = [];
   private streaks: { x0: number; y0: number; x1: number; y1: number; life: number; color: number }[] = [];
   /** Just-dodge slow motion: monochrome world, impact frames. */
@@ -105,6 +105,7 @@ export class BattleView {
   private ghostGlow = new Graphics();
   private ghostBodies = new Graphics();
   private ghostOverlay = new Graphics();
+  private ghostDrawn = false;
   private cam = { x: FW / 2, y: FHt / 2, zoom: 1 };
   private shake = 0;
   private shakeX = 0;
@@ -116,6 +117,7 @@ export class BattleView {
   private rgb: RGBSplitFilter;
   private waves: ShockwaveFilter[] = [];
   private flashG = new Graphics();
+  private flashDrawn = false;
   quality: Quality = 'high';
   showHitboxes: boolean;
   /** Top inset reserved for the DOM HUD (css px). */
@@ -141,8 +143,7 @@ export class BattleView {
     this.ghostGlow.blendMode = 'add';
     this.ghostLayer.addChild(this.ghostGlow, this.ghostBodies, this.ghostOverlay);
     this.glow.blendMode = 'add';
-    this.fieldFx.blendMode = 'add';
-    this.field.addChild(this.fieldG, this.borderG, this.fieldFx);
+    this.field.addChild(this.fieldG, this.borderG);
     this.mono.desaturate();
     this.fx.root.sortableChildren = false;
     this.world.addChild(this.field, this.glow, this.bodies, this.ghostLayer, this.fx.root, this.overlay, this.vfx.root, this.labels);
@@ -190,6 +191,7 @@ export class BattleView {
   setQuality(q: Quality): void {
     this.quality = q;
     this.vfx.density = q === 'high' ? 1 : q === 'mid' ? 0.7 : 0.45;
+    const old = this.bloom;
     if (q === 'low') this.bloom = null;
     else {
       this.bloom = new AdvancedBloomFilter({
@@ -204,6 +206,7 @@ export class BattleView {
       this.bloom.antialias = 'on';
     }
     this.applyFilters();
+    old?.destroy();
   }
 
   private applyFilters(): void {
@@ -221,7 +224,11 @@ export class BattleView {
 
   destroy(): void {
     this.root.removeFromParent();
+    this.fx.destroy();
     this.root.destroy({ children: true });
+    // filters are not children: free them too (a view is made per battle / per move demo)
+    for (const f of [this.bloom, this.rgb, this.mono, ...this.waves]) f?.destroy();
+    this.waves.length = 0;
   }
 
   private drawField(): void {
@@ -496,17 +503,22 @@ export class BattleView {
   /** Neon arena edge; wall impacts send a damped sine wave running along it. */
   private drawBorder(dt: number): void {
     const g = this.borderG;
-    g.clear();
     const P = 2 * (FW + FHt);
     for (let i = this.wallWaves.length - 1; i >= 0; i--) {
       this.wallWaves[i].t += dt;
       if (this.wallWaves[i].t > 70) this.wallWaves.splice(i, 1);
     }
     if (!this.wallWaves.length) {
+      // at rest the edge is static: keep the built geometry instead of rebuilding it every frame
+      if (this.borderAtRest) return;
+      this.borderAtRest = true;
+      g.clear();
       g.rect(0, 0, FW, FHt).stroke({ width: 10, color: 0x6ff3ff, alpha: 0.08 });
       g.rect(0, 0, FW, FHt).stroke({ width: 3, color: 0x6ff3ff, alpha: 0.55 });
       return;
     }
+    this.borderAtRest = false;
+    g.clear();
     const step = 10;
     const pts: number[] = [];
     let energy = 0;
@@ -582,12 +594,15 @@ export class BattleView {
     glow.clear();
     g.clear();
     ov.clear();
-    this.fieldFx.clear();
+    // decoy layers: only touched while an illusion is (or just was) out
+    if (this.ghostDrawn) {
+      this.ghostGlow.clear();
+      this.ghostBodies.clear();
+      this.ghostOverlay.clear();
+      this.ghostDrawn = false;
+    }
 
     // hitbox trails & ghosts first (under bodies)
-    this.ghostGlow.clear();
-    this.ghostBodies.clear();
-    this.ghostOverlay.clear();
     for (let i = 0; i < 2; i++) {
       const hide = this.hidden(i);
       this.fvOf(i).label.visible = !hide;
@@ -606,6 +621,7 @@ export class BattleView {
         continue;
       }
       if (fv.label.parent !== this.labels) this.labels.addChild(fv.label);
+      this.ghostDrawn = true;
       this.ghostLayer.alpha = this.owns(i) ? 0.42 + 0.08 * Math.sin(this.t * 0.5) : 1;
       const [g0, b0, o0] = [this.glow, this.bodies, this.overlay];
       [this.glow, this.bodies, this.overlay] = [this.ghostGlow, this.ghostBodies, this.ghostOverlay];
@@ -671,9 +687,13 @@ export class BattleView {
       if (this.chroma <= 0.05) this.applyFilters();
       else if (!this.world.filters?.includes(this.rgb)) this.applyFilters();
     }
-    // screen flash
+    // screen flash (the layer is only rebuilt while something is on it)
     const fg = this.flashG;
-    fg.clear();
+    if (this.flashDrawn) {
+      fg.clear();
+      this.flashDrawn = false;
+    }
+    if (this.screenFlash > 0.01 || this.impactFrames > 0 || slowing || s.phase === PH_INTRO) this.flashDrawn = true;
     if (this.screenFlash > 0.01) {
       fg.rect(0, 0, this.host.screen.width, this.host.screen.height).fill({ color: this.screenFlashColor, alpha: this.screenFlash });
       this.screenFlash *= Math.pow(0.82, dtFrames);

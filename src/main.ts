@@ -1,6 +1,7 @@
 import './styles.css';
 import { initPixi, setAmbient } from './render/pixi-app';
-import { loadFx } from './render/fx-sprites';
+import { fxSources, loadFx } from './render/fx-sprites';
+import { warmShaders, warmTextures } from './render/warmup';
 import { show } from './app/router';
 import { applySettingsToDom, saveSettings } from './app/settings';
 import { titleScreen } from './app/screens/title';
@@ -85,11 +86,14 @@ const nav = {
 async function boot(): Promise<void> {
   applySettingsToDom();
   document.body.classList.add('needs-landscape');
-  await initPixi();
+  const pixi = await initPixi();
+  // compile the battle's filters while the title is up (first-use hitches: render/warmup.ts)
+  warmShaders(pixi.renderer);
   // Pixi text uses the display font; make sure it is loaded before the first battle.
   void document.fonts?.load('700 20px "Chakra Petch"');
-  // effect sprite sheets stream in the background; battles work before they arrive
-  void loadFx();
+  // effect sprite sheets stream in the background (battles work before they arrive), then
+  // go up to the GPU one per frame, so no hit in a fight ever waits for a texture upload
+  void loadFx().then(() => warmTextures(pixi.renderer, fxSources()));
   window.addEventListener('pointerdown', () => unlockAudio(), { once: true });
 
   const hash = decodeURIComponent(location.hash || '');

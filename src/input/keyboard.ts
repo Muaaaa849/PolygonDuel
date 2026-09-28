@@ -36,10 +36,17 @@ export const KEYS_P2: KeyMap = {
 const down = new Set<string>();
 const pressedSince = new Set<string>();
 let installed = false;
+/** Pads the page has seen. Browsers only expose a pad after it is used on the page (and fire
+ *  gamepadconnected then), so until one shows up there is nothing to poll 60 times a second. */
+let pads = 0;
 
 function install(): void {
   if (installed) return;
   installed = true;
+  // (a pad used on the title before the first battle is already exposed: count it too)
+  pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean).length : 0;
+  window.addEventListener('gamepadconnected', () => pads++);
+  window.addEventListener('gamepaddisconnected', () => (pads = Math.max(0, pads - 1)));
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (!down.has(e.code)) pressedSince.add(e.code);
@@ -70,7 +77,7 @@ export class KeyboardInput {
     if (this.any(m.s2)) w |= IN_S2;
     if (this.any(m.step)) w |= IN_STEP;
     // gamepad
-    if (this.pad !== null && navigator.getGamepads) {
+    if (this.pad !== null && pads > 0 && navigator.getGamepads) {
       const gp = navigator.getGamepads()[this.pad];
       if (gp) {
         const ax = gp.axes[0] ?? 0;

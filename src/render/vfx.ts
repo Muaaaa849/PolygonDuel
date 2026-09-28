@@ -20,6 +20,7 @@ export class Vfx {
   private dots: Dot[] = [];
   private texts: Label[] = [];
   private pool: Text[] = [];
+  private drawn = false;
   /** 0..1 intensity multiplier (quality tier). */
   density = 1;
 
@@ -80,7 +81,10 @@ export class Vfx {
 
   update(dt: number): void {
     const g = this.g;
-    g.clear();
+    // nothing alive and nothing drawn last frame: leave the (empty) geometry alone
+    const busy = this.sparks.length + this.rings.length + this.shards.length + this.dots.length > 0;
+    if (busy || this.drawn) g.clear();
+    this.drawn = busy;
     // sparks: streaks along velocity
     for (let i = this.sparks.length - 1; i >= 0; i--) {
       const p = this.sparks[i];

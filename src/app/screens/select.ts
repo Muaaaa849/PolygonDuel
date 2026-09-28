@@ -6,7 +6,7 @@ import { CPU_LEVELS } from '../../ai/cpu';
 import { settings, saveSettings } from '../settings';
 import { backButton, h, hex, shapeIcon } from '../ui';
 import { sfx } from '../../audio/sfx';
-import { openMoveSheet } from './move-sheet';
+import { moveSheetOpen, openMoveSheet } from './move-sheet';
 import type { Screen } from '../router';
 
 function statRows(c: CharacterDef): [string, number][] {
@@ -31,7 +31,9 @@ function preview(c: CharacterDef): { canvas: HTMLCanvasElement; stop: () => void
   const col = hex(c.color);
   const draw = (now: number) => {
     raf = requestAnimationFrame(draw);
-    t += (now - last) / (1000 / 60);
+    // 60Hz content: skip extra frames of 90/120Hz screens; nothing to draw under the move sheet
+    if (now - last < 15 || moveSheetOpen()) return;
+    t += Math.min(now - last, 100) / (1000 / 60);
     last = now;
     const r = canvas.getBoundingClientRect();
     const dpr = Math.min(2, devicePixelRatio || 1);

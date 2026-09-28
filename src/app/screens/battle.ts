@@ -4,24 +4,26 @@ import { CHARACTERS } from '../../data/characters';
 import { SYSTEM } from '../../data/system';
 import { M_N1, M_S1, M_S2, SH, SHAPES } from '../../core/compile';
 import {
-  type SimEvent, eventKey, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE,
+  type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE,
   EV_KNOCKDOWN, EV_STEP, EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END,
   HF_COUNTER, HF_KNOCKDOWN,
 } from '../../core/events';
 import { PH_FIGHT, PH_INTRO, ST_FREE, ST_STEP, ST_ATTACK, type FighterState } from '../../core/state';
 import { BattleView } from '../../render/battle-view';
-import { app, setAmbient } from '../../render/pixi-app';
+import { app, recoverRenderer, setAmbient } from '../../render/pixi-app';
 import { TouchControls } from '../../input/touch';
 import { KeyboardInput, KEYS_P1, KEYS_P2, KEYS_SOLO } from '../../input/keyboard';
 import { CpuPlayer, CPU_LEVELS, Dummy, DUMMY_MODES, type DummyMode } from '../../ai/cpu';
 import { sfx, vibrate } from '../../audio/sfx';
 import { RollbackSession } from '../../net/rollback';
+import { EventFilter } from '../../net/event-filter';
 import type { PeerLink } from '../../net/transport';
 import { settings, saveSettings } from '../settings';
 import { h, hex, modal, shapeIcon, toast, ICONS, SHAPE_INFO } from '../ui';
 import type { Screen } from '../router';
 import { FrameMeter } from './frame-meter';
 import { buildHud } from '../hud';
+import { FrameClock, TICK_MS } from '../frame-clock';
 
 export type BattleMode = 'cpu' | 'training' | 'tutorial' | 'local' | 'online';
 export type ExitAction = 'rematch' | 'select' | 'title';
@@ -45,8 +47,6 @@ export interface BattleConfig {
   tutorial?: TutorialHooks;
   onExit: (a: ExitAction) => void;
 }
-
-const TICK_MS = 1000 / 60;
 
 export function battleScreen(cfg: BattleConfig): Screen {
   const training = cfg.mode === 'training' || cfg.mode === 'tutorial';
@@ -123,21 +123,17 @@ export function battleScreen(cfg: BattleConfig): Screen {
 
   // ───────── online session ─────────
   let session: RollbackSession | null = null;
-  const seen = new Map<string, number>();
+  // re-simulated events are shown once, even when the corrected timeline shifts them a frame
+  const shown = new EventFilter();
   if (cfg.online) {
     const link = cfg.online.link;
     session = new RollbackSession(sim, {
       local: cfg.local,
       inputDelay: cfg.online.inputDelay,
       send: (p) => link.sendGame(p),
-      onEvents: (evs) => {
-        for (const e of evs) {
-          const k = eventKey(e);
-          if (seen.has(k)) continue;
-          seen.set(k, e.frame);
-          dispatch(e);
-        }
-        if (seen.size > 600) for (const [k, f] of seen) if (f < sim.s.frame - 120) seen.delete(k);
+      onEvents: (evs, resim) => {
+        for (const e of evs) if (shown.accept(e, resim)) dispatch(e);
+        shown.prune(sim.s.frame);
       },
       onDesync: (f) => toast(`同期ずれを検出しました (F${f})`),
     });
@@ -257,6 +253,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
         }, 1000);
         break;
       case EV_MATCH_END:
+        if (matchOver) break; // one result screen, whatever a re-simulation re-emits
         matchOver = true;
         setTimeout(() => !disposed && showResult(e.who), 900);
         break;
@@ -470,18 +467,29 @@ export function battleScreen(cfg: BattleConfig): Screen {
 
   // ───────── main loop ─────────
   let disposed = false;
-  let acc = 0;
+  const clock = new FrameClock();
   let last = performance.now();
   let raf = 0;
-  let perfAcc = 0;
-  let qualityRaised = false;
+  let drawnW = 0;
+  let drawnH = 0;
+  // auto quality: measured over 120 drawn frames, after a settling second
+  let perfSkip = 60;
   let perfN = 0;
+  let perfAcc = 0;
+  let perfLate = 0;
+  let rafN = 0;
+  let rafAcc = 0;
+  let qualityRaised = false;
   let netInfoTimer = 0;
+  let netPathPoll = 0;
+  let netPath = '—';
   let renderErrorLogged = false;
 
   let devBot: ((s: Sim) => number) | null = null;
   /** Dev: render clock multiplier (0 freezes effects for screenshots). */
   let devTime = 1;
+  /** Dev pause (tools/*-shot.mjs): keeps drawing so scripted steps show up. */
+  let devPaused = false;
   function readLocal(): number {
     const w = devBot ? devBot(sim) : localInput();
     if (simDelay === 0) return w;
@@ -518,62 +526,88 @@ export function battleScreen(cfg: BattleConfig): Screen {
   function frame(now: number): void {
     if (disposed) return;
     raf = requestAnimationFrame(frame);
-    let dt = now - last;
+    const dt = now - last;
     last = now;
-    if (!(dt > 0)) dt = 0; // rAF timestamps can precede a performance.now() taken just before
-    if (dt > 250) dt = 250;
-    if (!paused) {
-      acc += dt;
-      let n = 0;
-      while (acc >= TICK_MS && n < 8) {
-        tick();
-        acc -= TICK_MS;
-        n++;
-      }
-      if (n === 8) acc = 0;
-    }
+    // fixed 60Hz ticks from the display's frames; the scene is drawn only on frames where the
+    // sim ticked (90/120/144Hz screens) and not at all while paused behind a modal (frame-clock.ts)
+    const resized = app.screen.width !== drawnW || app.screen.height !== drawnH;
+    const step = clock.frame(dt, paused, paused && !devPaused, resized);
+    for (let k = 0; k < step.ticks; k++) tick();
+    rafN++;
+    rafAcc += Math.min(Math.max(dt, 0), 250);
+    if (session && netBadge && (netInfoTimer -= Math.max(dt, 0)) <= 0) updateNetBadge();
+    if (!step.draw) return;
+    const drawDt = step.drawDt;
+    drawnW = app.screen.width;
+    drawnH = app.screen.height;
     // render in the same frame as the input/sim update (Pixi's own ticker is stopped in battle).
     // A render error must never stop the game loop (the sim and HUD keep going either way).
     try {
       touch.tickAim();
       const a = touch.aim;
       view.aim = a ? { slot: a.id === 'atk' ? M_N1 : a.id === 's1' ? M_S1 : M_S2, x: a.x, y: a.y, frac: a.frac, auto: a.auto, cancel: a.cancel, who: cfg.local } : null;
-      view.render((dt / TICK_MS) * devTime);
+      view.render((drawDt / TICK_MS) * devTime);
       app.render();
     } catch (err) {
       if (!renderErrorLogged) console.error('[render]', err);
       renderErrorLogged = true;
+      recoverRenderer(app.renderer); // a half-finished frame must not break every later one
     }
     hud.update();
     updateButtons();
     meter?.draw();
-    // auto quality (plan §10: measured frame time)
-    if (settings.quality === 'auto') {
-      perfAcc += dt;
-      perfN++;
-      if (perfN >= 120) {
-        const avg = perfAcc / perfN;
-        if (avg > 21 && view.quality !== 'low') view.setQuality(view.quality === 'high' ? 'mid' : 'low');
-        else if (avg < 12.5 && view.quality === 'mid' && !qualityRaised) {
-          qualityRaised = true;
-          view.setQuality('high');
-        }
-        perfAcc = perfN = 0;
-      }
+    if (settings.quality === 'auto' && !paused) autoQuality(drawDt);
+  }
+
+  /**
+   * Auto quality (plan §10), measured on drawn frames. A draw arriving more than 1.5 ticks after
+   * the previous one is a dropped frame the player sees as a stutter; the average alone hid
+   * periodic drops (1 frame in 4 dropped still averaged < 21ms). 8 late draws in 120 (≈4 per
+   * second) steps the quality down; a fast high-refresh device with none steps mid → high once.
+   */
+  function autoQuality(drawDt: number): void {
+    if (perfSkip > 0) {
+      perfSkip--;
+      rafN = rafAcc = 0;
+      return;
     }
-    if (session && netBadge && (netInfoTimer -= dt) <= 0) {
-      netInfoTimer = 1000;
-      const link = cfg.online!.link;
-      session.rttFrames = link.rttMs / TICK_MS;
+    perfN++;
+    perfAcc += drawDt;
+    if (drawDt > TICK_MS * 1.5) perfLate++;
+    if (perfN < 120) return;
+    const avg = perfAcc / perfN;
+    if ((avg > 21 || perfLate >= 8) && view.quality !== 'low') {
+      view.setQuality(view.quality === 'high' ? 'mid' : 'low');
+      perfSkip = 30;
+    } else if (rafAcc / rafN < 12.5 && perfLate === 0 && view.quality === 'mid' && !qualityRaised) {
+      qualityRaised = true;
+      view.setQuality('high');
+      perfSkip = 30;
+    }
+    perfN = perfAcc = perfLate = rafN = rafAcc = 0;
+  }
+
+  function updateNetBadge(): void {
+    netInfoTimer = 1000;
+    const link = cfg.online!.link;
+    session!.rttFrames = link.rttMs / TICK_MS;
+    paintNetBadge();
+    // the route (direct / relay) hardly ever changes: getStats() every 5s is plenty
+    if (--netPathPoll <= 0) {
+      netPathPoll = 5;
       void link.info().then((info) => {
-        if (!netBadge) return;
-        const ms = Math.round(link.rttMs);
-        const label = info.path === 'direct' ? '直結' : info.path === 'relay' ? '中継' : info.path === 'stun' ? '経由' : '—';
-        netBadge.className = `badge netbadge ${ms < 40 ? 'good' : ms < 100 ? 'ok' : 'bad'}`;
-        netBadge.innerHTML = '';
-        netBadge.append(h('span', { class: 'dot' }), `${label} ${ms}ms · 遅延${session!.inputDelay}F · 巻戻し${session!.stats.maxRollbackSeen}F`);
+        netPath = info.path === 'direct' ? '直結' : info.path === 'relay' ? '中継' : info.path === 'stun' ? '経由' : '—';
+        paintNetBadge();
       });
     }
+  }
+
+  function paintNetBadge(): void {
+    if (!netBadge || disposed) return;
+    const ms = Math.round(cfg.online!.link.rttMs);
+    netBadge.className = `badge netbadge ${ms < 40 ? 'good' : ms < 100 ? 'ok' : 'bad'}`;
+    netBadge.innerHTML = '';
+    netBadge.append(h('span', { class: 'dot' }), `${netPath} ${ms}ms · 遅延${session!.inputDelay}F · 巻戻し${session!.stats.maxRollbackSeen}F`);
   }
 
   function updateButtons(): void {
@@ -610,7 +644,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
       session: () => session,
       reset: () => resetPositions(),
       setBot: (fn: ((s: Sim) => number) | null) => (devBot = fn),
-      pause: (v: boolean) => (paused = v),
+      pause: (v: boolean) => (paused = devPaused = v),
       setTime: (k: number) => (devTime = k),
       step: (n: number, inA = 0, inB = 0) => {
         for (let k = 0; k < n; k++) {

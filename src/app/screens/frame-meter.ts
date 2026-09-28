@@ -26,6 +26,8 @@ export class FrameMeter {
   el: HTMLElement;
   private canvas: HTMLCanvasElement;
   private rows: string[][] = [[], []];
+  /** Repaint only after a new frame was recorded (not every drawn frame). */
+  private dirty = true;
   visible = true;
 
   constructor(private sim: Sim, _view: BattleView) {
@@ -46,6 +48,7 @@ export class FrameMeter {
   toggle(): void {
     this.visible = !this.visible;
     this.el.style.display = this.visible ? '' : 'none';
+    this.dirty = true;
   }
 
   onEvent(_e: SimEvent): void {}
@@ -83,10 +86,12 @@ export class FrameMeter {
       this.rows[i].push(this.cat(s.f[i]));
       if (this.rows[i].length > LEN) this.rows[i].shift();
     }
+    this.dirty = true;
   }
 
   draw(): void {
-    if (!this.visible) return;
+    if (!this.visible || !this.dirty) return;
+    this.dirty = false;
     const ctx = this.canvas.getContext('2d')!;
     const W = 6;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);

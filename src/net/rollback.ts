@@ -16,6 +16,8 @@ export interface RollbackOptions {
   local: 0 | 1;
   inputDelay: number;
   maxRollback?: number;
+  /** Send a datagram. The buffer is reused for the next packet: copy it to keep it
+   *  (RTCDataChannel.send copies synchronously, so the real transport needs nothing). */
   send: (pkt: Uint8Array) => void;
   onEvents?: (events: SimEvent[], resim: boolean) => void;
   onDesync?: (frame: number, local: number, remote: number) => void;
@@ -61,6 +63,9 @@ export class RollbackSession {
 
   private snaps: Int32Array[] = [];
   private snapFrame = new Int32Array(SNAPS).fill(-1);
+  /** One packet buffer, reused every tick (no per-tick garbage). */
+  private sendBuf = new Uint8Array(15 + MAX_SEND * 4 + 8);
+  private sendView = new DataView(this.sendBuf.buffer);
 
   // time sync
   private remoteFrameSeen = 0;
@@ -252,8 +257,7 @@ export class RollbackSession {
   private sendInputs(): void {
     const first = Math.max(this.peerAck + 1, this.localHead - MAX_SEND + 1, 0);
     const count = Math.max(0, Math.min(MAX_SEND, this.localHead - first + 1));
-    const buf = new Uint8Array(15 + count * 4 + 8);
-    const v = new DataView(buf.buffer);
+    const v = this.sendView;
     let o = 0;
     v.setUint8(o, PKT_INPUT); o += 1;
     v.setInt32(o, this.remoteConfirmed, true); o += 4;
@@ -267,8 +271,8 @@ export class RollbackSession {
       o += 4;
     }
     v.setInt32(o, this.pendingSum?.frame ?? 0, true); o += 4;
-    v.setUint32(o, this.pendingSum?.hash ?? 0, true);
-    this.sendFn(buf);
+    v.setUint32(o, this.pendingSum?.hash ?? 0, true); o += 4;
+    this.sendFn(this.sendBuf.subarray(0, o));
   }
 
   /** Force a packet (e.g. from a keepalive timer while paused). */
