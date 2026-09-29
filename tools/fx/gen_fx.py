@@ -1093,22 +1093,32 @@ def flick_swing(size=448, n=12):
         for j2 in range(46):
             q = j2 / 45                                                    # 0 at the tail … 1 at the head
             a = tail - span * q
-            rad_arc = 0.84 + 0.04 * math.sin(9 * q + k * 0.6) - 0.05 * (1 - q)
-            thick = 0.028 + 0.1 * q ** 0.8 * (1 - 0.35 * t)
+            rad_arc = 0.72 + 0.03 * math.sin(9 * q + k * 0.6) - 0.04 * (1 - q)
+            thick = 0.04 + 0.1 * q ** 0.8 * (1 - 0.3 * t)
             blobs.append((rad_arc * math.cos(a), rad_arc * math.sin(a), thick))
         # a rolling bulb at the head
-        blobs.append((0.84 * math.cos(head), 0.84 * math.sin(head), 0.15 * (1 - 0.3 * t)))
+        blobs.append((0.72 * math.cos(head), 0.72 * math.sin(head), 0.12 * (1 - 0.3 * t)))
         # drops flung outward from the leading edge
         for pos, rad, spd in drops:
             life = np.clip((t - 0.1 - pos * 0.3) / 0.6, 0, 1)
             if life <= 0:
                 continue
             a = head + (tail - head) * pos * 0.5
-            d = 0.82 + 0.16 * ease_out(life) * (0.5 + spd * 3)
+            d = 0.74 + 0.16 * ease_out(life) * (0.5 + spd * 2)
             blobs.append((d * math.cos(a), d * math.sin(a), rad * (1 - life * 0.6)))
         field = _goo(x, y, blobs)
         u = np.clip(0.5 - th / (2 * half) * 0.5, 0, 1)
-        frames.append(_paint_rgba(field, u, fade))
+        img = _paint_rgba(field, u, fade)
+        # the wash: a soft translucent sector of paint the ribbon has just swept over (reads as a fan, not a comma)
+        lo_a, hi_a = head, tail
+        inside = (th >= lo_a) & (th <= hi_a) & (r > 0.25) & (r < 0.72 + 0.03 * np.sin(th * 9 + k))
+        wash = blur(inside.astype(np.float32), 4) * (0.16 + 0.12 * (1 - t)) * fade * smooth(0.25, 0.6, r)
+        col = _paint_color(np.clip(0.5 - th / (2 * half) * 0.5, 0, 1))
+        a0 = img[..., 3]
+        a1 = np.clip(a0 + wash * (1 - a0), 0, 1)
+        img[..., :3] = (img[..., :3] * a0[..., None] + col * (wash * (1 - a0))[..., None]) / np.maximum(a1, 1e-4)[..., None]
+        img[..., 3] = a1
+        frames.append(img)
     save('flick_swing', frames)
 
 
@@ -1162,19 +1172,20 @@ def heavy_spin(size=384, n=14):
         head = math.pi - 2 * math.pi * p
         rel = (th - head) % (2 * math.pi)
         covered = rel <= 2 * math.pi * p + 0.02
-        tail = np.exp(-rel / (2 * math.pi) * (1.6 + 2.5 * (1 - fade)))
-        band = smooth(0.42, 0.62, r) * (1 - smooth(0.93, 1.0, r))                # a wide, heavy band
-        edge = gauss(r - 0.95, 0.045)
+        tail = np.exp(-rel / (2 * math.pi) * (4.2 + 2.0 * (1 - fade))) * smooth(0.0, 0.5, rel)   # long fade, rounded leading edge (no seam)
+        inner = 0.34 + 0.46 * np.minimum(1.0, rel / (2 * math.pi)) ** 0.8         # thick at the head, tapering to a thin tail: a comet
+        band = smooth(inner, inner + 0.16, r) * (1 - smooth(0.86, 0.94, r))
+        edge = gauss(r - 0.88, 0.04)
         torn = 0.55 + 0.6 * tex                                                    # ragged, torn body
         body = covered * band * tail * torn
         tip = covered * edge * tail * 1.9
         inten = (body * 1.05 + tip) * fade
         for a, ln in sparks:                                                       # embers spat off the edge
             ang = head + a * 0.4
-            d = 0.96 + 0.28 * ease_out(min(1.0, (k - 1) / 8)) * ln
+            d = 0.9 + 0.08 * ease_out(min(1.0, (k - 1) / 8)) * ln
             ex, ey = math.cos(ang) * d, math.sin(ang) * d
             inten += gauss(np.sqrt((x - ex) ** 2 + (y - ey) ** 2), 0.02) * (1 - k / n) * 1.5 * (k > 1)
-        inten += gauss(r - (0.92 + 0.05 * k / n), 0.03) * (0.7 * fade if k >= 4 else 0)   # chasing ring
+        inten += gauss(r - (0.86 + 0.04 * k / n), 0.03) * (0.5 * fade if k >= 4 else 0)   # chasing ring
         i = np.clip(glowify(inten, 5, 0.7), 0, 2.2)
         rch = np.clip(i * 1.5, 0, 1)
         gch = np.clip(i * 0.4 - 0.2, 0, 1) * 0.5
@@ -1189,7 +1200,7 @@ def crush_blow(size=320, n=14):
     x, y, r, th = grid(size)
     frames = []
     g = np.random.default_rng(1313)
-    shards = [(j * 2 * math.pi / 9 + g.uniform(-0.15, 0.15), g.uniform(0.9, 1.15), g.uniform(0.09, 0.14)) for j in range(9)]
+    shards = [(j * 2 * math.pi / 9 + g.uniform(-0.15, 0.15), g.uniform(0.78, 0.9), g.uniform(0.08, 0.12)) for j in range(9)]
     for k in range(n):
         t = k / (n - 1)
         inten = np.zeros_like(r)
@@ -1202,9 +1213,9 @@ def crush_blow(size=320, n=14):
         else:                                                                        # crack + burst
             tt = (t - 0.4) / 0.6
             inten += gauss(r, 0.13 + 0.14 * tt) * (1 - tt) ** 2 * 2.6
-            inten += gauss(r - (0.18 + 0.75 * ease_out(tt)), 0.03 + 0.03 * tt) * (1 - tt) * 1.7
+            inten += gauss(r - (0.18 + 0.66 * ease_out(tt)), 0.03 + 0.03 * tt) * (1 - tt) * 1.7
             for a, r0, sz in shards:
-                d = 0.32 + 0.66 * ease_out(tt) * r0
+                d = 0.3 + 0.55 * ease_out(tt) * r0
                 cx, cy = math.cos(a) * d, math.sin(a) * d
                 inten += _tri(x - cx, y - cy, a + tt * 2.5, sz * (1 - 0.5 * tt)) * (1 - tt) * 1.6
             for a, r0, sz in shards[:6]:

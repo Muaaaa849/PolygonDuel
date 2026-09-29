@@ -299,9 +299,11 @@ export class BattleView {
         else if (e.b & HF_OTG) this.vfx.text('DOWN ATTACK', x, y - 90, col, 24, 44, -0.7);
         if (combo >= 2) this.vfx.text(`${combo} HIT`, toPx(s.f[1 - e.who].x), toPx(s.f[1 - e.who].y) - 120, col, 26, 40, -0.4);
         const ang = Math.atan2(toPx(s.f[1 - e.who].y) - toPx(s.f[e.who].y), toPx(s.f[1 - e.who].x) - toPx(s.f[e.who].x));
-        this.fx.spawn(heavy ? 'hit_heavy_t' : 'hit_t', { x, y, size: (heavy ? 3.2 : 2.2) * PX, tint: col, rot: ang, alpha: 0.8 });
+        // (the heavy blow has its own slam below: the generic heavy-hit sprites on top of it would white out the screen)
+        const ownHeavy = this.moveIs(e.who, 'driveHeavy');
+        if (!ownHeavy) this.fx.spawn(heavy ? 'hit_heavy_t' : 'hit_t', { x, y, size: (heavy ? 3.2 : 2.2) * PX, tint: col, rot: ang, alpha: 0.8 });
         if (e.b & HF_COUNTER) this.fx.spawn('hit_heavy_t', { x, y, size: 2.6 * PX, tint: 0xffd060, rot: ang + 0.4 });
-        if (heavy) {
+        if (heavy && !ownHeavy) {
           // 3rd hit: a ripple bursts out from the ATTACKER, plus dust where the defender lands
           const ax = toPx(s.f[e.who].x);
           const ay = toPx(s.f[e.who].y);
@@ -320,8 +322,7 @@ export class BattleView {
           this.addShake(8);
         }
         if (this.moveIs(e.who, 'driveHeavy')) {
-          this.fx.spawn('smash_t', { x, y, size: 3.6 * PX, tint: col, alpha: 0.5 });
-          this.fx.spawn('ripple_t', { x: toPx(s.f[e.who].x), y: toPx(s.f[e.who].y), size: 4.5 * PX, tint: col, alpha: 0.35 });
+          this.fx.spawn('smash_t', { x, y, size: 3.4 * PX, tint: col, alpha: 0.4 });
           this.vfx.ring(x, y, 0xffffff, 20, 240, 20, 10);
           this.flashScreen(col, 0.12);
           this.wave(x, y, 1.4);
@@ -1089,7 +1090,7 @@ export class BattleView {
         case 'flick':
           // v1.7 a ribbon of paint whipped out along the thrust (the ink colours: cyan → violet → pink)
           once(f.sf >= m.S, () => {
-            this.fx.spawn('flick_swing', { x, y, size: reach * 2.08, rot: face, flipY: m.sweepFrom < 0, alpha: 0.85, follow: pos });
+            this.fx.spawn('flick_swing', { x, y, size: reach * 2.6, rot: face, flipY: m.sweepFrom < 0, alpha: 0.85, follow: pos });
             this.addShake(4);
           });
           break;
