@@ -5,6 +5,7 @@
 import type { CharacterDef, MoveDef } from '../../data/types';
 import { MoveDemo, type DemoKind } from './move-demo';
 import { SYSTEM } from '../../data/system';
+import { COST_UNIT } from '../../core/compile';
 import { h, hex, modal, shapeIcon, SHAPE_INFO } from '../ui';
 import { sfx } from '../../audio/sfx';
 import { app } from '../../render/pixi-app';
@@ -28,6 +29,28 @@ function facts(m: MoveDef, c?: CharacterDef): [string, string][] {
     rows.push(['弱点', 'ステップの移動中に弾へ飛び込まれると弾ジャスト：射手は弾切れ硬直、反撃（JA）が確定']);
     rows.push(['射撃中', `歩きが遅くなる（${c.shooter.walk}u/s）。1〜3段目は出ない（GC・JAは近接のまま）`]);
     rows.push(['切替ブラスト', `2段目のヒット／ガード後にS1：発生${bl.S}F・${bl.dmg}ダメージ＋ダウン（${bl.launch}u吹き飛ばす）、ガードでも${bl.pushback}u（壁で30）。射撃モードへ（コスト${bl.cost}）`]);
+    return rows;
+  }
+  if (m.channel) {
+    // ブラッド S1: hold to turn life into cost
+    const ch = m.channel;
+    rows.push(['コスト', '0（代わりに体力を払う）']);
+    rows.push(['押した瞬間', `体力${ch.hp}を払って、コスト+${ch.gain / 4}（大きく回復）`]);
+    rows.push(['押し続ける', `${ch.every}Fごとに体力${ch.tickHp}→コスト+${ch.tickGain / 4}（じわじわ貯まる）。コストが満タン・体力が残り少ない・離す・被弾で終わる`]);
+    rows.push(['制限', `押している間は移動（−${100 - ch.walkPct}%）以外できない（ガードも不可）。終わってから${ch.cooldown / 60}秒のクールタイム。オーバードライブ中は使えない`]);
+    rows.push(['安全', '相手が倒れている間（無敵の75F＋起き上がり）は攻撃されない。倒したらすぐ押しっぱなしで溜め、起き上がりに合わせて離す']);
+    rows.push(['弱点', '押している間は無防備（五角＝殴りに行け）。体力を払うので、溜めすぎると負けに近づく']);
+    return rows;
+  }
+  if (m.driveOn && c?.drive) {
+    const d = c.drive;
+    const gb = c.extraMoves?.find((x) => x.id === d.hold.move);
+    rows.push(['発動', `${m.driveOn}F目に点火（全体${m.T}F）。コスト0だが${d.minCost}以上が必要。コストを燃料に、コスト1あたり${(COST_UNIT * d.drainFrames) / 60}秒で減っていく（コスト4なら${(SYSTEM.cost.max * COST_UNIT * d.drainFrames) / 60}秒）`]);
+    rows.push(['超強化', `攻撃力+${d.power}%・移動速度+${d.walk}%・リーチ+${d.reach}%・ガードゲージの減りが半分（3秒ガードできる）`]);
+    rows.push(['縛り', '解除できない。燃焼中はコストが増えず、血の代償も使えない']);
+    if (gb) rows.push(['ATK長押し', `通常攻撃を${d.hold.at}F以上押しっぱなしで「${gb.name}」（ガード崩し）に変わる。押してから${gb.S}Fで発生。ガード中→クラッシュ${gb.guardBreak?.crush}F`]);
+    rows.push(['燃え尽きると', `${d.exhaust.frames / 60}秒間は弱体化（攻撃力${d.exhaust.power}%・オーバードライブ不可）。さらに${d.exhaust.noWalk / 60}秒は歩けず、ステップだけで移動する`]);
+    rows.push(['弱点', '溜めが五角で見える。燃焼中も残り時間が輪で見える＝時間切れまで逃げられる。燃え尽きた直後は最大のチャンス']);
     return rows;
   }
   if (m.projectile?.pull) {

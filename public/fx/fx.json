@@ -492,5 +492,18 @@
    0.5
   ],
   "scale": 1.0
+ },
+ "drive_t": {
+  "file": "drive_t.webp",
+  "size": 320,
+  "count": 16,
+  "cols": 4,
+  "fps": 60,
+  "tint": true,
+  "anchor": [
+   0.5,
+   0.5
+  ],
+  "scale": 1.0
  }
 }

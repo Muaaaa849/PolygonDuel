@@ -1034,6 +1034,16 @@ button {
   border-color: rgba(34, 211, 238, 0.7);
   box-shadow: 0 0 6px rgba(34, 211, 238, 0.45);
 }
+.mode-badge.drive {
+  color: #ff8fa3;
+  border-color: rgba(224, 20, 60, 0.8);
+  box-shadow: 0 0 6px rgba(224, 20, 60, 0.55);
+}
+.mode-badge.drive.spent {
+  color: #a0a8bc;
+  border-color: rgba(138, 144, 160, 0.7);
+  box-shadow: none;
+}
 .clock {
   font-family: var(--display);
   font-weight: 700;

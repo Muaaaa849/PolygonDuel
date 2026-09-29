@@ -985,6 +985,34 @@ def ready_ring(size=192, n=10):
     save('ready_t', frames, tint=True)
 
 
+def drive_burst(size=320, n=16):
+    """v1.7 ブラッドのオーバードライブ点火 (white, tinted): a heavy ring slams outward, flame tongues
+    lick up and outward from the body, an ember flash in the middle. Tinted with the piece's crimson it
+    reads as "burning life". (Kept below 0.8 alpha at runtime: bloom + additive blow out easily.)"""
+    x, y, r, th = grid(size)
+    frames = []
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(t)
+        inten = gauss(r - (0.18 + 0.78 * e), 0.035 + 0.05 * t) * (1 - t) ** 1.2 * 2.0       # slam ring
+        pn = polar_noise(size, th, r, 8, 10, 5, t * 1.4)
+        pn2 = polar_noise(size, th, r, 9, 6, 3, t * 0.8)
+        rad = 0.2 + 0.62 * e
+        edge = rad * (0.55 + 0.4 * pn)
+        flame = (1 - smooth(edge, edge + rad * (0.2 + 0.15 * pn2), r)) * smooth(0.08, 0.2, r)
+        inten += flame * (1 - t) ** 1.1 * (0.7 + 0.7 * pn) * 1.1
+        inten += gauss(r, 0.16 + 0.2 * e) * (1 - t) ** 2.2 * 2.4                              # core flash
+        # eight short embers flying out
+        for j in range(8):
+            a = j * math.pi / 4 + 0.3
+            u = x * math.cos(a) + y * math.sin(a)
+            v = -x * math.sin(a) + y * math.cos(a)
+            head = 0.3 + 0.65 * e
+            inten += gauss(v, 0.012) * (u < head) * (u > head - 0.16) * (1 - t) * 1.3
+        frames.append(rgba(glowify(inten, 4, 0.6), white_core=0.7))
+    save('drive_t', frames, tint=True)
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     if '--only' in sys.argv:
@@ -1033,6 +1061,7 @@ if __name__ == '__main__':
     down_shield()
     wake_up()
     ready_ring()
+    drive_burst()
     with open(os.path.join(OUT, 'fx.json'), 'w') as f:
         json.dump(MANIFEST, f, indent=1)
     total = sum(os.path.getsize(os.path.join(OUT, m['file'])) for m in MANIFEST.values())

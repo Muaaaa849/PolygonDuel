@@ -29,7 +29,7 @@ export const CPU_LEVELS: CpuLevel[] = [
   { name: 'HARD', react: 13, accuracy: 0.85, gc: 0.9, confirm: 1, aggression: 0.03 },
 ];
 
-const PREFERRED: Record<string, number> = { blaze: 2.6, zephyr: 3.3, bastion: 2.6, phantom: 3.0, ray: 2.5, volt: 2.9, kinesis: 2.3 };
+const PREFERRED: Record<string, number> = { blaze: 2.6, zephyr: 3.3, bastion: 2.6, phantom: 3.0, ray: 2.5, volt: 2.9, kinesis: 2.3, blood: 2.4 };
 const FIELD_W = SYSTEM.field.w;
 const FIELD_H = SYSTEM.field.h;
 
@@ -65,6 +65,8 @@ export class CpuPlayer {
   private dashFor = -1;
   private stepSeenFor = -1;
   private shotAware = 0;
+  /** Blood: frames left to keep ATK held (a held 1st normal turns into the guard break in the overdrive). */
+  private gbHold = 0;
 
   constructor(private sim: Sim, private me: 0 | 1, public level: CpuLevel, seed = 1) {
     this.rng = new Rng(seed * 7919 + 17);
@@ -139,7 +141,7 @@ export class CpuPlayer {
     const away = (toward + 16) % 32;
     const c = this.sim.char(this.me);
     const n1 = c.moves[M_N1];
-    const myReach = n1.reach / 1000 + n1.lunge / 1000 + 0.5;
+    const myReach = this.sim.reachOf(me, n1) / 1000 + n1.lunge / 1000 + 0.5;
     const mash = () => ((this.mashParity ^= 1) ? IN_ATK : 0);
 
     if (op.st === ST_ATTACK && (op.move !== this.lastOpMove || op.sf < this.lastOpSf)) this.opInstance++;
@@ -172,6 +174,19 @@ export class CpuPlayer {
           this.nextShotAt = this.rng.chance(go) ? m.chainAny.a + this.rng.int(m.chainAny.b - m.chainAny.a + 1) : -1;
         }
         return me.sf === this.nextShotAt - 1 ? IN_ATK : 0;
+      }
+      // blood: the held S1 (life → cost): keep holding while nothing can hit us and the cost is not full;
+      // let go when the opponent is about to get up / swings / comes close
+      if (m.channel) {
+        const lying = op.st === ST_DOWN || op.st === ST_WAKE;
+        const gettingUp = op.st === ST_WAKE && op.sf >= op.len - 2;
+        const safe = lying || op.st === ST_STUN || (dist > 4.5 && seen.st !== ST_ATTACK);
+        return safe && !gettingUp && me.cost < 15 && me.hp > 420 ? IN_S1 | (dist < 3 ? IN_STICK | away : 0) : 0;
+      }
+      // blood in the overdrive: a held 1st normal becomes the guard break
+      if (this.gbHold > 0 && me.move === M_N1) {
+        this.gbHold--;
+        return IN_ATK | IN_STICK | toward;
       }
       // kinesis: the pull landed → the normals connect
       if (m.proj?.pull && op.st === ST_HITSTUN) return mash();
@@ -215,6 +230,7 @@ export class CpuPlayer {
       return me.moveHit === MH_NONE ? IN_STICK | toward : 0;
     }
 
+    this.gbHold = 0;
     if (me.st === ST_STEP) {
       if (me.justWin > 0) return mash();
       // volt: a step turns into the dash — into a startup (before it becomes active), or
@@ -326,6 +342,20 @@ export class CpuPlayer {
       const oc = c.moves[c.s2Neutral];
       const far = dist > 5 || (op.st === ST_DOWN && dist > 3);
       if (far && me.cost >= oc.cost + (me.cost >= 3 * COST_UNIT ? COST_UNIT : 0) && this.rng.chance(0.03)) return IN_S2;
+    }
+
+    // ── blood: charge life into cost when nothing can hurt us (they lie on the floor / are stunned, or are far and idle),
+    // then light the overdrive from a distance (its pentagon startup gets punished up close)
+    if (c.drive && !me.drive) {
+      const lying = op.st === ST_DOWN || op.st === ST_WAKE || op.st === ST_STUN;
+      const calm = dist > 5 && seen.st !== ST_ATTACK && op.st === ST_FREE;
+      if (me.exhaust === 0 && me.cost >= 3 * COST_UNIT && (dist > 3.6 || lying) && this.rng.chance(lying ? 0.1 : 0.04)) return IN_S2;
+      if (me.s1Cd === 0 && me.cost <= 11 && me.hp > 520 && (lying ? this.rng.chance(0.25) : calm && this.rng.chance(0.015))) return IN_S1;
+    }
+    // ── blood, burning: put the guard break on a turtle (ATK held ≥10F: the startup is 30F from the press)
+    if (c.drive && me.drive && this.hexFrames > 12 && dist < myReach + 0.6 && this.rng.chance(0.12)) {
+      this.gbHold = 14;
+      return IN_ATK | IN_STICK | toward;
     }
 
     // ── kinesis: pull from mid range when they are neither swinging (it reverses) nor guarding
@@ -488,6 +518,12 @@ export class Dummy {
         const c = this.sim.char(this.me);
         const gbSlot = c.moves[M_S2].gb ? IN_S2 : c.moves[M_S1].gb ? IN_S1 : IN_ATK;
         me.infCost = 1;
+        if (c.drive) {
+          // ブラッド: its guard break is a held ATK in the overdrive
+          me.drive = 1;
+          if (dist > 2.8) return IN_STICK | toward;
+          return this.t % 80 < 40 ? IN_ATK | IN_STICK | toward : 0;
+        }
         if (c.moves[M_S2].def?.cancelFrom?.includes('dashThrust')) {
           // ヴォルト: its guard break only comes out of a dash (step → dash → turnback)
           if (dist > 3.6) return IN_STICK | toward;

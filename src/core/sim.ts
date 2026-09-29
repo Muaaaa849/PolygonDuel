@@ -20,7 +20,7 @@ import {
   type SimEvent,
   EV_MOVE, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN, EV_STEP,
   EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_WAKE, EV_GUARD, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END,
-  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL, EV_UP,
+  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL, EV_UP, EV_DRIVE, EV_CHARGE,
   HF_COUNTER, HF_JA, HF_OTG, HF_KNOCKDOWN, HF_FORCED_DOWN, HF_SHOT, HF_PUNISH, HF_PULL,
 } from './events';
 
@@ -142,6 +142,7 @@ export class Sim {
         lastDir: i === 0 ? 0 : 16,
         aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, lungePct: 100, wallHits: 0, momStep: 0, momDir: 0,
         ghostT: 0, ghostMode: 0, shootMode: 0, justNoMul: 0, wallGuard: 0, fieldT: 0, power: 0, instLock: 0, pullUsed: 0, wakeBoost: 0, stepPct: 100,
+        drive: 0, driveTick: 0, exhaust: 0, noWalk: 0, s1Cd: 0,
       });
       for (let j = 0; j < MAX_SHOTS; j++) setShot(f, j, null);
       f.char = keepChar;
@@ -284,6 +285,7 @@ export class Sim {
     if (f.justWin > 0) f.justWin--;
     if (f.buff > 0) f.buff--;
     if (f.wakeBoost > 0) f.wakeBoost--;
+    this.driveTimers(i);
     this.tryInstant(i);
     f.sf++;
     if (f.st !== ST_ATTACK) f.momStep = 0;
@@ -299,6 +301,14 @@ export class Sim {
         const m = this.moveOf(f)!;
         this.carry(f);
         if (m.walkPct > 0 && w & IN_STICK) this.walk(f, dirAngle(w), m.walkPct);
+        if (m.channel && this.channelFrame(i, w, m)) break;
+        // overdrive: ATK held after a fresh 1st normal → the guard break (its startup counts from the press)
+        if (f.drive && f.move === M_N1 && w & IN_ATK && f.sf === COMPILED[f.char].drive!.holdAt) {
+          const keep = f.sf;
+          this.startMove(i, COMPILED[f.char].drive!.holdMove, w, true);
+          f.sf = keep;
+          break;
+        }
         // a normal that touched nothing recovers faster (whiffT < T)
         if (f.sf > (f.moveHit === MH_NONE ? m.whiffT : f.moveHit === MH_HIT ? m.hitT : m.T)) {
           this.toFree(f);
@@ -441,9 +451,15 @@ export class Sim {
     f.y += offY(f.moveDir, d);
   }
 
-  private canAfford(f: FighterState, m: CMove): boolean {
+  /** Can the fighter start this skill now (cost, uses, cooldowns, overdrive rules)? */
+  canAfford(f: FighterState, m: CMove): boolean {
     if (m.ghost && f.ghostT > 0) return false;
     if (m.powerUp && f.power > 0) return false;
+    if (m.channel && (f.s1Cd > 0 || f.drive || f.cost >= COST_MAX || f.hp <= m.channel.hp + 1)) return false;
+    if (m.driveOn) {
+      const dr = COMPILED[f.char].drive;
+      if (!dr || f.drive || f.exhaust > 0 || (!f.infCost && f.cost < dr.minCost)) return false;
+    }
     if (!f.infCost && f.cost < m.cost) return false;
     if (m.usesPerRound > 0 && f.healUses >= m.usesPerRound) return false;
     return true;
@@ -545,12 +561,15 @@ export class Sim {
     const f = this.s.f[i];
     if (f.limited > 0) {
       f.limited--;
-    } else if (!this.wakeLock[i]) {
-      if (f.justWin > 0 && f.bufAtk) return this.startMove(i, M_JA, w);
+    } else {
+      // (v1.7: while the opponent lies invulnerable nothing that could hurt starts — except ブラッド's held S1, which only
+      // turns its own life into cost: it can be let go on any frame, so both still act on the same frame)
+      const lock = this.wakeLock[i];
+      if (!lock && f.justWin > 0 && f.bufAtk) return this.startMove(i, M_JA, w);
       const sk = this.freeSkill(f, CANCEL_NEUTRAL);
-      if (sk >= 0) return this.startMove(i, sk, w);
-      if (f.bufAtk) return this.startMove(i, this.atkSlot(f), w);
-      if (f.bufStep && f.steps > 0) return this.startStep(i, w);
+      if (sk >= 0 && (!lock || COMPILED[f.char].moves[sk].channel)) return this.startMove(i, sk, w);
+      if (!lock && f.bufAtk) return this.startMove(i, this.atkSlot(f), w);
+      if (!lock && f.bufStep && f.steps > 0) return this.startStep(i, w);
     }
     // guard: auto = stick released; manual = only while GUARD is held (it wins over the stick)
     const guardIn = f.manualGuard ? (w & IN_GUARD) !== 0 : (w & IN_STICK) === 0;
@@ -579,14 +598,99 @@ export class Sim {
       const heal = this.healSpec(f);
       if (heal) sp = idiv(sp * (100 + heal.walkPct), 100);
     }
+    if (f.drive && c.drive) sp = idiv(sp * (100 + c.drive.walk), 100);
     return sp;
   }
 
   /** Moves the fighter along `a` at `pct`% of its walking speed (facing is left alone). */
   private walk(f: FighterState, a: number, pct: number): void {
+    if (f.noWalk > 0) return; // (ブラッド after the overdrive: only steps move it)
     const sp = pct === 100 ? this.walkSpeed(f) : idiv(this.walkSpeed(f) * pct, 100);
     f.x += offX(a, sp);
     f.y += offY(a, sp);
+  }
+
+  // ───────────────────────────── overdrive / life charge (ブラッド) ─────────────────────────────
+
+  /** Life → cost: pays `hp` HP (never the last point) for `gain` cost quarters. */
+  private charge(i: number, hp: number, gain: number): void {
+    const f = this.s.f[i];
+    const pay = Math.min(hp, Math.max(0, f.hp - 1));
+    f.hp -= pay;
+    const g = Math.min(gain, COST_MAX - f.cost);
+    f.cost += g;
+    this.emit(EV_CHARGE, i, pay, g, f.x, f.y);
+  }
+
+  /**
+   * The held S1: stays up while the button is held (walking at the move's share of speed), pays a tick of life
+   * every `every` frames. Ends on release (after `minHold`), at full cost or when the life runs low.
+   * The cooldown only starts counting once it is over (it is kept full while charging). Returns true when it ended.
+   */
+  private channelFrame(i: number, w: number, m: CMove): boolean {
+    const f = this.s.f[i];
+    const ch = m.channel!;
+    f.s1Cd = ch.cooldown;
+    f.facing = this.angleTo(i);
+    let end = f.sf >= ch.minHold && !(w & IN_S1);
+    if (!end && f.sf > 1 && f.sf % ch.every === 0) {
+      if (f.cost < COST_MAX && f.hp > ch.tickHp + 1) this.charge(i, ch.tickHp, ch.tickGain);
+      else end = true;
+    }
+    if (f.cost >= COST_MAX) end = true;
+    if (!end) return false;
+    this.toFree(f);
+    this.freeLogic(i, w);
+    return true;
+  }
+
+  /** Per-frame overdrive bookkeeping: the cost gauge is the fuel; the exhaustion afterwards wears off. */
+  private driveTimers(i: number): void {
+    const f = this.s.f[i];
+    const dr = COMPILED[f.char].drive;
+    if (!dr) return;
+    const channeling = f.st === ST_ATTACK && !!this.moveOf(f)?.channel;
+    if (f.s1Cd > 0 && !channeling) f.s1Cd--;
+    if (f.noWalk > 0) f.noWalk--;
+    if (f.exhaust > 0 && --f.exhaust === 0) this.emit(EV_DRIVE, i, 2, 0, f.x, f.y);
+    if (!f.drive || this.s.phase !== PH_FIGHT) return;
+    if (++f.driveTick >= dr.drainFrames) {
+      f.driveTick = 0;
+      f.cost = Math.max(0, f.cost - 1);
+      if (f.cost <= 0 && !f.infCost) this.endDrive(i);
+    }
+  }
+
+  private startDrive(i: number): void {
+    const f = this.s.f[i];
+    if (f.drive) return;
+    f.drive = 1;
+    f.driveTick = 0;
+    this.emit(EV_DRIVE, i, 1, 0, f.x, f.y);
+  }
+
+  /** The gauge is empty: the buff is gone, and the price comes due (weak, and only steps move it for a while). */
+  private endDrive(i: number): void {
+    const f = this.s.f[i];
+    const dr = COMPILED[f.char].drive!;
+    f.drive = 0;
+    f.driveTick = 0;
+    f.exhaust = dr.exhaustFrames;
+    f.noWalk = dr.noWalkFrames;
+    this.emit(EV_DRIVE, i, 0, 0, f.x, f.y);
+  }
+
+  /** Attack power bonus in percent: the power-up plus the overdrive / the exhaustion. */
+  powerOf(f: FighterState): number {
+    const dr = COMPILED[f.char].drive;
+    if (!dr) return f.power;
+    return f.power + (f.drive ? dr.power : f.exhaust > 0 ? dr.exhaustPower : 0);
+  }
+
+  /** A move's reach for this fighter (the overdrive lengthens every move). */
+  reachOf(f: FighterState, m: CMove): number {
+    const dr = COMPILED[f.char].drive;
+    return dr && f.drive ? idiv(m.reach * (100 + dr.reach), 100) : m.reach;
   }
 
   private healSpec(f: FighterState) {
@@ -675,6 +779,7 @@ export class Sim {
       if (!f.infCost) f.cost -= m.cost;
       if (m.usesPerRound > 0) f.healUses++;
     }
+    if (m.channel) this.charge(i, m.channel.hp, m.channel.gain);
     // which button started it (shots = ATK; mode off / blast = S1)
     const sh = c.shooter;
     const btn = mi === M_N1 || mi === M_JA || m.proj ? 1 : mi === M_S1 || (sh && (mi === sh.off || mi === sh.blast)) ? 2 : mi === M_S2 || mi === c.s2Neutral ? 3 : 0;
@@ -1045,6 +1150,7 @@ export class Sim {
 
   /** Bullets gain half a melee hit's cost (within the same per-combo cap). */
   private shotCost(f: FighterState, p: NonNullable<CMove['proj']>): void {
+    if (f.drive) return;
     const g = Math.min(p.costGain, COST_COMBO_CAP - f.comboGain);
     if (g <= 0) return;
     f.comboGain += g;
@@ -1190,6 +1296,7 @@ export class Sim {
     }
     if (m.proj && mf === m.proj.at) this.fire(i, m);
     if (m.field && mf === m.field.at) this.placeField(i, m);
+    if (m.driveOn && mf === m.driveOn) this.startDrive(i);
     if (m.powerUp && mf === m.powerUp.frame) {
       f.power = m.powerUp.pct;
       this.emit(EV_POWER, i, 1, 0, f.x, f.y);
@@ -1287,27 +1394,29 @@ export class Sim {
     const m = this.moveOf(f)!;
     if (!m.hasHitbox || f.sf < m.S || f.sf >= m.S + m.A) return null;
     const a = m.isSweep ? (f.facing + this.swingAngle(m, f.sf)) & (ANG - 1) : f.facing;
-    return { x: f.x + offX(a, m.reach), y: f.y + offY(a, m.reach) };
+    const reach = this.reachOf(f, m);
+    return { x: f.x + offX(a, reach), y: f.y + offY(a, reach) };
   }
 
   /** Does the move's hitbox (thrust bar or swept fan so far) touch the defender? */
   private touches(a: FighterState, d: FighterState, m: CMove): boolean {
+    const reach = this.reachOf(a, m);
     if (m.radial) {
       // a burst all around (キネシスのサイコバースト)
       const dx = d.x - a.x;
       const dy = d.y - a.y;
-      const r = m.reach + HURT_R;
+      const r = reach + HURT_R;
       return dx * dx + dy * dy <= r * r;
     }
     if (!m.isSweep) {
-      const tx = a.x + offX(a.facing, m.reach);
-      const ty = a.y + offY(a.facing, m.reach);
+      const tx = a.x + offX(a.facing, reach);
+      const ty = a.y + offY(a.facing, reach);
       return segPointDist2(a.x, a.y, tx, ty, d.x, d.y) <= HURT_R2;
     }
     const dx = d.x - a.x;
     const dy = d.y - a.y;
     const d2 = dx * dx + dy * dy;
-    const maxR = m.reach + HURT_R;
+    const maxR = reach + HURT_R;
     if (d2 > maxR * maxR) return false;
     if (d2 <= HURT_R2) return true;
     const cur = this.swingAngle(m, a.sf);
@@ -1578,7 +1687,7 @@ export class Sim {
     const ja = a.jaChain ? Math.round(SYSTEM.just.mul * 100) : 100;
     const ctr = counter ? Math.round(SYSTEM.counterHit.dmgMul * 100) : 100;
     // (オーバーチャージ: +power% on top; the product stays well inside 2^53)
-    const dmg = idiv(base * ja * ctr * scale * (100 + a.power), 100000000);
+    const dmg = idiv(base * ja * ctr * scale * (100 + this.powerOf(a)), 100000000);
     d.comboHits++;
     d.comboDmg += dmg;
     if (this.s.trainingRefill) d.hp = Math.max(1, d.hp - dmg);
@@ -1592,6 +1701,7 @@ export class Sim {
 
   /** The side taking damage gains a little cost too (half of the attacker's rate). */
   private gainHurtCost(d: FighterState): void {
+    if (d.drive) return; // (the overdrive burns the cost gauge: nothing refills it)
     const g = Math.min(COST_HURT, COST_HURT_CAP - d.hurtGain);
     if (g <= 0) return;
     d.hurtGain += g;
@@ -1599,6 +1709,7 @@ export class Sim {
   }
 
   private gainCost(a: FighterState, m: CMove): void {
+    if (a.drive) return;
     if (m.kind !== KIND_NORMAL && m.kind !== KIND_GC && m.kind !== KIND_JA) return;
     const g = Math.min(COST_GAIN, COST_COMBO_CAP - a.comboGain);
     if (g <= 0) return;
@@ -1624,7 +1735,8 @@ export class Sim {
       const o = s.f[1 - i];
       if (guarding && o.st !== ST_DOWN && o.st !== ST_WAKE) {
         f.guardIdle = 0;
-        if (!f.infGuard) f.guardQ -= far ? 1 : 4;
+        // (the overdrive halves the drain: the same gauge lasts 3 s instead of 1.5 s)
+        if (!f.infGuard) f.guardQ -= f.drive ? (far ? s.frame & 1 : 2) : far ? 1 : 4;
         if (f.guardQ <= 0) this.breakGuard(i);
       } else {
         f.guardIdle++;

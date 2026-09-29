@@ -106,6 +106,10 @@ export interface CMove {
   launch: number;
   radial: boolean;
   wallOnGuard: boolean;
+  /** Hold-to-charge (see MoveDef.channel; cost in quarters). */
+  channel: { hp: number; gain: number; every: number; tickHp: number; tickGain: number; cooldown: number; walkPct: number; minHold: number } | null;
+  /** Starts the overdrive on this frame (0 = no). */
+  driveOn: number;
   /** Walking speed (%) while this move is running: normals / GC / JA keep some (SYSTEM.attackWalkPct), others 0. */
   walkPct: number;
   /** Shooting mode set on the 1st frame (-1 = unchanged). */
@@ -129,6 +133,8 @@ export interface CChar {
   stepStock: number;
   /** Shooting-mode character: walk in the mode (milli-u / tick) and move slots. */
   shooter: { walk: number; shots: number[]; off: number; blast: number } | null;
+  /** Overdrive character (ブラッド): the spec, with the hold-ATK guard break's slot. */
+  drive: { drainFrames: number; minCost: number; power: number; walk: number; reach: number; holdAt: number; holdMove: number; exhaustFrames: number; noWalkFrames: number; exhaustPower: number } | null;
   /** S2 from neutral / a step starts this slot (-1 = S2 itself). */
   s2Neutral: number;
   /** A non-shooter's projectile move (its bullets' spec), -1 = none. */
@@ -229,7 +235,9 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     launch: m.pinDown ? -1 : m.launch ? u(m.launch) : 0,
     radial: !!m.radial,
     wallOnGuard: !!m.wallOnGuard,
-    walkPct: m.kind === 'normal' || m.kind === 'gc' || m.kind === 'ja' ? SYSTEM.attackWalkPct : 0,
+    channel: m.channel ? { ...m.channel } : null,
+    driveOn: m.driveOn ?? 0,
+    walkPct: m.channel ? m.channel.walkPct : m.kind === 'normal' || m.kind === 'gc' || m.kind === 'ja' ? SYSTEM.attackWalkPct : 0,
     mode: m.mode ?? -1,
     instant: !!m.instant,
     hasHitbox: m.A > 0 && m.reach > 0,
@@ -297,6 +305,13 @@ export function compileCharacter(def: CharacterDef, idx: number): CChar {
           shots: def.shooter.shots.map((id) => slotIds[id]),
           off: slotIds[def.shooter.off],
           blast: slotIds[def.shooter.blast],
+        }
+      : null,
+    drive: def.drive
+      ? {
+          drainFrames: def.drive.drainFrames, minCost: Math.round(def.drive.minCost * COST_UNIT), power: def.drive.power, walk: def.drive.walk,
+          reach: def.drive.reach, holdAt: def.drive.hold.at, holdMove: slotIds[def.drive.hold.move],
+          exhaustFrames: def.drive.exhaust.frames, noWalkFrames: def.drive.exhaust.noWalk, exhaustPower: def.drive.exhaust.power,
         }
       : null,
     s2Neutral: def.s2Neutral ? slotIds[def.s2Neutral] : -1,

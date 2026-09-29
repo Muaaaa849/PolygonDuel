@@ -24,12 +24,14 @@ export function buildHud(sim: Sim, view: BattleView, tags: [string, string]) {
     const mode = h('span', { class: 'mode-badge' }, '◆ SHOT');
     // overcharge (ヴォルト): attack up until hit
     const power = h('span', { class: 'mode-badge power' }, '⚡ ATK+');
+    // ブラッド: the overdrive's remaining seconds / the exhaustion
+    const drive = h('span', { class: 'mode-badge drive' }, '🔥 DRIVE');
     const side = h('div', { class: `side ${i === 0 ? 'left' : 'right'}`, style: `--c:${color}` },
       h('div', { class: 'nameline' }, h('span', { class: 'tag' }, tags[i]), h('span', null, def.name), h('span', { class: 'spacer' }), wins),
       hp,
-      h('div', { class: 'res' }, pips, steps, mode, power),
+      h('div', { class: 'res' }, pips, steps, mode, power, drive),
     );
-    return { side, fill, lag, hp, wins, pips, steps, mode, power, last: { hp: -1, win: -1, cost: -1, steps: -1, mode: -1, power: -1 } };
+    return { side, fill, lag, hp, wins, pips, steps, mode, power, drive, last: { hp: -1, win: -1, cost: -1, steps: -1, mode: -1, power: -1, drive: -1 } };
   });
   const clock = h('div', { class: 'clock' }, String(SYSTEM.round.seconds));
   const clockSub = h('small', null, 'ROUND 1');
@@ -73,6 +75,17 @@ export function buildHud(sim: Sim, view: BattleView, tags: [string, string]) {
         if (f.shootMode !== d.last.mode) {
           d.mode.classList.toggle('on', f.shootMode === 1);
           d.last.mode = f.shootMode;
+        }
+        // overdrive: seconds of fuel left (cost × 1.25 s) / the exhaustion (seconds left); nothing otherwise
+        const dr = sim.char(i).drive;
+        if (dr) {
+          const key = f.drive ? 1 + Math.ceil((f.cost * dr.drainFrames - f.driveTick) / 60) : f.exhaust > 0 ? -1 - Math.ceil(f.exhaust / 60) : 0;
+          if (key !== d.last.drive) {
+            d.drive.textContent = key > 0 ? `🔥 DRIVE ${key - 1}s` : key < 0 ? `💤 EXHAUST ${-key - 1}s` : '';
+            d.drive.classList.toggle('on', key !== 0);
+            d.drive.classList.toggle('spent', key < 0);
+            d.last.drive = key;
+          }
         }
         if (f.power !== d.last.power) {
           d.power.textContent = `⚡ ATK+${f.power}%`;

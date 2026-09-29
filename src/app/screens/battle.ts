@@ -6,7 +6,7 @@ import { M_S1, SH, SHAPES, KIND_SKILL } from '../../core/compile';
 import {
   type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE,
   EV_KNOCKDOWN, EV_STEP, EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END, EV_POWER, EV_PULL,
-  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_WAKE, EV_UP, HF_COUNTER, HF_KNOCKDOWN, HF_PUNISH, HF_SHOT,
+  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_WAKE, EV_UP, EV_DRIVE, EV_CHARGE, HF_COUNTER, HF_KNOCKDOWN, HF_PUNISH, HF_SHOT,
 } from '../../core/events';
 import { PH_FIGHT, PH_INTRO, ST_FREE, ST_STEP, ST_ATTACK, type FighterState } from '../../core/state';
 import { BattleView } from '../../render/battle-view';
@@ -103,6 +103,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
     const f = sim.s.f[cfg.local];
     if (f.st !== ST_FREE && f.st !== ST_STEP) return false;
     if (id === 'atk' && f.justWin > 0) return false; // just attack auto-targets
+    if (id === 'atk' && f.drive) return false; // overdrive: a HELD ATK is the guard break, so it must be a plain hold
     const m = sim.char(cfg.local).moves[slotFor(id)];
     return (m.hasHitbox || !!m.proj || !!m.field) && !m.autoAim && !m.radial;
   };
@@ -339,6 +340,13 @@ export function battleScreen(cfg: BattleConfig): Screen {
         break;
       case EV_WAKE:
         sfx.wake();
+        break;
+      case EV_CHARGE:
+        sfx.charge(e.a >= 60);
+        break;
+      case EV_DRIVE:
+        sfx.drive(e.a);
+        if (e.a === 1 && involvesLocal(e.who)) vibrate(30);
         break;
       case EV_UP:
         sfx.ready();
@@ -734,8 +742,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
     syncModeButtons();
     const av = (slot: number) => {
       const m = c.moves[slot === M_S1 ? sim.skillSlot(f, M_S1) : slot];
-      const ok = (f.infCost || f.cost >= m.cost) && (m.usesPerRound === 0 || f.healUses < m.usesPerRound) && !(m.powerUp && f.power > 0);
-      return ok ? 'ready' : 'off';
+      return sim.canAfford(f, m) ? 'ready' : 'off';
     };
     touch.setAvailability({ s1: av(M_S1), s2: av(sim.s2Slot(f)), step: f.steps > 0 ? 'ok' : 'off' });
     // just-dodge slow motion: the attack button pulses ("press now → blink attack")

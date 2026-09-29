@@ -11,7 +11,7 @@ import {
 import {
   type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN,
   EV_STEP, EV_HEAL, EV_KO, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END, HF_COUNTER, HF_JA, HF_OTG,
-  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL, EV_WAKE, EV_UP, HF_SHOT, HF_PUNISH,
+  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL, EV_WAKE, EV_UP, EV_DRIVE, EV_CHARGE, HF_SHOT, HF_PUNISH,
 } from '../core/events';
 import { Morph, SHAPE_RADII, toPoints } from './shapes';
 import { Vfx } from './vfx';
@@ -575,6 +575,44 @@ export class BattleView {
         this.fx.spawn('wake_t', { x: toPx(f.x), y: toPx(f.y), size: 2.6 * PX, alpha: 0.6 });
         break;
       }
+      case EV_CHARGE: {
+        // ブラッドの血の代償: life drains out of the body (red) and comes back in as cost (gold)
+        const f = s.f[e.who];
+        const px = toPx(f.x);
+        const py = toPx(f.y);
+        const start = e.a >= 60;
+        this.vfx.rise(px, py, 0xe0143c, start ? 20 : 8);
+        this.vfx.ring(px, py, 0xe0143c, 90, 30, start ? 14 : 9, start ? 5 : 3);
+        if (start) this.vfx.spark(px, py, 0xe0143c, 10, 14, 26, 4);
+        this.vfx.text(`-${e.a}`, px - 34, py - 78, 0xff5a6e, start ? 34 : 22, 44, -0.6);
+        if (e.b > 0) this.vfx.text(`+${e.b / COST_UNIT}`, px + 34, py - 96, 0xffc048, start ? 30 : 20, 44, -0.6);
+        break;
+      }
+      case EV_DRIVE: {
+        const f = s.f[e.who];
+        const px = toPx(f.x);
+        const py = toPx(f.y);
+        const fv = this.fighters[e.who];
+        if (e.a === 1) {
+          // ignition: the ring slams out, flames lick up; the piece is now a furnace
+          this.fx.spawn('drive_t', { x: px, y: py, size: 4.4 * PX, tint: fv.color, alpha: 0.7 });
+          this.vfx.ring(px, py, 0xffffff, 30, 260, 20, 9);
+          this.vfx.spark(px, py, fv.color, 16, 30, 40, 6);
+          this.vfx.text('OVERDRIVE', px, py - 100, fv.color, 40, 60, -0.6);
+          this.flashScreen(fv.color, 0.22);
+          this.addShake(14);
+        } else if (e.a === 0) {
+          // burnout: the fire dies, the piece is left grey and cracked
+          this.vfx.shatter(px, py, 0x6b7080, 10, 22, 30);
+          this.vfx.ring(px, py, 0x8a90a0, 60, 200, 22, 6);
+          this.vfx.text('BURNOUT', px, py - 100, 0xa0a8bc, 36, 70, -0.4);
+          this.addShake(8);
+        } else {
+          this.vfx.ring(px, py, 0xffffff, 40, 130, 14, 4);
+          this.vfx.text('RECOVERED', px, py - 90, 0xffffff, 22, 46, -0.5);
+        }
+        break;
+      }
       case EV_UP: {
         // v1.7: up! both sides can act on this very frame
         const f = s.f[e.who];
@@ -784,6 +822,7 @@ export class BattleView {
     this.drawFields();
     for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.drawFighter(i, dtFrames, frozen);
     for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.drawPower(i);
+    for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.drawDrive(i);
     this.drawShots();
     this.drawTethers(fxDt);
     for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.stateFx(i, newFrame && !frozen);
@@ -912,7 +951,7 @@ export class BattleView {
     const sin = Math.sin(face);
 
     if (m) {
-      const reach = (m.reach / 1000) * PX;
+      const reach = (this.sim.reachOf(f, m) / 1000) * PX;
       // swing smear, spawned on the first active frame
       if (m.isSweep && m.id !== 'blast' && f.sf >= m.S && f.sf < m.S + m.A && fv.slashFor !== fv.instance && this.psychic(i)) {
         // telekinesis: no blade — the struck space pinches and ripples (the spin = the whole area)
@@ -987,7 +1026,7 @@ export class BattleView {
           break;
         case 'psychoBurst':
           once(f.sf >= m.S, () => {
-            const r = (m.reach / 1000 + 0.5) * PX;
+            const r = (this.sim.reachOf(f, m) / 1000 + 0.5) * PX;
             this.fx.spawn('psy_burst', { x, y, size: r * 2.2, alpha: 0.7 });
             this.vfx.ring(x, y, fv.color, 20, r, 16, 6);
             this.addShake(12);
@@ -1164,6 +1203,72 @@ export class BattleView {
     }
   }
 
+  /**
+   * ブラッド (v1.7). Overdrive: a furnace — a pulsing crimson double halo, embers rising, and a FUEL ring whose arc
+   * is the burn time left (the cost gauge, drained); it turns white-hot over the last 3 s. Charging (S1): a ring closes
+   * in on the body once per payment (20F), blood drips up. Exhausted: a dull grey dashed ring; while it cannot walk a ⊘.
+   */
+  private drawDrive(i: number): void {
+    const dr = this.sim.char(i).drive;
+    if (!dr) return;
+    const f = this.sim.s.f[i];
+    if (f.st === ST_KO) return;
+    const g = this.glow;
+    const o = this.overlay;
+    const cx = toPx(f.x);
+    const cy = toPx(f.y);
+    const col = this.fighters[i].color;
+    const low = this.quality === 'low';
+    const TAU = Math.PI * 2;
+    if (f.drive) {
+      const fuel = Math.max(0, Math.min(1, (f.cost * dr.drainFrames - f.driveTick) / (SYSTEM.cost.max * COST_UNIT * dr.drainFrames)));
+      const hot = f.cost * dr.drainFrames < 180; // the last 3 s
+      const pulse = 0.5 + 0.5 * Math.sin(this.t * 0.3);
+      const r0 = 0.66 * PX;
+      g.circle(cx, cy, r0 + 6 * pulse).stroke({ width: 5, color: col, alpha: 0.6 });
+      g.circle(cx, cy, r0 + 20 + 8 * pulse).stroke({ width: 3, color: mix(col, 0xffffff, 0.5), alpha: 0.28 });
+      g.circle(cx, cy, r0 + 4).fill({ color: col, alpha: 0.08 + 0.05 * pulse });
+      // embers rising off the body
+      const n = low ? 2 : 4;
+      for (let b = 0; b < n; b++) {
+        const ph = (this.t * 0.02 + b / n) % 1;
+        const ex = cx + Math.sin(b * 2.4 + this.t * 0.05) * 0.5 * PX;
+        const ey = cy + 0.2 * PX - ph * 1.1 * PX;
+        g.circle(ex, ey, 3.5 * (1 - ph) + 1).fill({ color: mix(col, 0xffffff, 0.6), alpha: 0.85 * (1 - ph) });
+      }
+      // the fuel ring (visible to both sides: this is how long the furnace lasts)
+      const R = 0.95 * PX;
+      const a0 = -Math.PI / 2;
+      o.circle(cx, cy, R).stroke({ width: 3, color: col, alpha: 0.14 });
+      if (fuel > 0.004) {
+        const flick = hot && (settings.reduceFlash || Math.floor(this.t / 3) % 2 === 0);
+        o.moveTo(cx + Math.cos(a0) * R, cy + Math.sin(a0) * R).arc(cx, cy, R, a0, a0 + TAU * fuel)
+          .stroke({ width: hot ? 9 : 7, color: hot ? (flick ? 0xffffff : 0xffb0a0) : col, alpha: 0.95, cap: 'round' });
+      }
+    } else if (f.st === ST_ATTACK && this.sim.moveOf(f)?.channel) {
+      // charging: a ring closes on the body every 20F (= each payment), blood rising
+      const per = ((f.sf - 1) % 20) / 20;
+      g.circle(cx, cy, (1.15 - 0.6 * per) * PX).stroke({ width: 3 + 3 * per, color: col, alpha: 0.25 + 0.6 * per });
+      g.circle(cx, cy, 0.7 * PX).fill({ color: col, alpha: 0.07 + 0.08 * per });
+      if (!low && Math.floor(this.t) % 3 === 0) this.vfx.rise(cx + (Math.random() - 0.5) * 30, cy + 10, col, 1);
+    }
+    if (f.exhaust > 0) {
+      // grey dashed ring: "burnt out" — and a ⊘ while it cannot walk
+      const R = 0.86 * PX;
+      for (let k = 0; k < 20; k += 2) {
+        const a = (k / 20) * TAU;
+        o.moveTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R).arc(cx, cy, R, a, a + TAU / 40);
+      }
+      o.stroke({ width: 3, color: 0x8a90a0, alpha: 0.6 });
+      if (f.noWalk > 0) {
+        const px = cx;
+        const py = cy - 1.2 * PX;
+        o.circle(px, py, 13).stroke({ width: 3, color: 0xff8a5a, alpha: 0.95 });
+        o.moveTo(px - 9, py + 9).lineTo(px + 9, py - 9).stroke({ width: 3, color: 0xff8a5a, alpha: 0.95 });
+      }
+    }
+  }
+
   /** Bullets: small diamonds pointing where they fly, with a short light tail. */
   private drawShots(): void {
     const g = this.overlay;
@@ -1315,7 +1420,9 @@ export class BattleView {
       if (fv.flash > 0) fv.flash -= dt;
       // jammed shooter: grey, blinking twice at first
       const jam = f.st === ST_JAM;
-      const bodyColor = flash ? 0xffffff : jam ? (f.sf <= 16 && Math.floor(f.sf / 4) % 2 === 0 ? 0x6b7080 : mix(fv.color, 0x8a90a0, 0.7)) : fv.color;
+      const spent = f.exhaust > 0 && !flash;
+      const baseColor = spent ? mix(fv.color, 0x8a90a0, 0.65) : fv.color;
+      const bodyColor = flash ? 0xffffff : jam ? (f.sf <= 16 && Math.floor(f.sf / 4) % 2 === 0 ? 0x6b7080 : mix(fv.color, 0x8a90a0, 0.7)) : baseColor;
       // outer glow
       glow.poly(pts).fill({ color: fv.color, alpha: 0.18 * alpha });
       // guard low warning / triangle flashing edge
@@ -1426,7 +1533,7 @@ export class BattleView {
     const m = f.st === ST_ATTACK ? this.sim.moveOf(f) : null;
     if (m && m.hasHitbox) {
       const edge = 0.52 * PX;
-      const reach = (m.reach / 1000) * PX;
+      const reach = (this.sim.reachOf(f, m) / 1000) * PX;
       const danger = m.shape === SH.triangle;
       const col = danger ? 0xffd060 : 0xffffff;
       if (m.radial) {
@@ -1572,7 +1679,7 @@ export class BattleView {
     const y = toPx(f.y);
     // (a dash's own travel is fixed, the reach level only scales a lunge)
     const lunge = (toPx(m.lunge) * pct) / 100 + (m.dash ? toPx(m.dash.per * m.A) : 0);
-    const reach = toPx(m.reach);
+    const reach = toPx(this.sim.reachOf(f, m));
     const ex = x + c * lunge;
     const ey = y + sn * lunge;
     const col = a.cancel ? 0x8b97b9 : this.fighters[a.who].color;

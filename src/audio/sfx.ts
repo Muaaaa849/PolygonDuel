@@ -242,6 +242,27 @@ export const sfx = {
     tone(120, 0.2, 'sine', 0.4, 50);
     noise(0.15, 400, 1, 0.2, 'lowpass');
   },
+  /** v1.7 ブラッドの血の代償: a wet, low pulse (a = the first, big payment) with a small coin-like chime as the cost comes in. */
+  charge(big: boolean) {
+    tone(big ? 110 : 150, big ? 0.28 : 0.14, 'sine', big ? 0.4 : 0.22, big ? 60 : 90);
+    noise(big ? 0.22 : 0.1, 500, 1.5, big ? 0.16 : 0.08, 'lowpass', 160);
+    tone(big ? 880 : 1180, 0.1, 'triangle', 0.06, undefined, 0.07);
+  },
+  /** v1.7 オーバードライブ (a = 1 ignition: a roaring rise; 0 burnout: a sagging, dull fade; 2 recovered: a soft chime). */
+  drive(a: number) {
+    if (a === 1) {
+      tone(90, 0.55, 'sawtooth', 0.09, 700);
+      noise(0.5, 900, 0.8, 0.3, 'bandpass', 5200);
+      tone(1320, 0.3, 'triangle', 0.07, 1980, 0.2);
+      tone(60, 0.5, 'sine', 0.4, 40);
+    } else if (a === 0) {
+      tone(400, 0.6, 'sawtooth', 0.07, 60);
+      noise(0.5, 3000, 1, 0.16, 'lowpass', 200);
+    } else {
+      tone(660, 0.12, 'sine', 0.07);
+      tone(990, 0.16, 'sine', 0.05, undefined, 0.07);
+    }
+  },
   /** v1.7 a downed piece starts getting up: a soft rising "fwip" (the amber stub of the ring). */
   wake() {
     tone(300, 0.16, 'triangle', 0.07, 720);

@@ -191,6 +191,15 @@ export interface MoveDef {
   wallOnGuard?: boolean;
   /** Power-up (ヴォルトのオーバーチャージ): on `frame`, attack damage +pct% until you take damage. */
   powerUp?: { frame: number; pct: number };
+  /**
+   * Hold-to-charge skill (ブラッドのS1): the move stays up while the button is held. It pays `hp` HP for `gain`
+   * cost (quarters) on its 1st frame, then `tickHp` HP for `tickGain` cost every `every` frames; you can walk
+   * at `walkPct`% speed but do nothing else. It ends on release (after `minHold` frames), when the cost is full
+   * or the HP is too low, or when hit. `cooldown` frames of it come after it ends.
+   */
+  channel?: { hp: number; gain: number; every: number; tickHp: number; tickGain: number; cooldown: number; walkPct: number; minHold: number };
+  /** Starts the character's overdrive (`CharacterDef.drive`) on this move frame. */
+  driveOn?: number;
   /** Sets the shooting mode at its 1st frame (1 = on, 0 = off). */
   mode?: 0 | 1;
   /**
@@ -234,6 +243,23 @@ export interface CharacterDef {
   s2Neutral?: string;
   /** How the normals are drawn: a swung blade (default) or telekinesis (the hit area itself ripples). */
   style?: 'blade' | 'psychic';
+  /**
+   * Overdrive (ブラッドのS2): while it lasts the cost gauge drains (1 quarter per `drainFrames`; no cost can be gained)
+   * and the fighter gets `power` % damage, `walk` % speed, `reach` % reach and a guard gauge that drains at half speed (3 s).
+   * Holding ATK for `hold.at` frames after a fresh 1st normal turns it into the guard break `hold.move`.
+   * When the cost runs out: `exhaust.frames` of weakness (damage `exhaust.power` %, no overdrive) and
+   * `exhaust.noWalk` frames in which only steps move the fighter.
+   */
+  drive?: {
+    drainFrames: number;
+    /** Minimum cost (whole units) to start it. */
+    minCost: number;
+    power: number;
+    walk: number;
+    reach: number;
+    hold: { at: number; move: string };
+    exhaust: { frames: number; noWalk: number; power: number };
+  };
   /** Suggested combos for tutorial / move list. */
   combos: { route: string; cost: number; note: string }[];
   tips: string[];

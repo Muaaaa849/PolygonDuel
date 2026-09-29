@@ -44,12 +44,16 @@ export const EV_POWER = 30;
 export const EV_PULL = 31;
 /** v1.7: a downed fighter's wake-up ended — both sides can act on this very frame (who = the one who got up). */
 export const EV_UP = 32;
+/** Overdrive (ブラッドのS2): who, a = 1 started (x/y = body), 0 ran out (exhausted), 2 the exhaustion ended. */
+export const EV_DRIVE = 33;
+/** Life → cost (ブラッドのS1): who, a = HP paid, b = cost gained (quarters), x/y = body. */
+export const EV_CHARGE = 34;
 
 export const EV_NAMES: Record<number, string> = {
   [EV_MOVE]: 'move', [EV_HIT]: 'hit', [EV_BLOCK]: 'block', [EV_CRUSH]: 'crush', [EV_GUARD_BREAK]: 'guardBreak',
   [EV_GB_OPEN]: 'gbOpen', [EV_JUST]: 'just', [EV_RIPOSTE]: 'riposte', [EV_KNOCKDOWN]: 'knockdown', [EV_STEP]: 'step',
   [EV_HEAL]: 'heal', [EV_KO]: 'ko', [EV_ROUND]: 'round', [EV_FIGHT]: 'fight', [EV_TIMEUP]: 'timeup',
-  [EV_ROUND_END]: 'roundEnd', [EV_MATCH_END]: 'matchEnd', [EV_WAKE]: 'wake', [EV_WHIFF]: 'whiff', [EV_GUARD]: 'guard', [EV_WALL]: 'wall', [EV_BLINK]: 'blink', [EV_GHOST]: 'ghost', [EV_GHOST_END]: 'ghostEnd', [EV_SHOT]: 'shot', [EV_MODE]: 'mode', [EV_FIELD]: 'field', [EV_SHOCK]: 'shock', [EV_JAM]: 'jam', [EV_POWER]: 'power', [EV_PULL]: 'pull', [EV_UP]: 'up',
+  [EV_ROUND_END]: 'roundEnd', [EV_MATCH_END]: 'matchEnd', [EV_WAKE]: 'wake', [EV_WHIFF]: 'whiff', [EV_GUARD]: 'guard', [EV_WALL]: 'wall', [EV_BLINK]: 'blink', [EV_GHOST]: 'ghost', [EV_GHOST_END]: 'ghostEnd', [EV_SHOT]: 'shot', [EV_MODE]: 'mode', [EV_FIELD]: 'field', [EV_SHOCK]: 'shock', [EV_JAM]: 'jam', [EV_POWER]: 'power', [EV_PULL]: 'pull', [EV_UP]: 'up', [EV_DRIVE]: 'drive', [EV_CHARGE]: 'charge',
 };
 
 // HIT flags

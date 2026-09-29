@@ -34,6 +34,34 @@ function scriptFor(c: CharacterDef, kind: DemoKind): Script {
   const m: MoveDef = c.skills[slot];
   const btn = kind === 's1' ? IN_S1 : IN_S2;
   const press = (t: number) => (t === 20 ? btn | IN_STICK : 0); // stick 0 = toward the dummy (right)
+  if (m.channel) {
+    // ブラッド S1: hold the button — life turns into cost (the gauge fills), then let go
+    return {
+      dist: 4.5,
+      setup: (sim) => {
+        sim.s.f[0].infCost = 0;
+        sim.s.f[0].cost = 0;
+      },
+      input: (t) => [t >= 16 && t < 96 ? IN_S1 : 0, shuffle(t)],
+    };
+  }
+  if (m.driveOn) {
+    // ブラッド S2: ignite the overdrive, then a buffed 1→2→3 on the dummy, then a HELD ATK (the 30F guard break) into its guard
+    return {
+      dist: 2.6,
+      setup: (sim) => {
+        sim.s.f[0].infCost = 0;
+        sim.s.f[0].cost = 16;
+      },
+      input: (t, sim) => {
+        const op = sim.s.f[1];
+        if (t === 6) return [IN_S2, 0];
+        if (t >= 44 && t < 92) return [t % 4 === 0 ? IN_ATK : 0, op.statHitsTaken > 0 && op.st !== ST_FREE ? 0 : shuffle(t)];
+        if (t >= 100 && t < 150) return [IN_ATK, 0];
+        return [0, 0];
+      },
+    };
+  }
   if (m.mode === 1) {
     // shooting mode: three bullets into a guard at the wall (each one slams it), then back to melee
     return {
