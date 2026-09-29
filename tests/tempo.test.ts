@@ -182,34 +182,28 @@ describe('guard setting (v0.9)', () => {
     expect(sc.s.f[1].wakeBoost).toBe(0);
   });
 
-  it.each(CHARACTERS.map((c) => c.id))('v1.6 %s: a knockdown lasts twice as long, nobody can attack while the downed side is invulnerable, and both get to act on the same frame', (id) => {
+  it.each(CHARACTERS.map((c) => c.id))('v1.7b %s: a knockdown lasts 75F + 15F, the attacker may act (swing, step, skills) meanwhile but nothing lands on the invulnerable body', (id) => {
     const sc = new Scenario(id, 'blaze', 1.4);
-    // knock down with 1→2→3; the defender stands (auto guard) after the first hit
     sc.run(200, (me, _o, _s, t) => (sc.s.f[1].st === ST_DOWN || sc.s.f[1].st === ST_WAKE ? 0 : sequence('AAA')(me, _o, _s, t)), (me) => (me.statHitsTaken > 0 ? 0 : stick(16)), () => sc.s.f[1].st === ST_DOWN);
     expect(sc.s.f[1].st).toBe(ST_DOWN);
+    const hitsBefore = sc.hits(0).length;
     const mash: Bot = (_m, _o, _s, t) => (t % 2 ? IN_ATK : 0);
     let lf = 0;
     let downFor = 0;
-    const firstAtk: number[] = [0, 0];
-    let guardMin = sc.s.f[0].guardQ;
-    for (let k = 0; k < 400 && !(firstAtk[0] && firstAtk[1]); k++) {
-      const before = sc.s.f.map((f) => f.st);
-      sc.run(1, mash, mash);
+    let swung = 0;
+    let prevAtk = false;
+    for (let k = 0; k < 400 && !(downFor && sc.s.f[1].st !== ST_DOWN && sc.s.f[1].st !== ST_WAKE); k++) {
+      sc.run(1, mash, () => 0);
       if (!sc.sim.advanced) continue;
       lf++;
       if (sc.s.f[1].st === ST_DOWN || sc.s.f[1].st === ST_WAKE) downFor = lf;
-      for (let i = 0; i < 2; i++) {
-        if (!firstAtk[i] && sc.s.f[i].st === ST_ATTACK && before[i] !== ST_ATTACK) firstAtk[i] = lf;
-      }
-      guardMin = Math.min(guardMin, sc.s.f[0].guardQ);
+      const atk = sc.s.f[0].st === ST_ATTACK;
+      if (atk && !prevAtk) swung++;
+      prevAtk = atk;
     }
     expect(downFor).toBeGreaterThanOrEqual(SYSTEM.down.lying + SYSTEM.down.wake - 2);
-    // the attacker's mashing (past the OTG window) does nothing until the wake-up is over…
-    expect(firstAtk[0]).toBeGreaterThan(downFor);
-    // …and then both attack on the very same frame: no frame advantage either way
-    expect(firstAtk[0]).toBe(firstAtk[1]);
-    // the attacker's idle guard while waiting doesn't wear down
-    expect(guardMin).toBeGreaterThan(getChar(charIndex(id)).guardMaxQ / 2);
+    expect(swung).toBeGreaterThan(0); // the swings come out…
+    expect(sc.hits(0).length).toBe(hitsBefore); // …and touch nothing (except a down-attack in the first 30F, which normals are not)
   });
 
   it.each(CHARACTERS.map((c) => c.id))('v1.7 %s: a normal attack no longer roots the fighter — the stick still moves it at 30% speed', (id) => {

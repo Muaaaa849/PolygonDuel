@@ -75,8 +75,9 @@ export const blood: CharacterDef = {
     },
     {
       id: 'driveHeavy', name: 'ヘヴィブロウ', kind: 'skill', shape: 'circle',
-      desc: 'オーバードライブ中、通常攻撃を12F以上押しっぱなしで出る強攻撃（連打では出ない）。ガード崩しと同じ発生30F。ヒットで大ダウン、ガードされても3.5u吹き飛ばす（壁で30）',
-      cost: 0, S: 30, A: 4, T: 68, reach: 2.2, lunge: 0.9,
+      desc: 'オーバードライブ中、通常攻撃を12F以上押しっぱなしで出る強攻撃（連打では出ない）。ガード崩しと同じ発生30F。横に一回転して周囲を薙ぎ払う（当たり判定が広い）。ヒットで大ダウン、ガードされても3.5u吹き飛ばす（壁で30）',
+      cost: 0, S: 30, A: 4, T: 68, reach: 2.4, lunge: 0.9,
+      sweep: [180, -180], // a full spin from the side, like the 3rd normal — a wide hitbox, not a thrust
       dmg: 90, hitstun: 0, blockstun: 26, hitstop: 14,
       knockdown: true, launch: 3.2, pushback: 3.5, wallOnGuard: true,
     },

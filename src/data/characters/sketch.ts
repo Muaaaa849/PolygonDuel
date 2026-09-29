@@ -59,7 +59,8 @@ export const sketch: CharacterDef = {
     {
       id: 'flick', name: 'フリック', kind: 'skill', shape: 'circle',
       desc: '軽いノックバック攻撃。当たった瞬間に「移動スティックを倒している方向」へ吹き飛ばす（コマの向きは関係ない）。通常攻撃の2段目から繋がる。壁やインクへ叩きつける締め',
-      cost: 2, S: 16, A: 3, T: 44, reach: 2.5, lunge: 0.4,
+      cost: 2, S: 16, A: 4, T: 45, reach: 2.8, lunge: 0.4,
+      sweep: [-75, 75], // a wide fan (±75°) — far more forgiving than the old thin thrust
       dmg: 40, hitstun: 26, blockstun: 14, hitstop: 8,
       knockback: 1.9, pushback: 0.5, dirKnock: true,
       cancelFrom: ['n2', 'neutral'],

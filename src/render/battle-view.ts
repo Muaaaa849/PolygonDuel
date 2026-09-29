@@ -378,11 +378,14 @@ export class BattleView {
         this.vfx.shatter(fx, fy, this.fighters[who].color, 6, 18, 30);
         // Soul Ripper crushes with its own violet claws instead of the generic yellow shatter
         const ripper = e.type === EV_CRUSH && this.moveIs(e.who, 'soulRipper');
-        const accent = ripper ? 0xd9a8ff : 0xffd060;
+        // ブラッドのクラッシュブロウ: red triangular shards slam in and burst (its own sheet, crimson accent)
+        const blow = e.type === EV_CRUSH && this.moveIs(e.who, 'driveBreak');
+        const accent = ripper ? 0xd9a8ff : blow ? 0xff4058 : 0xffd060;
         if (ripper) {
           this.fx.spawn('reaper', { x: fx, y: fy, size: 4.2 * PX, rot: s.f[e.who].facing * ANG_TO_RAD, speed: 0.9, alpha: 0.9 });
           this.fx.spawn('ghost_fade', { x: fx, y: fy, size: 2.4 * PX, alpha: 0.45 });
-        } else this.fx.spawn('crush', { x: fx, y: fy, size: 3.4 * PX, alpha: 0.75 });
+        } else if (blow) this.fx.spawn('crush_blow', { x: fx, y: fy, size: 4 * PX, alpha: 0.9 });
+        else this.fx.spawn('crush', { x: fx, y: fy, size: 3.4 * PX, alpha: 0.75 });
         if (e.type === EV_CRUSH && this.moveIs(e.who, 'breakFang')) this.fx.spawn('fang', { x: fx, y: fy, size: 2.6 * PX, rot: s.f[e.who].facing * ANG_TO_RAD, speed: 1.6 });
         this.vfx.ring(fx, fy, accent, 20, 180, 20, 10);
         this.vfx.spark(fx, fy, accent, 16, 30, 40, 6);
@@ -642,7 +645,7 @@ export class BattleView {
         const py = toPx(f.y);
         const fv = this.fighters[e.who];
         if (e.a === 1) {
-          this.fx.spawn('ripple_t', { x: px, y: py, size: 3 * PX, tint: fv.color, alpha: 0.7 });
+          this.fx.spawn('ink_burst', { x: px, y: py, size: 3.4 * PX, alpha: 0.8 });
           this.vfx.ring(px, py, fv.color, 20, 120, 16, 4);
           this.vfx.text('INK', px, py - 90, fv.color, 30, 50, -0.5);
         } else this.vfx.ring(px, py, fv.color, 50, 90, 12, 3);
@@ -654,7 +657,7 @@ export class BattleView {
         const py = toPx(e.y);
         const col = this.fighters[1 - e.who].color;
         this.fighters[e.who].flash = 3;
-        this.fx.spawn('wall_t', { x: px, y: py, size: 3.2 * PX, tint: col, alpha: 0.85 });
+        this.fx.spawn('ink_wall', { x: px, y: py, size: 3.8 * PX, alpha: 0.85 });
         this.vfx.spark(px, py, col, 16, 30, 40, 5);
         this.vfx.ring(px, py, 0xffffff, 10, 150, 14, 6);
         this.vfx.text(`INK WALL ${e.a}`, px, py - 84, col, 32, 60, -0.6);
@@ -1003,14 +1006,15 @@ export class BattleView {
     if (m) {
       const reach = (this.sim.reachOf(f, m) / 1000) * PX;
       // swing smear, spawned on the first active frame
-      if (m.isSweep && m.id !== 'blast' && f.sf >= m.S && f.sf < m.S + m.A && fv.slashFor !== fv.instance && this.psychic(i)) {
+      const ownFx = m.id === 'blast' || m.id === 'flick' || m.id === 'driveHeavy'; // (these draw their own swing below)
+      if (m.isSweep && !ownFx && f.sf >= m.S && f.sf < m.S + m.A && fv.slashFor !== fv.instance && this.psychic(i)) {
         // telekinesis: no blade — the struck space pinches and ripples (the spin = the whole area)
         fv.slashFor = fv.instance;
         const spin = Math.abs(m.sweepTo - m.sweepFrom) >= 1024;
         const d = spin ? 0 : reach * 0.62;
         this.fx.spawn('psy_t', { x: x + cos * d, y: y + sin * d, size: spin ? reach * 2.4 : reach * 1.5, tint: fv.color, alpha: 0.85 });
         if (spin) this.addShake(6);
-      } else if (m.isSweep && m.id !== 'blast' && f.sf >= m.S && f.sf < m.S + m.A && fv.slashFor !== fv.instance) {
+      } else if (m.isSweep && !ownFx && f.sf >= m.S && f.sf < m.S + m.A && fv.slashFor !== fv.instance) {
         fv.slashFor = fv.instance;
         const spin = Math.abs(m.sweepTo - m.sweepFrom) >= 1024;
         const name = spin ? 'spin' : 'slash';
@@ -1085,7 +1089,7 @@ export class BattleView {
         case 'flick':
           // v1.7 a ribbon of paint whipped out along the thrust (the ink colours: cyan → violet → pink)
           once(f.sf >= m.S, () => {
-            this.fx.spawn('flick_swing', { x, y, size: reach * 1.9, rot: face, alpha: 0.6, follow: pos });
+            this.fx.spawn('flick_swing', { x, y, size: reach * 2.08, rot: face, flipY: m.sweepFrom < 0, alpha: 0.85, follow: pos });
             this.addShake(4);
           });
           break;
@@ -1099,7 +1103,8 @@ export class BattleView {
             o.circle(x + cos * reach * 0.7, y + sin * reach * 0.7, (0.5 + 0.7 * (1 - p)) * PX).stroke({ width: 2 + 3 * p, color: 0xffffff, alpha: 0.2 + 0.6 * p });
           }
           once(f.sf >= m.S, () => {
-            this.fx.spawn('smash_t', { x: x + cos * reach * 0.8, y: y + sin * reach * 0.8, size: 2.8 * PX, tint: fv.color, alpha: 0.45 });
+            // the spin: a fat torn crimson crescent all the way round (its own sheet, not the normals' slash)
+            this.fx.spawn('heavy_spin', { x, y, size: reach * 2.08, rot: face, flipY: m.sweepFrom < 0, alpha: 0.6, follow: pos });
             this.addShake(10);
           });
           break;

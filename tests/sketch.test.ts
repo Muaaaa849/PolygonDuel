@@ -209,6 +209,17 @@ describe('スケッチ', () => {
       expect(d).toBeGreaterThanOrEqual(u(1) - 5);
     });
 
+    it('a wide fan (±75°): it also catches a target well off to the side', () => {
+      const sc = new Scenario('sketch', 'bastion', 1.4);
+      sc.s.f[0].cost = q(4);
+      // (no stick → the move faces the opponent, so hold the stick right: it faces right) put the target 60° off the facing line at 2.2u
+      sc.s.f[1].x = sc.s.f[0].x + Math.round(2200 * Math.cos(Math.PI / 3));
+      sc.s.f[1].y = sc.s.f[0].y + Math.round(2200 * Math.sin(Math.PI / 3));
+      sc.s.f[0].facing = 0;
+      sc.run(90, (_m, _o, _s, t) => (t === 0 ? IN_S2 | stick(0) : 0), () => stick(8));
+      expect(sc.hits(0).length).toBeGreaterThanOrEqual(1);
+    });
+
     it('with the stick released it goes straight away from the attacker', () => {
       const { dx, dy } = hitWith(null);
       expect(dx).toBeGreaterThan(1.5);

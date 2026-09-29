@@ -98,7 +98,7 @@ describe('ブラッド', () => {
       expect(sc.s.f[0].s1Cd).toBeGreaterThan(0);
     });
 
-    it('can charge while the opponent lies invulnerable (v1.6 lock: no attack / skill / step — but this one is no attack)', () => {
+    it('can charge while the opponent lies invulnerable (v1.7b: the attacker acts freely then)', () => {
       const sc = new Scenario('blood', 'blaze', 2);
       sc.s.f[0].cost = 0;
       const d = sc.s.f[1];
@@ -106,8 +106,6 @@ describe('ブラッド', () => {
       d.sf = 1;
       d.len = 75;
       d.downAge = 40; // past the OTG window: everything else is locked out
-      sc.run(20, (_m, _o, _s, t) => (t < 4 ? IN_ATK : 0), idle);
-      expect(sc.s.f[0].st).toBe(ST_FREE); // the attack did not start
       sc.run(30, later(sc, () => IN_S1), idle);
       expect(sc.events(EV_CHARGE, 0).length).toBeGreaterThanOrEqual(2); // the charge did, and keeps ticking
       expect(sc.s.f[0].move).toBe(M_S1);
@@ -295,6 +293,18 @@ describe('ブラッド', () => {
       open.run(90, (_m, _o, _s, t) => (t < 40 ? IN_ATK : 0), (me) => (me.statHitsTaken > 0 ? 0 : stick(16)));
       expect(open.hits(0)[0].a).toBe(144);
       expect(open.events(EV_KNOCKDOWN, 1).length).toBe(1);
+    });
+
+    it('the heavy blow is a full side spin like a 3rd normal: it hits a target beside and behind, not only ahead', () => {
+      for (const [dx, dy] of [[0, 2.2], [0, -2.2], [-2.2, 0]] as const) {
+        const sc = new Scenario('blood', 'bastion', 2);
+        sc.s.f[0].drive = 1;
+        sc.s.f[0].cost = q(4);
+        sc.s.f[1].x = sc.s.f[0].x + Math.round(dx * 1000);
+        sc.s.f[1].y = sc.s.f[0].y + Math.round(dy * 1000);
+        sc.run(90, (_m, _o, _s, t) => (t < 40 ? IN_ATK : 0), () => stick(0));
+        expect(sc.hits(0).length + sc.blocks(0).length).toBe(1);
+      }
     });
 
     it('when the fuel is gone: 10 s of exhaustion (no new drive, −20% damage) and 3 s in which only steps move it', () => {

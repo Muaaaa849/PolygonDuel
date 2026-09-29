@@ -1074,37 +1074,41 @@ def _paint_rgba(field, u, fade=1.0):
     return out.astype(np.float32)
 
 
-def flick_swing(size=384, n=12):
-    """v1.7 スケッチのフリック、振り (baked colour): a ribbon of liquid paint whipped out along +x from the piece
-    (sprite centre = the attacker). The head races out and rolls, the tail retracts, droplets fly off the tip."""
+def flick_swing(size=448, n=12):
+    """v1.7 スケッチのフリック、振り (baked colour): a wide fan of liquid paint. A fat ribbon sweeps along an arc from
+    +75° to -75° (the same direction the normals' slash sprites are baked in: flipY for left swingers), thick at the head,
+    trailing off into a thin wobbling tail; drops are flung off the leading edge. Sprite centre = attacker, arc radius ~0.8."""
     x, y, r, th = grid(size)
     frames = []
     g = np.random.default_rng(6161)
-    drops = [(g.uniform(0.15, 0.9), g.uniform(-1, 1), g.uniform(0.02, 0.05)) for _ in range(14)]
+    drops = [(g.uniform(0, 1), g.uniform(0.02, 0.05), g.uniform(0.05, 0.2)) for _ in range(20)]
+    half = math.radians(75)
     for k in range(n):
         t = k / (n - 1)
-        head = 0.94 * ease_out(min(1.0, (k + 1) / 4))
-        tail = 0.9 * max(0.0, (k - 3) / (n - 3)) ** 1.4
-        fade = 1.0 if t < 0.6 else max(0.0, 1 - (t - 0.6) / 0.4)
+        head = half - 2 * half * ease_out(min(1.0, (k + 1) / 5))          # head angle (from +75° down to -75°)
+        tail = half - 2 * half * ease_out(max(0.0, (k - 4) / (n - 5))) * 0.9 if k > 4 else half
+        fade = 1.0 if t < 0.55 else max(0.0, 1 - (t - 0.55) / 0.45)
         blobs = []
-        for j in range(40):
-            q = j / 39
-            px = tail + (head - tail) * q
-            if px < 0.02:
-                continue
-            thick = 0.04 + 0.11 * math.sin(math.pi * min(1.0, q * 0.85 + 0.12)) * (1 - 0.5 * t)
-            wob = 0.09 * math.sin(7.0 * px + 2.4 - k * 0.55) * (0.3 + 0.7 * q) * (1 - 0.4 * t)
-            blobs.append((px, wob, thick))
+        span = tail - head
+        for j2 in range(46):
+            q = j2 / 45                                                    # 0 at the tail … 1 at the head
+            a = tail - span * q
+            rad_arc = 0.84 + 0.04 * math.sin(9 * q + k * 0.6) - 0.05 * (1 - q)
+            thick = 0.028 + 0.1 * q ** 0.8 * (1 - 0.35 * t)
+            blobs.append((rad_arc * math.cos(a), rad_arc * math.sin(a), thick))
         # a rolling bulb at the head
-        blobs.append((head, 0.09 * math.sin(7.0 * head + 2.4 - k * 0.55) * (1 - 0.4 * t), 0.12 * (1 - 0.4 * t)))
-        # droplets torn off the tip: they fly ahead and outward
-        for dx, dy, rad in drops:
-            life = np.clip((t - 0.1) / 0.9, 0, 1)
+        blobs.append((0.84 * math.cos(head), 0.84 * math.sin(head), 0.15 * (1 - 0.3 * t)))
+        # drops flung outward from the leading edge
+        for pos, rad, spd in drops:
+            life = np.clip((t - 0.1 - pos * 0.3) / 0.6, 0, 1)
             if life <= 0:
                 continue
-            blobs.append((min(0.99, head * 0.55 + dx * 0.55 * ease_out(life) + 0.1), dy * 0.34 * ease_out(life) + 0.06 * math.sin(k + dx * 9), rad * (1 - life * 0.6)))
+            a = head + (tail - head) * pos * 0.5
+            d = 0.82 + 0.16 * ease_out(life) * (0.5 + spd * 3)
+            blobs.append((d * math.cos(a), d * math.sin(a), rad * (1 - life * 0.6)))
         field = _goo(x, y, blobs)
-        frames.append(_paint_rgba(field, np.clip(x * 0.55 + 0.5, 0, 1), fade))
+        u = np.clip(0.5 - th / (2 * half) * 0.5, 0, 1)
+        frames.append(_paint_rgba(field, u, fade))
     save('flick_swing', frames)
 
 
@@ -1138,6 +1142,141 @@ def flick_splash(size=320, n=14):
         field = _goo(x, y, blobs)
         frames.append(_paint_rgba(field, np.clip(np.sqrt(x * x + y * y) * 0.9, 0, 1), fade))
     save('flick_hit', frames)
+
+
+CRIMSON = (1.0, 0.16, 0.24)
+
+
+def heavy_spin(size=384, n=14):
+    """v1.7 ブラッドのヘヴィブロウ、振り (baked crimson): a full-circle spin, but heavier and rawer than the normal 3rd
+    hit — a fat torn crescent (two thick tails), embers spat off the edge, a ring of shockwave chasing it, a black-red
+    core so it reads as "heavy" rather than "sharp"."""
+    x, y, r, th = grid(size)
+    frames = []
+    tex = fbm(size, 4, 31, 7)
+    g = np.random.default_rng(9191)
+    sparks = [(g.uniform(0, 2 * math.pi), g.uniform(0.7, 1.0)) for _ in range(14)]
+    for k in range(n):
+        p = min(1.0, (k + 1) / 4)
+        fade = 1.0 if k < 5 else max(0.0, 1 - (k - 4) / (n - 5))
+        head = math.pi - 2 * math.pi * p
+        rel = (th - head) % (2 * math.pi)
+        covered = rel <= 2 * math.pi * p + 0.02
+        tail = np.exp(-rel / (2 * math.pi) * (1.6 + 2.5 * (1 - fade)))
+        band = smooth(0.42, 0.62, r) * (1 - smooth(0.93, 1.0, r))                # a wide, heavy band
+        edge = gauss(r - 0.95, 0.045)
+        torn = 0.55 + 0.6 * tex                                                    # ragged, torn body
+        body = covered * band * tail * torn
+        tip = covered * edge * tail * 1.9
+        inten = (body * 1.05 + tip) * fade
+        for a, ln in sparks:                                                       # embers spat off the edge
+            ang = head + a * 0.4
+            d = 0.96 + 0.28 * ease_out(min(1.0, (k - 1) / 8)) * ln
+            ex, ey = math.cos(ang) * d, math.sin(ang) * d
+            inten += gauss(np.sqrt((x - ex) ** 2 + (y - ey) ** 2), 0.02) * (1 - k / n) * 1.5 * (k > 1)
+        inten += gauss(r - (0.92 + 0.05 * k / n), 0.03) * (0.7 * fade if k >= 4 else 0)   # chasing ring
+        i = np.clip(glowify(inten, 5, 0.7), 0, 2.2)
+        rch = np.clip(i * 1.5, 0, 1)
+        gch = np.clip(i * 0.4 - 0.2, 0, 1) * 0.5
+        bch = np.clip(i * 0.45 - 0.3, 0, 1) * 0.55
+        frames.append(np.dstack([rch, gch, bch, np.clip(i * 1.1, 0, 1)]))
+    save('heavy_spin', frames)
+
+
+def crush_blow(size=320, n=14):
+    """v1.7 ブラッドのクラッシュブロウ (S1 while burning; baked crimson): a guard-break made of triangles — a ring of red
+    shards slams inward on the guard, cracks it, and bursts back out as glass. Triangles because it is a guard break."""
+    x, y, r, th = grid(size)
+    frames = []
+    g = np.random.default_rng(1313)
+    shards = [(j * 2 * math.pi / 9 + g.uniform(-0.15, 0.15), g.uniform(0.9, 1.15), g.uniform(0.09, 0.14)) for j in range(9)]
+    for k in range(n):
+        t = k / (n - 1)
+        inten = np.zeros_like(r)
+        if t < 0.4:                                                                  # shards fly in
+            tt = t / 0.4
+            for a, r0, sz in shards:
+                d = r0 * (1 - 0.68 * ease_out(tt))
+                cx, cy = math.cos(a) * d, math.sin(a) * d
+                inten += _tri(x - cx, y - cy, a + math.pi, sz) * (0.7 + 0.6 * tt)
+        else:                                                                        # crack + burst
+            tt = (t - 0.4) / 0.6
+            inten += gauss(r, 0.13 + 0.14 * tt) * (1 - tt) ** 2 * 2.6
+            inten += gauss(r - (0.18 + 0.75 * ease_out(tt)), 0.03 + 0.03 * tt) * (1 - tt) * 1.7
+            for a, r0, sz in shards:
+                d = 0.32 + 0.66 * ease_out(tt) * r0
+                cx, cy = math.cos(a) * d, math.sin(a) * d
+                inten += _tri(x - cx, y - cy, a + tt * 2.5, sz * (1 - 0.5 * tt)) * (1 - tt) * 1.6
+            for a, r0, sz in shards[:6]:
+                dd = np.abs(np.angle(np.exp(1j * (th - a - 0.35))))
+                inten += gauss(dd * r, 0.006) * (r < 0.15 + 0.7 * tt) * (1 - tt) * 1.3
+        i = np.clip(glowify(inten, 4, 0.6), 0, 2)
+        frames.append(np.dstack([np.clip(i * 1.6, 0, 1), np.clip(i * 0.4 - 0.2, 0, 1) * 0.5, np.clip(i * 0.45 - 0.3, 0, 1) * 0.55, np.clip(i * 1.15, 0, 1)]))
+    save('crush_blow', frames)
+
+
+def _tri(px, py, ang, sz):
+    """A filled triangle of circumradius sz, pointing along `ang` (soft edge)."""
+    c, s_ = math.cos(ang), math.sin(ang)
+    u = px * c + py * s_
+    v = -px * s_ + py * c
+    inside = np.minimum.reduce([(sz - u) * 0.5 + 0 * v, (u + sz * 0.5) * 0.9 - np.abs(v) * 0.55, np.full_like(u, 1.0)])
+    return smooth(0.0, 0.03, inside) * 1.0
+
+
+def ink_burst(size=320, n=14):
+    """v1.7 スケッチのインクトレイル、点火 (baked paint colours): the pen hits the floor — a paint drop splashing into a
+    ring: a crown of metaball drops thrown out in all directions, a fat splat that settles."""
+    x, y, r, th = grid(size)
+    frames = []
+    g = np.random.default_rng(4747)
+    n_d = 16
+    drops = [(2 * math.pi * j / n_d + g.uniform(-0.12, 0.12), g.uniform(0.7, 1.0), g.uniform(0.03, 0.055)) for j in range(n_d)]
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(min(1.0, t * 1.5))
+        fade = 1.0 if t < 0.5 else max(0.0, 1 - (t - 0.5) / 0.5)
+        blobs = [(0, 0, 0.2 * (1 - 0.35 * t) + 0.05 * math.sin(t * 8) * (1 - t))]
+        for a, ln, rad in drops:
+            for j in range(9):                                                        # each drop drags a tongue
+                q = j / 8
+                d = (0.12 + 0.75 * ln * e) * (1 - 0.0) * (0.25 + 0.75 * q)
+                rr = rad * (1.6 - 1.1 * q) * (1 - 0.4 * t)
+                blobs.append((d * math.cos(a), d * math.sin(a), rr))
+        field = _goo(x, y, blobs)
+        frames.append(_paint_rgba(field, np.clip(np.abs(th) / math.pi * 0.9 + 0.05 + 0.15 * np.sin(r * 6), 0, 1), fade))
+    save('ink_burst', frames)
+
+
+def ink_wall(size=320, n=14):
+    """v1.7 スケッチのインクの壁に激突 (baked paint colours): the body slams the ink and the wall bursts — a big spiky
+    splat with long streaks and flying drops. Bigger and more violent than `flick_hit`, and symmetric (it is a wall)."""
+    x, y, r, th = grid(size)
+    frames = []
+    g = np.random.default_rng(5959)
+    rays = [(j * 2 * math.pi / 13 + g.uniform(-0.15, 0.15), g.uniform(0.6, 1.0)) for j in range(13)]
+    drops = [(g.uniform(0, 2 * math.pi), g.uniform(0.4, 1.0), g.uniform(0.02, 0.045)) for _ in range(22)]
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(min(1.0, t * 1.5))
+        fade = 1.0 if t < 0.55 else max(0.0, 1 - (t - 0.55) / 0.45)
+        blobs = [(0, 0, 0.19 * (1 - 0.3 * t) + 0.06 * math.sin(t * 10) * (1 - t))]
+        for a, ln in rays:
+            L = ln * (0.2 + 0.75 * e)
+            for j in range(13):
+                q = j / 12
+                d = L * q
+                rr = (0.085 * (1 - q) ** 0.9 + 0.016) * (1 - 0.5 * max(0, t - 0.5) * 2)
+                blobs.append((d * math.cos(a), d * math.sin(a), rr))
+        for a, ln, rad in drops:
+            life = np.clip((t - 0.12) / 0.88, 0, 1)
+            if life <= 0:
+                continue
+            d = (0.4 + 0.55 * ln) * ease_out(life)
+            blobs.append((d * math.cos(a), d * math.sin(a), rad * (1 - 0.5 * life)))
+        field = _goo(x, y, blobs)
+        frames.append(_paint_rgba(field, np.clip(np.sqrt(x * x + y * y), 0, 1), fade))
+    save('ink_wall', frames)
 
 
 if __name__ == '__main__':
@@ -1192,6 +1331,10 @@ if __name__ == '__main__':
     smash_heavy()
     flick_swing()
     flick_splash()
+    heavy_spin()
+    crush_blow()
+    ink_burst()
+    ink_wall()
     with open(os.path.join(OUT, 'fx.json'), 'w') as f:
         json.dump(MANIFEST, f, indent=1)
     total = sum(os.path.getsize(os.path.join(OUT, m['file'])) for m in MANIFEST.values())

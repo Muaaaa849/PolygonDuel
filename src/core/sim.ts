@@ -175,16 +175,6 @@ export class Sim {
 
   /** Did the fighters advance on the last step? (false during hitstop / slow-motion skip frames) */
   advanced = false;
-  /** Per fighter, this tick: the opponent is down past the OTG window / getting up, so no
-   *  attack, skill or step may start (walk & guard only). Derived from the state every tick. */
-  private wakeLock = [false, false];
-
-  /** After this tick's update, will `o` still be invulnerable on the floor (past the OTG window)? */
-  private foeInvulnerable(o: FighterState): boolean {
-    if (o.st === ST_DOWN) return o.downAge >= SYSTEM.down.otgWindow;
-    return o.st === ST_WAKE && o.sf < o.len;
-  }
-
   step(inA: number, inB: number): void {
     const s = this.s;
     s.frame++;
@@ -227,9 +217,6 @@ export class Sim {
     }
 
     this.advanced = true;
-    // (decided before either fighter moves, so the update order can't give one side a frame)
-    this.wakeLock[0] = this.foeInvulnerable(s.f[1]);
-    this.wakeLock[1] = this.foeInvulnerable(s.f[0]);
     this.updateFighter(0, ins0);
     this.updateFighter(1, ins1);
     this.resolveBodies();
@@ -689,14 +676,13 @@ export class Sim {
     if (f.limited > 0) {
       f.limited--;
     } else {
-      // (v1.7: while the opponent lies invulnerable nothing that could hurt starts — except ブラッド's held S1, which only
-      // turns its own life into cost: it can be let go on any frame, so both still act on the same frame)
-      const lock = this.wakeLock[i];
-      if (!lock && f.justWin > 0 && f.bufAtk) return this.startMove(i, M_JA, w);
+      // (v1.7b: while the opponent lies down / gets up the attacker acts freely — skills (ink, cost charge…), steps, even swings:
+      // the downed body is invulnerable, so nothing lands. Whatever the attacker starts, they pay its recovery themselves)
+      if (f.justWin > 0 && f.bufAtk) return this.startMove(i, M_JA, w);
       const sk = this.freeSkill(f, CANCEL_NEUTRAL);
-      if (sk >= 0 && (!lock || COMPILED[f.char].moves[sk].channel)) return this.startMove(i, sk, w);
-      if (!lock && f.bufAtk) return this.startMove(i, this.atkSlot(f), w);
-      if (!lock && f.bufStep && f.steps > 0) return this.startStep(i, w);
+      if (sk >= 0) return this.startMove(i, sk, w);
+      if (f.bufAtk) return this.startMove(i, this.atkSlot(f), w);
+      if (f.bufStep && f.steps > 0) return this.startStep(i, w);
     }
     // guard: auto = stick released; manual = only while GUARD is held (it wins over the stick)
     const guardIn = f.manualGuard ? (w & IN_GUARD) !== 0 : (w & IN_STICK) === 0;
@@ -858,7 +844,6 @@ export class Sim {
       this.toFree(f);
       return this.freeLogic(i, w);
     }
-    if (this.wakeLock[i]) return this.stepMove(f);
     if (f.sf >= SYSTEM.step.chainFrom && f.bufStep && f.steps > 0) return this.startStep(i, w);
     if (f.sf >= SYSTEM.step.attackCancelFrom) {
       let mi = this.freeSkill(f, CANCEL_NEUTRAL | CANCEL_STEP);
