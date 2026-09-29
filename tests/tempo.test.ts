@@ -181,4 +181,34 @@ describe('guard setting (v0.9)', () => {
     sc.run(SYSTEM.wakeStep.frames, () => 0, () => 0);
     expect(sc.s.f[1].wakeBoost).toBe(0);
   });
+
+  it.each(CHARACTERS.map((c) => c.id))('v1.6 %s: a knockdown lasts twice as long, nobody can attack while the downed side is invulnerable, and both get to act on the same frame', (id) => {
+    const sc = new Scenario(id, 'blaze', 1.4);
+    // knock down with 1→2→3; the defender stands (auto guard) after the first hit
+    sc.run(200, (me, _o, _s, t) => (sc.s.f[1].st === ST_DOWN || sc.s.f[1].st === ST_WAKE ? 0 : sequence('AAA')(me, _o, _s, t)), (me) => (me.statHitsTaken > 0 ? 0 : stick(16)), () => sc.s.f[1].st === ST_DOWN);
+    expect(sc.s.f[1].st).toBe(ST_DOWN);
+    const mash: Bot = (_m, _o, _s, t) => (t % 2 ? IN_ATK : 0);
+    let lf = 0;
+    let downFor = 0;
+    const firstAtk: number[] = [0, 0];
+    let guardMin = sc.s.f[0].guardQ;
+    for (let k = 0; k < 400 && !(firstAtk[0] && firstAtk[1]); k++) {
+      const before = sc.s.f.map((f) => f.st);
+      sc.run(1, mash, mash);
+      if (!sc.sim.advanced) continue;
+      lf++;
+      if (sc.s.f[1].st === ST_DOWN || sc.s.f[1].st === ST_WAKE) downFor = lf;
+      for (let i = 0; i < 2; i++) {
+        if (!firstAtk[i] && sc.s.f[i].st === ST_ATTACK && before[i] !== ST_ATTACK) firstAtk[i] = lf;
+      }
+      guardMin = Math.min(guardMin, sc.s.f[0].guardQ);
+    }
+    expect(downFor).toBeGreaterThanOrEqual(SYSTEM.down.lying + SYSTEM.down.wake - 2);
+    // the attacker's mashing (past the OTG window) does nothing until the wake-up is over…
+    expect(firstAtk[0]).toBeGreaterThan(downFor);
+    // …and then both attack on the very same frame: no frame advantage either way
+    expect(firstAtk[0]).toBe(firstAtk[1]);
+    // the attacker's idle guard while waiting doesn't wear down
+    expect(guardMin).toBeGreaterThan(getChar(charIndex(id)).guardMaxQ / 2);
+  });
 });

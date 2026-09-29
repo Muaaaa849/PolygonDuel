@@ -56,7 +56,7 @@ export function howtoScreen(onBack: () => void): Screen {
         ・<b>コスト</b>：開始${SYSTEM.cost.start}・最大${SYSTEM.cost.max}。通常攻撃がヒット/ガードされると+0.5（1コンボ最大+1.5）、攻撃を受けた側も+0.25（最大+0.75）。キャラの足元の◆で相手のコストも読めます。<br>
         ・<b>ジャスト回避</b>：ステップの出始め（${SYSTEM.step.justFrames}F）に攻撃が触れると成立。直後の攻撃は1.5倍の<b>ジャスト攻撃</b>。<br>
         ・<b>カウンター</b>：相手の技の発生前に当てると威力+20%。<br>
-        ・<b>起き上がり</b>：無敵中にスティック方向へ転がれます。<br>
+        ・<b>ダウン・起き上がり</b>：倒れている間と起き上がりは無敵（ダウン追撃技だけ、倒れてから${SYSTEM.down.otgWindow}F以内に1回当たる）。その間はお互いに攻撃・スキル・ステップが出せず、起き上がった瞬間に両者同時に動けます（有利不利なし）。起き上がりはスティック方向へ転がれます。<br>
         ・ラウンド${SYSTEM.round.seconds}秒・${SYSTEM.round.winsNeeded}本先取。時間切れは体力割合の多い方の勝ち。` }),
       h('div', { class: 'section-title' }, 'キャラクター'),
       chars,

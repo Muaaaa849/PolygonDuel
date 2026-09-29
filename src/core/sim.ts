@@ -165,6 +165,15 @@ export class Sim {
 
   /** Did the fighters advance on the last step? (false during hitstop / slow-motion skip frames) */
   advanced = false;
+  /** Per fighter, this tick: the opponent is down past the OTG window / getting up, so no
+   *  attack, skill or step may start (walk & guard only). Derived from the state every tick. */
+  private wakeLock = [false, false];
+
+  /** After this tick's update, will `o` still be invulnerable on the floor (past the OTG window)? */
+  private foeInvulnerable(o: FighterState): boolean {
+    if (o.st === ST_DOWN) return o.downAge >= SYSTEM.down.otgWindow;
+    return o.st === ST_WAKE && o.sf < o.len;
+  }
 
   step(inA: number, inB: number): void {
     const s = this.s;
@@ -208,6 +217,9 @@ export class Sim {
     }
 
     this.advanced = true;
+    // (decided before either fighter moves, so the update order can't give one side a frame)
+    this.wakeLock[0] = this.foeInvulnerable(s.f[1]);
+    this.wakeLock[1] = this.foeInvulnerable(s.f[0]);
     this.updateFighter(0, ins0);
     this.updateFighter(1, ins1);
     this.resolveBodies();
@@ -532,7 +544,7 @@ export class Sim {
     const c = COMPILED[f.char];
     if (f.limited > 0) {
       f.limited--;
-    } else {
+    } else if (!this.wakeLock[i]) {
       if (f.justWin > 0 && f.bufAtk) return this.startMove(i, M_JA, w);
       const sk = this.freeSkill(f, CANCEL_NEUTRAL);
       if (sk >= 0) return this.startMove(i, sk, w);
@@ -602,6 +614,7 @@ export class Sim {
       this.toFree(f);
       return this.freeLogic(i, w);
     }
+    if (this.wakeLock[i]) return this.stepMove(f);
     if (f.sf >= SYSTEM.step.chainFrom && f.bufStep && f.steps > 0) return this.startStep(i, w);
     if (f.sf >= SYSTEM.step.attackCancelFrom) {
       let mi = this.freeSkill(f, CANCEL_NEUTRAL | CANCEL_STEP);
@@ -1594,7 +1607,9 @@ export class Sim {
       const f = s.f[i];
       const c = COMPILED[f.char];
       const guarding = (f.st === ST_FREE && f.guardF >= 1) || f.st === ST_BLOCKSTUN;
-      if (guarding) {
+      // (the opponent on the floor can't attack: waiting for it to get up doesn't wear the guard)
+      const o = s.f[1 - i];
+      if (guarding && o.st !== ST_DOWN && o.st !== ST_WAKE) {
         f.guardIdle = 0;
         if (!f.infGuard) f.guardQ -= far ? 1 : 4;
         if (f.guardQ <= 0) this.breakGuard(i);

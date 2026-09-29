@@ -125,10 +125,10 @@ export const SYSTEM = {
   counterHit: { dmgMul: 1.2, stunBonus: 4 },
 
   down: {
-    lying: 45,
+    lying: 90,
     wake: 15,
     rollDist: 1.2,
-    limited: 8,
+    limited: 0,
     otgWindow: 30,
     launch: 1.6,
   },
