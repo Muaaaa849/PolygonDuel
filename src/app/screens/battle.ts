@@ -6,7 +6,7 @@ import { M_S1, SH, SHAPES, KIND_SKILL } from '../../core/compile';
 import {
   type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE,
   EV_KNOCKDOWN, EV_STEP, EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END, EV_POWER, EV_PULL,
-  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, HF_COUNTER, HF_KNOCKDOWN, HF_PUNISH, HF_SHOT,
+  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_WAKE, EV_UP, HF_COUNTER, HF_KNOCKDOWN, HF_PUNISH, HF_SHOT,
 } from '../../core/events';
 import { PH_FIGHT, PH_INTRO, ST_FREE, ST_STEP, ST_ATTACK, type FighterState } from '../../core/state';
 import { BattleView } from '../../render/battle-view';
@@ -336,6 +336,12 @@ export function battleScreen(cfg: BattleConfig): Screen {
         break;
       case EV_KNOCKDOWN:
         sfx.knockdown();
+        break;
+      case EV_WAKE:
+        sfx.wake();
+        break;
+      case EV_UP:
+        sfx.ready();
         break;
       case EV_KO:
         sfx.ko();

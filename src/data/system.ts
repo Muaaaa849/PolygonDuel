@@ -47,6 +47,11 @@ export const SYSTEM = {
    */
   finisherRecovery: 0.5,
   /**
+   * v1.7: a normal attack (N1–N3, GC, JA) no longer roots the fighter: the stick still moves it, at this
+   * share (%) of the walking speed (−70%). The facing / aim of the swing is not affected.
+   */
+  attackWalkPct: 30,
+  /**
    * After getting up (WAKE ends), the first step within `frames` travels `pct`% as far — a way
    * out of the corner. One step only: it is used up by that step (v1.4.2: 1.5×, once).
    */
@@ -125,7 +130,7 @@ export const SYSTEM = {
   counterHit: { dmgMul: 1.2, stunBonus: 4 },
 
   down: {
-    lying: 90,
+    lying: 75,
     wake: 15,
     rollDist: 1.2,
     limited: 0,

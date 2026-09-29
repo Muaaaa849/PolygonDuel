@@ -106,6 +106,8 @@ export interface CMove {
   launch: number;
   radial: boolean;
   wallOnGuard: boolean;
+  /** Walking speed (%) while this move is running: normals / GC / JA keep some (SYSTEM.attackWalkPct), others 0. */
+  walkPct: number;
   /** Shooting mode set on the 1st frame (-1 = unchanged). */
   mode: number;
   instant: boolean;
@@ -227,6 +229,7 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     launch: m.pinDown ? -1 : m.launch ? u(m.launch) : 0,
     radial: !!m.radial,
     wallOnGuard: !!m.wallOnGuard,
+    walkPct: m.kind === 'normal' || m.kind === 'gc' || m.kind === 'ja' ? SYSTEM.attackWalkPct : 0,
     mode: m.mode ?? -1,
     instant: !!m.instant,
     hasHitbox: m.A > 0 && m.reach > 0,

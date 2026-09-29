@@ -914,6 +914,77 @@ def danger_cyan():
     danger(name='danger_c', color=CYAN)
 
 
+ICE = (0.62, 0.9, 1.0)
+AMBER = (1.0, 0.86, 0.3)
+
+
+def down_shield(size=256, n=12):
+    """v1.7 knockdown, the landing (baked ice-blue): a hexagonal shield snaps shut around the body
+    — "invulnerable while down". Readability over spectacle: one clean hexagon, six vertex ticks,
+    a short flash. A procedural countdown ring (battle-view drawDownTimer) takes over after it."""
+    x, y, r, th = grid(size)
+    frames = []
+    hexr = math.cos(math.pi / 6) / np.cos(np.mod(th, math.pi / 3) - math.pi / 6)
+    for k in range(n):
+        t = k / (n - 1)
+        rad = 0.42 + 0.46 * ease_out(min(1.0, t * 2.2))
+        fade = 1.0 if t < 0.55 else max(0.0, 1 - (t - 0.55) / 0.45)
+        edge = gauss(r - rad * hexr, 0.028 + 0.02 * (1 - min(1.0, t * 3)))
+        inten = edge * 1.5 * fade
+        inten += (r < rad * hexr) * 0.10 * fade * (0.6 + 0.4 * (1 - r))            # faint dome fill
+        for j in range(6):                                                          # vertex ticks
+            a = j * math.pi / 3
+            d = np.sqrt((x - math.cos(a) * rad) ** 2 + (y - math.sin(a) * rad) ** 2)
+            inten += gauss(d, 0.035) * 1.6 * fade
+        inten += gauss(r, 0.16 + 0.1 * t) * max(0.0, 1 - t * 3.0) * 2.0              # impact flash
+        frames.append(rgba(glowify(inten, 3, 0.5), ICE, white_core=0.8))
+    save('down_t', frames)
+
+
+def wake_up(size=256, n=14):
+    """v1.7 the moment a downed piece starts getting up (baked amber): a ring snaps outward and four
+    chevrons (^) rise over it — "it is rising now, the countdown is at its last stub"."""
+    x, y, r, th = grid(size)
+    frames = []
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(t)
+        fade = (1 - t) ** 1.2
+        inten = gauss(r - (0.22 + 0.72 * e), 0.03 + 0.03 * t) * fade * 1.8
+        inten += gauss(r, 0.15) * max(0.0, 1 - t * 3.5) * 2.2
+        # three ^ chevrons rising over the body ("getting up"), each a beat behind the last
+        for j in range(3):
+            tj = np.clip((t - 0.07 * j) / 0.75, 0, 1)
+            ty = -(0.06 + 0.2 * j) - 0.38 * ease_out(tj)      # tip height (up = -y)
+            below = y - ty
+            arm = np.abs(np.abs(x) - below) / math.sqrt(2)
+            chev = gauss(arm, 0.022) * (below >= -0.01) * (below <= 0.26)
+            inten += chev * math.sin(math.pi * tj) * 1.9
+        frames.append(rgba(glowify(inten, 3, 0.5), AMBER, white_core=0.85))
+    save('wake_t', frames)
+
+
+def ready_ring(size=192, n=10):
+    """v1.7 the wake-up is over, both pieces can act (baked white): a thin ring converges on the
+    body and ends in a small flash — "NOW". Sharp and short; timing, not decoration."""
+    x, y, r, th = grid(size)
+    frames = []
+    for k in range(n):
+        t = k / (n - 1)
+        if t < 0.7:
+            tt = t / 0.7
+            rad = 0.98 - 0.62 * tt * tt
+            inten = gauss(r - rad, 0.022 + 0.01 * tt) * (0.6 + 0.9 * tt)
+        else:
+            tt = min(1.0, (t - 0.7) / 0.3)
+            inten = gauss(r - (0.36 + 0.2 * tt), 0.03) * (1 - tt) * 1.6
+            inten += gauss(r, 0.13 + 0.12 * tt) * (1 - tt) ** 1.5 * 1.6
+            star = gauss(y, 0.015) * gauss(x, 0.4 * (1 - tt) + 0.05) + gauss(x, 0.015) * gauss(y, 0.4 * (1 - tt) + 0.05)
+            inten += star * (1 - tt) * 1.6
+        frames.append(rgba(glowify(inten, 3, 0.5), white_core=0.7))
+    save('ready_t', frames, tint=True)
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     if '--only' in sys.argv:
@@ -959,6 +1030,9 @@ if __name__ == '__main__':
     psy_hit()
     psy_burst()
     psy_grip()
+    down_shield()
+    wake_up()
+    ready_ring()
     with open(os.path.join(OUT, 'fx.json'), 'w') as f:
         json.dump(MANIFEST, f, indent=1)
     total = sum(os.path.getsize(os.path.join(OUT, m['file'])) for m in MANIFEST.values())

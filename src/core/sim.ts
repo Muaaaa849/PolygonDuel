@@ -20,7 +20,7 @@ import {
   type SimEvent,
   EV_MOVE, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN, EV_STEP,
   EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_WAKE, EV_GUARD, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END,
-  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL,
+  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL, EV_UP,
   HF_COUNTER, HF_JA, HF_OTG, HF_KNOCKDOWN, HF_FORCED_DOWN, HF_SHOT, HF_PUNISH, HF_PULL,
 } from './events';
 
@@ -298,6 +298,7 @@ export class Sim {
       case ST_ATTACK: {
         const m = this.moveOf(f)!;
         this.carry(f);
+        if (m.walkPct > 0 && w & IN_STICK) this.walk(f, dirAngle(w), m.walkPct);
         // a normal that touched nothing recovers faster (whiffT < T)
         if (f.sf > (f.moveHit === MH_NONE ? m.whiffT : f.moveHit === MH_HIT ? m.hitT : m.T)) {
           this.toFree(f);
@@ -349,6 +350,7 @@ export class Sim {
           f.limited = SYSTEM.down.limited;
           // just got up: the next step (within 3 s) goes 1.5× as far (a way out of a corner)
           f.wakeBoost = SYSTEM.wakeStep.frames;
+          this.emit(EV_UP, i, 0, 0, f.x, f.y);
           this.freeLogic(i, w);
         } else {
           this.wakeRoll(f);
@@ -541,7 +543,6 @@ export class Sim {
 
   private freeLogic(i: number, w: number): void {
     const f = this.s.f[i];
-    const c = COMPILED[f.char];
     if (f.limited > 0) {
       f.limited--;
     } else if (!this.wakeLock[i]) {
@@ -557,13 +558,7 @@ export class Sim {
       // walk
       const a = dirAngle(w);
       f.facing = a;
-      let sp = f.shootMode && c.shooter ? c.shooter.walk : c.walk;
-      if (f.buff > 0) {
-        const heal = this.healSpec(f);
-        if (heal) sp = idiv(sp * (100 + heal.walkPct), 100);
-      }
-      f.x += offX(a, sp);
-      f.y += offY(a, sp);
+      this.walk(f, a, 100);
       if (f.guardF > 0) f.guardF = 0;
     } else if (!guardIn) {
       // manual guard, stick released, no GUARD: just standing (square, not guarding)
@@ -574,6 +569,24 @@ export class Sim {
       if (f.guardF < 1000) f.guardF++;
       f.facing = this.angleTo(i);
     }
+  }
+
+  /** Walking speed (milli-u / tick): the character's, in shooting mode the shooter's, plus the heal buff. */
+  private walkSpeed(f: FighterState): number {
+    const c = COMPILED[f.char];
+    let sp = f.shootMode && c.shooter ? c.shooter.walk : c.walk;
+    if (f.buff > 0) {
+      const heal = this.healSpec(f);
+      if (heal) sp = idiv(sp * (100 + heal.walkPct), 100);
+    }
+    return sp;
+  }
+
+  /** Moves the fighter along `a` at `pct`% of its walking speed (facing is left alone). */
+  private walk(f: FighterState, a: number, pct: number): void {
+    const sp = pct === 100 ? this.walkSpeed(f) : idiv(this.walkSpeed(f) * pct, 100);
+    f.x += offX(a, sp);
+    f.y += offY(a, sp);
   }
 
   private healSpec(f: FighterState) {

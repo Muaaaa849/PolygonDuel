@@ -211,4 +211,31 @@ describe('guard setting (v0.9)', () => {
     // the attacker's idle guard while waiting doesn't wear down
     expect(guardMin).toBeGreaterThan(getChar(charIndex(id)).guardMaxQ / 2);
   });
+
+  it.each(CHARACTERS.map((c) => c.id))('v1.7 %s: a normal attack no longer roots the fighter — the stick still moves it at 30% speed', (id) => {
+    // (6 frames: before the lunge starts, so only the walking is measured)
+    const N = 6;
+    const free = new Scenario(id, 'bastion', 8);
+    const fy0 = free.s.f[0].y;
+    free.run(N, () => stick(8), () => 0);
+    const walked = free.s.f[0].y - fy0;
+    const sc = new Scenario(id, 'bastion', 8);
+    const y0 = sc.s.f[0].y;
+    sc.run(N, (_m, _o, _s, t) => (t === 0 ? IN_ATK | stick(8) : stick(8)), () => 0);
+    expect(sc.s.f[0].st).toBe(ST_ATTACK);
+    const moved = sc.s.f[0].y - y0;
+    expect(moved).toBeGreaterThan(walked * 0.2); // (the press frame itself only starts the move)
+    expect(moved).toBeLessThan(walked * 0.36);
+  });
+
+  it('v1.7: skills that are not normal attacks (a guard break) still root the fighter', () => {
+    const sc = new Scenario('blaze', 'bastion', 8);
+    const y0 = sc.s.f[0].y;
+    sc.run(1, (_m, _o, _s, t) => (t === 0 ? IN_S2 | stick(8) : stick(8)), () => 0);
+    const y1 = sc.s.f[0].y;
+    sc.run(10, () => stick(8), () => 0);
+    expect(sc.s.f[0].st).toBe(ST_ATTACK);
+    expect(sc.s.f[0].y).toBe(y1);
+    void y0;
+  });
 });

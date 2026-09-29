@@ -242,6 +242,16 @@ export const sfx = {
     tone(120, 0.2, 'sine', 0.4, 50);
     noise(0.15, 400, 1, 0.2, 'lowpass');
   },
+  /** v1.7 a downed piece starts getting up: a soft rising "fwip" (the amber stub of the ring). */
+  wake() {
+    tone(300, 0.16, 'triangle', 0.07, 720);
+    noise(0.1, 1800, 1.2, 0.05, 'bandpass', 4200);
+  },
+  /** v1.7 the wake-up ended, both sides can act: a clean high blip — the "NOW". */
+  ready() {
+    tone(1320, 0.07, 'sine', 0.09);
+    tone(1980, 0.09, 'sine', 0.06, undefined, 0.04);
+  },
   round() {
     tone(440, 0.12, 'square', 0.08);
     tone(660, 0.18, 'square', 0.08, undefined, 0.12);

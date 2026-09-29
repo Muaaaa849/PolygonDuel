@@ -11,7 +11,7 @@ import {
 import {
   type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN,
   EV_STEP, EV_HEAL, EV_KO, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END, HF_COUNTER, HF_JA, HF_OTG,
-  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL, HF_SHOT, HF_PUNISH,
+  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL, EV_WAKE, EV_UP, HF_SHOT, HF_PUNISH,
 } from '../core/events';
 import { Morph, SHAPE_RADII, toPoints } from './shapes';
 import { Vfx } from './vfx';
@@ -565,6 +565,21 @@ export class BattleView {
         const f = s.f[e.who];
         this.vfx.ring(toPx(f.x), toPx(f.y), 0x9aa6c8, 20, 90, 18, 4);
         this.fx.spawn('dust', { x: toPx(f.x), y: toPx(f.y), size: 2.6 * PX, blend: 'normal', alpha: 0.8 });
+        // v1.7: the shield snaps shut — "down = invulnerable" (the countdown ring takes over)
+        this.fx.spawn('down_t', { x: toPx(f.x), y: toPx(f.y), size: 2.5 * PX, alpha: 0.65 });
+        break;
+      }
+      case EV_WAKE: {
+        // v1.7: it starts getting up (the last amber stub of the countdown ring)
+        const f = s.f[e.who];
+        this.fx.spawn('wake_t', { x: toPx(f.x), y: toPx(f.y), size: 2.6 * PX, alpha: 0.6 });
+        break;
+      }
+      case EV_UP: {
+        // v1.7: up! both sides can act on this very frame
+        const f = s.f[e.who];
+        this.fx.spawn('ready_t', { x: toPx(f.x), y: toPx(f.y), size: 2.3 * PX, tint: 0xffffff, alpha: 0.7 });
+        this.vfx.ring(toPx(f.x), toPx(f.y), 0xffffff, 40, 110, 10, 3);
         break;
       }
       case EV_STEP: {
@@ -1337,6 +1352,7 @@ export class BattleView {
       }
     }
 
+    if (i < 2 && (f.st === ST_DOWN || f.st === ST_WAKE)) this.drawDownTimer(f, x, y);
     this.drawDirection(i, x, y);
     this.drawPips(i, x, y);
 
@@ -1349,6 +1365,52 @@ export class BattleView {
       const tip = this.sim.hitboxOf(f);
       if (tip) this.overlay.moveTo(x, y).lineTo(toPx(tip.x), toPx(tip.y)).stroke({ width: 4, color: 0xff3050, alpha: 0.9 });
     }
+  }
+
+  /**
+   * v1.7: the countdown ring around a downed piece. The arc that is left = the time until BOTH sides can act
+   * again (down + wake-up); it drains clockwise toward the top, ticks every 15F (0.25 s). The last stub — the
+   * wake-up itself — is amber and blinks over the final 10F of lying, so "it gets up NOW" is readable.
+   */
+  private drawDownTimer(f: FighterState, x: number, y: number): void {
+    const D = SYSTEM.down;
+    const total = D.lying + D.wake;
+    const waking = f.st === ST_WAKE;
+    const left = waking ? f.len - f.sf + 1 : f.len - f.sf + 1 + D.wake;
+    const r = Math.max(0, Math.min(1, left / total));
+    const R = 0.92 * PX;
+    const TAU = Math.PI * 2;
+    const a0 = -Math.PI / 2;
+    const wakeFrac = D.wake / total;
+    const soon = !waking && left <= D.wake + 10;
+    const on = settings.reduceFlash || Math.floor(this.t / 3) % 2 === 0;
+    const g = this.overlay;
+    // track + a faint dome ("nothing touches me")
+    g.circle(x, y, R).stroke({ width: 4, color: 0x9fe8ff, alpha: 0.16 });
+    this.glow.circle(x, y, R).fill({ color: 0x9fe8ff, alpha: waking ? 0.03 : 0.07 });
+    const arc = (from: number, to: number, width: number, color: number, alpha: number) => {
+      if (to - from < 0.004) return;
+      const a = a0 + TAU * from;
+      g.moveTo(x + Math.cos(a) * R, y + Math.sin(a) * R).arc(x, y, R, a, a0 + TAU * to).stroke({ width, color, alpha, cap: 'round' });
+    };
+    // ice-blue = lying (invulnerable, nothing to do), amber = the get-up
+    if (r > wakeFrac) arc(wakeFrac, r, 8, 0x8fe4ff, 0.95);
+    const stub = Math.min(r, wakeFrac);
+    const hot = waking || soon;
+    arc(0, stub, hot && on ? 13 : 9, 0xffd45a, hot && !on ? 0.55 : 1);
+    // ticks every 15F still to come, and a bright dot on the shrinking edge
+    for (let k = 1; k * 15 < left; k++) {
+      const q = (k * 15) / total;
+      if (q >= r) break;
+      const a = a0 + TAU * q;
+      g.moveTo(x + Math.cos(a) * (R - 9), y + Math.sin(a) * (R - 9)).lineTo(x + Math.cos(a) * (R + 9), y + Math.sin(a) * (R + 9)).stroke({ width: 2, color: 0xffffff, alpha: 0.55 });
+    }
+    if (r > 0.01) {
+      const a = a0 + TAU * r;
+      g.circle(x + Math.cos(a) * R, y + Math.sin(a) * R, hot ? 7 : 5).fill({ color: 0xffffff, alpha: 0.95 });
+    }
+    // the moment before it gets up: the whole ring flares once (a warning both players can read)
+    if (soon && on) this.glow.circle(x, y, R).stroke({ width: 10, color: 0xffd45a, alpha: 0.25 });
   }
 
   /** Facing arrow; during startup it grows toward the reach, while active it is a bar. */
