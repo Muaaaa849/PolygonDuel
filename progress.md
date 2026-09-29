@@ -161,6 +161,14 @@
 - 相手がダウン中（OTGの30Fを過ぎた後）と起き上がり中は、攻撃・スキル・ステップを出せない（`Sim.wakeLock`。状態から毎tick計算、更新順で差が出ないよう両者の更新前に決める）。起き上がりの終わりのFに両者同時に行動可能＝有利0F（`tempo.test.ts` で全キャラ確認）。0Fスキル（モード切替・オーバーチャージ）は使える。
 - 相手がダウン・起き上がり中は、ガードしていてもガードゲージが減らない（約1.75秒待つ間に割れないように）。
 
+### v1.7（ユーザー指示）
+- 通常攻撃（N1〜N3・GC・JA）の最中もスティックで30%の速さで動ける（`SYSTEM.attackWalkPct`、`CMove.walkPct`）。
+- 倒れている時間を75Fに（`SYSTEM.down.lying`）。ダウンの演出：`down_t`（盾）・カウントダウンの輪（`drawDownTimer`）・`wake_t`（矢羽根）・`ready_t`（収束する輪）、イベント `EV_UP`、音 `sfx.wake` / `sfx.ready`。
+- 新キャラ **ブラッド**（`blood.ts`、キャラ番号7）：`MoveDef.channel`（押しっぱなしで体力→コスト、3秒CT）、`CharacterDef.drive`＋`MoveDef.driveOn`（コストが燃料の超強化・ATK長押しでGB・燃え尽き後の弱体と歩行不能）。状態 `drive/driveTick/exhaust/noWalk/s1Cd`、`Sim.powerOf/reachOf/canAfford`、`EV_DRIVE/EV_CHARGE`。血の代償は相手が無敵で倒れている間も出せる（`wakeLock` の例外）。テスト `tests/blood.test.ts`。
+- 新キャラ **スケッチ**（`sketch.ts`、キャラ番号8）：`MoveDef.ink`（インクの跡。状態は `GameState.trail`＝Int32Array・スナップショット/ハッシュに入る）、`MoveDef.dirKnock`（当たった瞬間のスティック方向へ吹き飛ばす）、`Sim.forEachInk`、`EV_INK/EV_TRAIL`、`fixed.segsCross`。壁とインクは1コンボ合わせて2回まで。テスト `tests/sketch.test.ts`。
+- 描画：ブラッドの燃料の輪・炎のオーラ・充填の収束リング・燃え尽き（灰色＋⊘）、スケッチのインクの線とペン先・フリックの方向矢印。HUDにDRIVE/EXHAUST/INKの表示。技詳細シートの説明とデモ、CPUの判断も追加。
+- **人間同士では未検証**：ブラッドの数値（オーバードライブ20秒の火力・燃え尽き後の弱体・血の代償のHPコスト）、スケッチのインク（壁より痛い45〜90・キャラ選択の白い見た目）、通常攻撃中の30%移動がフレーム規約の読み合い（ヒット確認・GC）に与える影響。
+
 ## 既知の問題・次の候補
 - **キネシスは人間同士で未検証**：引き寄せの逆転（振っている相手に撃つと自分が捕まる）の読み合いの重さ、1→2→S1→1→2→3→S2（269＋壁、コスト4）の火力。数値は `characters/kinesis.ts` で調整できる。
 - **キャラ選択の「相手」ボタン（CPU・トレモ）は横一列のまま**。キャラが増えると横に長くなる。

@@ -38,6 +38,9 @@ describe('combo damage table (plan §7)', () => {
     ['ray', 'AAA', 142],
     ['ray', 'AA1', 116],
     ['volt', 'AAA', 138],
+    ['blood', 'AAA', 118],
+    ['sketch', 'AAA', 140],
+    ['sketch', 'AA2', 116],
   ];
   it.each(plain)('%s %s = %i', (id, seq, dmg) => {
     const sc = new Scenario(id, 'bastion', 1.6).run(500, sequence(seq), hitThenGuard);

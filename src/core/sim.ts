@@ -7,10 +7,10 @@ import {
   M_N1, M_N2, M_GC, M_JA, M_S1, M_S2, M_STRIKE, KIND_GC, KIND_JA, KIND_NORMAL, KIND_SKILL, CANCEL_NEUTRAL, CANCEL_STEP, SH, COST_UNIT,
 } from './compile';
 import {
-  ANG, U, angDiff, atan2A, clamp, idiv, isqrt, offX, offY, segPointDist2, turnToward, u,
+  ANG, U, angDiff, atan2A, clamp, idiv, isqrt, offX, offY, segPointDist2, segsCross, turnToward, u,
 } from './fixed';
 import {
-  type FighterState, type GameState, newGameState, getShot, setShot, MAX_SHOTS,
+  type FighterState, type GameState, newGameState, getShot, setShot, MAX_SHOTS, TRAIL_N, TRAIL_STRIDE, TRAIL_FIGHTER,
   ST_FREE, ST_ATTACK, ST_BLOCKSTUN, ST_HITSTUN, ST_STEP, ST_DOWN, ST_WAKE, ST_STUN, ST_KO, ST_JAM,
   MH_NONE, MH_HIT, MH_BLOCK, MH_SPENT,
   PH_INTRO, PH_FIGHT, PH_END, PH_MATCH_OVER,
@@ -20,7 +20,7 @@ import {
   type SimEvent,
   EV_MOVE, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN, EV_STEP,
   EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_WAKE, EV_GUARD, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END,
-  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL, EV_UP, EV_DRIVE, EV_CHARGE,
+  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL, EV_UP, EV_DRIVE, EV_CHARGE, EV_INK, EV_TRAIL,
   HF_COUNTER, HF_JA, HF_OTG, HF_KNOCKDOWN, HF_FORCED_DOWN, HF_SHOT, HF_PUNISH, HF_PULL,
 } from './events';
 
@@ -58,6 +58,14 @@ const STEP_TABLE: Int32Array[] = COMPILED.map((c) => {
   t[1] += c.stepDist - sum;
   return t;
 });
+
+/** Per-character ink trail spec (スケッチのS1), or null. */
+const INK_OF = COMPILED.map((c) => c.moves.find((m) => m.ink)?.ink ?? null);
+/** A knocked-back body this close to a piece of ink (centre to line, milli-u) counts as touching it. */
+const INK_R = u(0.34);
+const INK_R2 = INK_R * INK_R;
+/** A jump longer than this in one tick (the JA blink) lifts the pen instead of drawing a line across the arena. */
+const INK_JUMP2 = u(3) * u(3);
 
 /** Per-character floor field spec (レイのS2), or null. */
 const FIELD_OF = COMPILED.map((c) => c.moves.find((m) => m.field)?.field ?? null);
@@ -117,6 +125,7 @@ export class Sim {
     s.hitstop = 0;
     s.freeze = 0;
     s.slow = 0;
+    s.trail.fill(0);
     s.roundWinner = -1;
     if (first) {
       s.round = 1;
@@ -142,7 +151,7 @@ export class Sim {
         lastDir: i === 0 ? 0 : 16,
         aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, lungePct: 100, wallHits: 0, momStep: 0, momDir: 0,
         ghostT: 0, ghostMode: 0, shootMode: 0, justNoMul: 0, wallGuard: 0, fieldT: 0, power: 0, instLock: 0, pullUsed: 0, wakeBoost: 0, stepPct: 100,
-        drive: 0, driveTick: 0, exhaust: 0, noWalk: 0, s1Cd: 0,
+        drive: 0, driveTick: 0, exhaust: 0, noWalk: 0, s1Cd: 0, inkT: 0, trHead: 0, trBrk: 0,
       });
       for (let j = 0; j < MAX_SHOTS; j++) setShot(f, j, null);
       f.char = keepChar;
@@ -224,6 +233,7 @@ export class Sim {
     this.updateFighter(0, ins0);
     this.updateFighter(1, ins1);
     this.resolveBodies();
+    this.updateInk();
     this.detectHits();
     this.updateFields();
     this.updateShots();
@@ -395,6 +405,8 @@ export class Sim {
     let d = idiv(f.kbDist, 4) + 12;
     if (d > f.kbDist) d = f.kbDist;
     const left = f.kbDist;
+    const x0 = f.x;
+    const y0 = f.y;
     f.kbDist -= d;
     f.x += offX(f.kbAngle, d);
     f.y += offY(f.kbAngle, d);
@@ -404,6 +416,115 @@ export class Sim {
     const hy = FIELD_H - BODY_R;
     const side = f.x < lo ? 0 : f.x > hx ? 1 : f.y < lo ? 2 : f.y > hy ? 3 : -1;
     if (side >= 0) this.wallImpact(f, side, left);
+    // …or across the opponent's ink (スケッチ): a wall that hurts more
+    if (f.kbDist > 0) this.inkImpact(f, x0, y0, left);
+  }
+
+  // ───────────────────────────── ink trail (スケッチ) ─────────────────────────────
+
+  private startInk(i: number, ink: NonNullable<CMove['ink']>): void {
+    const f = this.s.f[i];
+    f.inkT = ink.draw;
+    f.trBrk = 1;
+    this.emit(EV_INK, i, 1, 0, f.x, f.y);
+  }
+
+  /**
+   * After the bodies settled: the ink ages, and while the pen is down (walking, stepping, attacking — not while being
+   * hit) a point is dropped every `gap` milli-u of travel. A point starts a new stroke (no segment to the previous slot)
+   * after a lifted pen, a big jump, or when the ring overwrote the slot before it.
+   */
+  private updateInk(): void {
+    const s = this.s;
+    for (let i = 0; i < 2; i++) {
+      const f = s.f[i];
+      const ink = INK_OF[f.char];
+      if (!ink) continue;
+      const t = s.trail;
+      const base = i * TRAIL_FIGHTER;
+      for (let k = 0; k < TRAIL_N; k++) {
+        const m = base + k * TRAIL_STRIDE + 2;
+        if (t[m] >= 2) t[m] -= 2;
+      }
+      if (f.inkT <= 0) continue;
+      f.inkT--;
+      if (f.inkT === 0) this.emit(EV_INK, i, 0, 0, f.x, f.y);
+      const down = f.st === ST_FREE || f.st === ST_ATTACK || f.st === ST_STEP;
+      if (!down) {
+        f.trBrk = 1;
+        continue;
+      }
+      const last = base + ((f.trHead + TRAIL_N - 1) % TRAIL_N) * TRAIL_STRIDE;
+      const alive = t[last + 2] >= 2;
+      const dx = f.x - t[last];
+      const dy = f.y - t[last + 1];
+      const d2 = dx * dx + dy * dy;
+      if (alive && !f.trBrk && d2 < ink.gap * ink.gap) continue;
+      const at = base + f.trHead * TRAIL_STRIDE;
+      t[at] = f.x;
+      t[at + 1] = f.y;
+      t[at + 2] = (ink.life << 1) | (!alive || f.trBrk || d2 > INK_JUMP2 ? 1 : 0);
+      f.trHead = (f.trHead + 1) % TRAIL_N;
+      // the slot after it is now the oldest: its old neighbour is gone, so it can't be joined to this new point
+      t[base + f.trHead * TRAIL_STRIDE + 2] |= 1;
+      f.trBrk = 0;
+    }
+  }
+
+  /**
+   * The segments of fighter i's ink that are still there: fn(x0, y0, x1, y1, life left, slot). The renderer and the CPU
+   * use it; the slot (the segment's end point) is what EV_TRAIL reports.
+   */
+  forEachInk(i: number, fn: (x0: number, y0: number, x1: number, y1: number, life: number, slot: number) => void): void {
+    const t = this.s.trail;
+    const base = i * TRAIL_FIGHTER;
+    for (let k = 0; k < TRAIL_N; k++) {
+      const a = base + k * TRAIL_STRIDE;
+      const b = base + ((k + TRAIL_N - 1) % TRAIL_N) * TRAIL_STRIDE;
+      if (t[a + 2] < 2 || (t[a + 2] & 1) || t[b + 2] < 2) continue;
+      fn(t[b], t[b + 1], t[a], t[a + 1], t[a + 2] >> 1, k);
+    }
+  }
+
+  /** A knocked-back fighter crossing (or arriving at) a piece of the opponent's ink: like a wall, but harder; the ink is gone. */
+  private inkImpact(f: FighterState, x0: number, y0: number, speed: number): void {
+    const s = this.s;
+    const who = s.f[0] === f ? 0 : 1;
+    const o = s.f[1 - who];
+    const ink = INK_OF[o.char];
+    if (!ink) return;
+    if (!(f.st === ST_HITSTUN || f.st === ST_DOWN || f.st === ST_STUN) || f.wallHits >= SYSTEM.wall.perCombo) return;
+    const t = s.trail;
+    const base = (1 - who) * TRAIL_FIGHTER;
+    for (let k = 0; k < TRAIL_N; k++) {
+      const a = base + k * TRAIL_STRIDE;
+      const b = base + ((k + TRAIL_N - 1) % TRAIL_N) * TRAIL_STRIDE;
+      if (t[a + 2] < 2 || (t[a + 2] & 1) || t[b + 2] < 2) continue;
+      const bx = t[b];
+      const by = t[b + 1];
+      const ax = t[a];
+      const ay = t[a + 1];
+      let hit = segsCross(x0, y0, f.x, f.y, bx, by, ax, ay);
+      if (!hit) {
+        // arriving at the line (moving toward it) also counts, so a body doesn't stop a hair short and pass next frame
+        const d1 = segPointDist2(bx, by, ax, ay, f.x, f.y);
+        hit = d1 <= INK_R2 && d1 < segPointDist2(bx, by, ax, ay, x0, y0);
+      }
+      if (!hit) continue;
+      t[a + 2] |= 1; // this piece of ink is used up
+      f.kbDist = 0;
+      f.wallHits++;
+      const bonus = idiv(ink.bonus * Math.min(speed, LAUNCH), LAUNCH);
+      const sc = SYSTEM.scaling;
+      const dmg = idiv((ink.dmg + bonus) * sc[Math.min(f.comboHits, sc.length - 1)], 100);
+      f.hp = s.trainingRefill ? Math.max(1, f.hp - dmg) : Math.max(0, f.hp - dmg);
+      this.losePower(f, dmg);
+      f.comboDmg += dmg;
+      o.statDmg += dmg;
+      s.hitstop = Math.max(s.hitstop, SYSTEM.wall.hitstop);
+      this.emit(EV_TRAIL, who, dmg, k, f.x, f.y);
+      return;
+    }
   }
 
   private wallImpact(f: FighterState, side: number, speed: number): void {
@@ -455,6 +576,7 @@ export class Sim {
   canAfford(f: FighterState, m: CMove): boolean {
     if (m.ghost && f.ghostT > 0) return false;
     if (m.powerUp && f.power > 0) return false;
+    if (m.ink && f.inkT > 0) return false;
     if (m.channel && (f.s1Cd > 0 || f.drive || f.cost >= COST_MAX || f.hp <= m.channel.hp + 1)) return false;
     if (m.driveOn) {
       const dr = COMPILED[f.char].drive;
@@ -1297,6 +1419,7 @@ export class Sim {
     if (m.proj && mf === m.proj.at) this.fire(i, m);
     if (m.field && mf === m.field.at) this.placeField(i, m);
     if (m.driveOn && mf === m.driveOn) this.startDrive(i);
+    if (m.ink && mf === m.ink.at) this.startInk(i, m.ink);
     if (m.powerUp && mf === m.powerUp.frame) {
       f.power = m.powerUp.pct;
       this.emit(EV_POWER, i, 1, 0, f.x, f.y);
@@ -1607,7 +1730,8 @@ export class Sim {
           d.guardF = 0;
           d.gcQueued = 0;
           d.kbDist = m.knockback;
-          d.kbAngle = away;
+          // (スケッチのS2: sent where the attacker's stick points, whichever way the piece faces)
+          d.kbAngle = m.dirKnock && a.prevIn & IN_STICK ? dirAngle(a.prevIn) : away;
         }
         this.gainCost(a, m);
         this.gainHurtCost(d);

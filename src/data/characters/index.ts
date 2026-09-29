@@ -7,8 +7,9 @@ import { ray } from './ray';
 import { volt } from './volt';
 import { kinesis } from './kinesis';
 import { blood } from './blood';
+import { sketch } from './sketch';
 
 /** Registration order = character index used in the simulation state. */
-export const CHARACTERS: readonly CharacterDef[] = [blaze, zephyr, bastion, phantom, ray, volt, kinesis, blood];
+export const CHARACTERS: readonly CharacterDef[] = [blaze, zephyr, bastion, phantom, ray, volt, kinesis, blood, sketch];
 
 export const charIndex = (id: string): number => CHARACTERS.findIndex((c) => c.id === id);

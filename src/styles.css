@@ -1039,6 +1039,11 @@ button {
   border-color: rgba(224, 20, 60, 0.8);
   box-shadow: 0 0 6px rgba(224, 20, 60, 0.55);
 }
+.mode-badge.ink {
+  color: #f0f4ff;
+  border-color: rgba(240, 244, 255, 0.7);
+  box-shadow: 0 0 6px rgba(240, 244, 255, 0.4);
+}
 .mode-badge.drive.spent {
   color: #a0a8bc;
   border-color: rgba(138, 144, 160, 0.7);

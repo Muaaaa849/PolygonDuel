@@ -242,6 +242,19 @@ export const sfx = {
     tone(120, 0.2, 'sine', 0.4, 50);
     noise(0.15, 400, 1, 0.2, 'lowpass');
   },
+  /** v1.7 スケッチのインク (a = 1 the pen touches down: a quick scribble; 0 it lifts: a soft tick). */
+  ink(a: number) {
+    if (a === 1) {
+      for (let i = 0; i < 4; i++) noise(0.05, 3400 + (i % 2) * 1800, 5, 0.09, 'bandpass', 5200 - (i % 2) * 1800, i * 0.045);
+      tone(1500, 0.08, 'triangle', 0.05, 2200, 0.02);
+    } else tone(900, 0.05, 'sine', 0.05, 600);
+  },
+  /** v1.7 a knocked-back body slams into ink: a wall slap with a bright, glassy crack on top. */
+  inkWall(dmg: number) {
+    tone(140, 0.2, 'sine', 0.4, 50);
+    noise(0.12, 2600, 1.2, 0.3, 'bandpass', 900);
+    tone(2400 + Math.min(600, dmg * 4), 0.1, 'triangle', 0.08, 1200, 0.02);
+  },
   /** v1.7 ブラッドの血の代償: a wet, low pulse (a = the first, big payment) with a small coin-like chime as the cost comes in. */
   charge(big: boolean) {
     tone(big ? 110 : 150, big ? 0.28 : 0.14, 'sine', big ? 0.4 : 0.22, big ? 60 : 90);

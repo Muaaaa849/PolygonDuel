@@ -31,6 +31,25 @@ function facts(m: MoveDef, c?: CharacterDef): [string, string][] {
     rows.push(['切替ブラスト', `2段目のヒット／ガード後にS1：発生${bl.S}F・${bl.dmg}ダメージ＋ダウン（${bl.launch}u吹き飛ばす）、ガードでも${bl.pushback}u（壁で30）。射撃モードへ（コスト${bl.cost}）`]);
     return rows;
   }
+  if (m.ink) {
+    const k = m.ink;
+    rows.push(['フレーム', `${k.at}F目に発動（全体${m.T}F）`]);
+    rows.push(['インク', `発動から${k.draw / 60}秒間、歩く・ステップ・攻撃の踏み込みで動いた跡が${k.life / 60}秒残る（${k.gap}uごとに点）。古いものから消える`]);
+    rows.push(['通り抜け', '自分も相手も、普段はインクを通り抜けられる（邪魔にならない）']);
+    rows.push(['壁になる時', `ノックバックで吹き飛ばされている相手（のけぞり・ダウン・スタン中）がインクに触れると、壁に当たったように止まって追加ダメージ ${k.dmg}〜${k.dmg + k.bonus}（アリーナの壁は30〜60）。触れたインクは消える`]);
+    rows.push(['回数', `壁ダメージと合わせて1コンボ${SYSTEM.wall.perCombo}回まで`]);
+    rows.push(['使い方', '相手の背後・壁際に線を引いておき、3段目やフリックで吹き飛ばす。ガード・移動中の相手には効かない']);
+    return rows;
+  }
+  if (m.dirKnock) {
+    rows.push(['フレーム', `発生${m.S}F／持続${m.A}F／全体${m.T}F`]);
+    rows.push(['当たると', `${m.dmg}ダメージ＋軽いのけぞり（${m.hitstun}F）。${m.knockback}u吹き飛ばす（通常攻撃3段目のダウンの吹き飛ばし${SYSTEM.down.launch}uより少し強い）`]);
+    rows.push(['方向', '当たった瞬間に「移動スティック（キー）を倒している方向」へ。コマの向きは関係ない（左を入れて当てれば左、上なら上、斜めも可）。何も入れなければ相手を押した方向']);
+    rows.push(['出せる場面', '通常時／2段目のヒット・ガード後（1→2→S2が確定）']);
+    rows.push(['締め', '壁やインクの方向へ吹き飛ばして追加ダメージ。3段目が壁に届かない時の締めに']);
+    rows.push(['弱点', 'ガードされると普通の円（押し返すだけ）。コスト2']);
+    return rows;
+  }
   if (m.channel) {
     // ブラッド S1: hold to turn life into cost
     const ch = m.channel;

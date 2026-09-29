@@ -48,12 +48,16 @@ export const EV_UP = 32;
 export const EV_DRIVE = 33;
 /** Life → cost (ブラッドのS1): who, a = HP paid, b = cost gained (quarters), x/y = body. */
 export const EV_CHARGE = 34;
+/** Ink trail (スケッチのS1): who, a = 1 started drawing, 0 the pen lifted (time ran out). */
+export const EV_INK = 35;
+/** A knocked-back fighter hit the opponent's ink like a wall: who = the victim, a = damage, b = the ink segment, x/y = contact. */
+export const EV_TRAIL = 36;
 
 export const EV_NAMES: Record<number, string> = {
   [EV_MOVE]: 'move', [EV_HIT]: 'hit', [EV_BLOCK]: 'block', [EV_CRUSH]: 'crush', [EV_GUARD_BREAK]: 'guardBreak',
   [EV_GB_OPEN]: 'gbOpen', [EV_JUST]: 'just', [EV_RIPOSTE]: 'riposte', [EV_KNOCKDOWN]: 'knockdown', [EV_STEP]: 'step',
   [EV_HEAL]: 'heal', [EV_KO]: 'ko', [EV_ROUND]: 'round', [EV_FIGHT]: 'fight', [EV_TIMEUP]: 'timeup',
-  [EV_ROUND_END]: 'roundEnd', [EV_MATCH_END]: 'matchEnd', [EV_WAKE]: 'wake', [EV_WHIFF]: 'whiff', [EV_GUARD]: 'guard', [EV_WALL]: 'wall', [EV_BLINK]: 'blink', [EV_GHOST]: 'ghost', [EV_GHOST_END]: 'ghostEnd', [EV_SHOT]: 'shot', [EV_MODE]: 'mode', [EV_FIELD]: 'field', [EV_SHOCK]: 'shock', [EV_JAM]: 'jam', [EV_POWER]: 'power', [EV_PULL]: 'pull', [EV_UP]: 'up', [EV_DRIVE]: 'drive', [EV_CHARGE]: 'charge',
+  [EV_ROUND_END]: 'roundEnd', [EV_MATCH_END]: 'matchEnd', [EV_WAKE]: 'wake', [EV_WHIFF]: 'whiff', [EV_GUARD]: 'guard', [EV_WALL]: 'wall', [EV_BLINK]: 'blink', [EV_GHOST]: 'ghost', [EV_GHOST_END]: 'ghostEnd', [EV_SHOT]: 'shot', [EV_MODE]: 'mode', [EV_FIELD]: 'field', [EV_SHOCK]: 'shock', [EV_JAM]: 'jam', [EV_POWER]: 'power', [EV_PULL]: 'pull', [EV_UP]: 'up', [EV_DRIVE]: 'drive', [EV_CHARGE]: 'charge', [EV_INK]: 'ink', [EV_TRAIL]: 'trail',
 };
 
 // HIT flags

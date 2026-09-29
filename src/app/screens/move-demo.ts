@@ -7,6 +7,7 @@ import { u } from '../../core/fixed';
 import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK } from '../../core/input';
 import { ST_FREE } from '../../core/state';
 import { M_N2, M_N3, M_S1, M_STRIKE } from '../../core/compile';
+import { TRAIL_STRIDE } from '../../core/state';
 import { SYSTEM } from '../../data/system';
 import { CHARACTERS, charIndex } from '../../data/characters';
 import type { CharacterDef, MoveDef } from '../../data/types';
@@ -24,6 +25,8 @@ interface Script {
   /** Inputs for (attacker, dummy) on frame t. */
   input: (t: number, sim: Sim) => [number, number];
   setup?: (sim: Sim) => void;
+  /** Frames per loop (default LOOP). */
+  loop?: number;
 }
 
 function scriptFor(c: CharacterDef, kind: DemoKind): Script {
@@ -34,6 +37,54 @@ function scriptFor(c: CharacterDef, kind: DemoKind): Script {
   const m: MoveDef = c.skills[slot];
   const btn = kind === 's1' ? IN_S1 : IN_S2;
   const press = (t: number) => (t === 20 ? btn | IN_STICK : 0); // stick 0 = toward the dummy (right)
+  if (m.ink) {
+    // スケッチ S1: press, then walk a loop around the dummy — the path stays as ink (and is shown for both to read)
+    return {
+      dist: 3.4,
+      loop: 220,
+      setup: (sim) => (sim.s.f[0].infCost = 0),
+      input: (t) => {
+        const path = [[24, 26], [0, 60], [8, 44], [16, 60]]; // up, right, down, left (a box)
+        if (t === 4) return [IN_S1, 0];
+        let k = t - 26;
+        if (k < 0) return [0, 0];
+        for (const [dir, len] of path) {
+          if (k < len) return [IN_STICK | dir, 0];
+          k -= len;
+        }
+        return [0, 0];
+      },
+    };
+  }
+  if (m.dirKnock) {
+    // スケッチ S2: 1 → 2 → S2 with the stick held UP-RIGHT: the dummy is thrown into a line of ink laid beyond it
+    return {
+      dist: 1.5,
+      loop: 200,
+      setup: (sim) => {
+        sim.s.f[0].infCost = 1;
+        // pre-drawn ink: a vertical line 2.6u to the right of the dummy
+        const t = sim.s.trail;
+        const x = sim.s.f[1].x + u(1.6);
+        const y = sim.s.f[1].y;
+        [[x, y - u(2.6)], [x, y], [x, y + u(2.6)]].forEach(([px, py], k) => {
+          t[k * TRAIL_STRIDE] = px;
+          t[k * TRAIL_STRIDE + 1] = py;
+          t[k * TRAIL_STRIDE + 2] = (600 << 1) | (k === 0 ? 1 : 0);
+        });
+        sim.s.f[0].trHead = 3;
+      },
+      input: (t, sim) => {
+        const me = sim.s.f[0];
+        const op = sim.s.f[1];
+        const dummy = op.statHitsTaken > 0 ? 0 : shuffle(t);
+        const stickDir = IN_STICK | 0; // right: toward the ink
+        if (me.move === M_N2 && me.moveHit && t % 2 === 0) return [IN_S2 | stickDir, dummy];
+        if (me.move === 6) return [stickDir, dummy];
+        return [t >= 20 && t < 100 && t % 4 === 0 ? IN_ATK | stickDir : stickDir & 0, dummy];
+      },
+    };
+  }
   if (m.channel) {
     // ブラッド S1: hold the button — life turns into cost (the gauge fills), then let go
     return {
@@ -245,7 +296,7 @@ export class MoveDemo {
       this.sim.step(a, b);
       for (const e of this.sim.events) this.view.handle(e);
       this.t++;
-      if (this.t >= LOOP) return this.reset();
+      if (this.t >= (this.script.loop ?? LOOP)) return this.reset();
     }
     this.view.render(ms / (1000 / 60));
   }

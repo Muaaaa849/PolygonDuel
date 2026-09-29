@@ -198,6 +198,15 @@ export interface MoveDef {
    * or the HP is too low, or when hit. `cooldown` frames of it come after it ends.
    */
   channel?: { hp: number; gain: number; every: number; tickHp: number; tickGain: number; cooldown: number; walkPct: number; minHold: number };
+  /**
+   * Ink trail (スケッチのS1): from frame `at`, for `draw` frames, the fighter's path leaves ink (a point every `gap` u
+   * moved) that stays `life` frames. It is no obstacle to walking; but an OPPONENT who is knocked back (hit stun / down /
+   * stun) across it hits it like a wall — `dmg` + up to `bonus` (scaled by the knockback left, like the arena wall's
+   * 30 + 30) — and that piece of ink is gone.
+   */
+  ink?: { at: number; draw: number; life: number; gap: number; dmg: number; bonus: number };
+  /** The knockback goes in the direction the attacker is holding on the stick when it lands (not where it faces). */
+  dirKnock?: boolean;
   /** Starts the character's overdrive (`CharacterDef.drive`) on this move frame. */
   driveOn?: number;
   /** Sets the shooting mode at its 1st frame (1 = on, 0 = off). */

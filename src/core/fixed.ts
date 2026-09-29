@@ -81,3 +81,19 @@ export function segPointDist2(ax: number, ay: number, bx: number, by: number, px
   const ey = py - qy;
   return ex * ex + ey * ey;
 }
+
+const cross = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number): number =>
+  (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+
+/** Do the segments (a-b) and (c-d) cross (or touch)? Integer math only. */
+export function segsCross(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number): boolean {
+  const d1 = cross(cx, cy, dx, dy, ax, ay);
+  const d2 = cross(cx, cy, dx, dy, bx, by);
+  const d3 = cross(ax, ay, bx, by, cx, cy);
+  const d4 = cross(ax, ay, bx, by, dx, dy);
+  if (d1 === 0 && d2 === 0 && d3 === 0 && d4 === 0) {
+    // collinear: only the bounding boxes can tell
+    return Math.min(ax, bx) <= Math.max(cx, dx) && Math.min(cx, dx) <= Math.max(ax, bx) && Math.min(ay, by) <= Math.max(cy, dy) && Math.min(cy, dy) <= Math.max(ay, by);
+  }
+  return Math.sign(d1) * Math.sign(d2) <= 0 && Math.sign(d3) * Math.sign(d4) <= 0;
+}

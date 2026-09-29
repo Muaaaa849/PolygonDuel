@@ -108,6 +108,9 @@ export interface CMove {
   wallOnGuard: boolean;
   /** Hold-to-charge (see MoveDef.channel; cost in quarters). */
   channel: { hp: number; gain: number; every: number; tickHp: number; tickGain: number; cooldown: number; walkPct: number; minHold: number } | null;
+  /** Ink trail (see MoveDef.ink; gap in milli-u). */
+  ink: { at: number; draw: number; life: number; gap: number; dmg: number; bonus: number } | null;
+  dirKnock: boolean;
   /** Starts the overdrive on this frame (0 = no). */
   driveOn: number;
   /** Walking speed (%) while this move is running: normals / GC / JA keep some (SYSTEM.attackWalkPct), others 0. */
@@ -235,6 +238,8 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     launch: m.pinDown ? -1 : m.launch ? u(m.launch) : 0,
     radial: !!m.radial,
     wallOnGuard: !!m.wallOnGuard,
+    ink: m.ink ? { ...m.ink, gap: u(m.ink.gap) } : null,
+    dirKnock: !!m.dirKnock,
     channel: m.channel ? { ...m.channel } : null,
     driveOn: m.driveOn ?? 0,
     walkPct: m.channel ? m.channel.walkPct : m.kind === 'normal' || m.kind === 'gc' || m.kind === 'ja' ? SYSTEM.attackWalkPct : 0,

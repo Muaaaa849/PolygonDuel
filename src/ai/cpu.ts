@@ -3,6 +3,7 @@
 import type { Sim } from '../core/sim';
 import { SH, M_N1, M_N2, M_N3, M_S1, M_S2, KIND_GC, COST_UNIT } from '../core/compile';
 import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK } from '../core/input';
+import { segsCross } from '../core/fixed';
 import {
   ST_FREE, ST_ATTACK, ST_BLOCKSTUN, ST_STEP, ST_STUN, ST_DOWN, ST_WAKE, ST_HITSTUN,
   MH_HIT, MH_BLOCK, MH_NONE, PH_FIGHT, type FighterState, getShot, MAX_SHOTS,
@@ -29,7 +30,7 @@ export const CPU_LEVELS: CpuLevel[] = [
   { name: 'HARD', react: 13, accuracy: 0.85, gc: 0.9, confirm: 1, aggression: 0.03 },
 ];
 
-const PREFERRED: Record<string, number> = { blaze: 2.6, zephyr: 3.3, bastion: 2.6, phantom: 3.0, ray: 2.5, volt: 2.9, kinesis: 2.3, blood: 2.4 };
+const PREFERRED: Record<string, number> = { blaze: 2.6, zephyr: 3.3, bastion: 2.6, phantom: 3.0, ray: 2.5, volt: 2.9, kinesis: 2.3, blood: 2.4, sketch: 2.6 };
 const FIELD_W = SYSTEM.field.w;
 const FIELD_H = SYSTEM.field.h;
 
@@ -67,6 +68,8 @@ export class CpuPlayer {
   private shotAware = 0;
   /** Blood: frames left to keep ATK held (a held 1st normal turns into the guard break in the overdrive). */
   private gbHold = 0;
+  /** Sketch: the stick direction (0..31) held while the flick comes out, or -1 (no stick: straight away). */
+  private knockDir = -1;
 
   constructor(private sim: Sim, private me: 0 | 1, public level: CpuLevel, seed = 1) {
     this.rng = new Rng(seed * 7919 + 17);
@@ -110,6 +113,33 @@ export class CpuPlayer {
       const side = Math.abs(-rx * Math.sin(a) + ry * Math.cos(a));
       if (along < -0.3 || side > 0.9) continue;
       if (!best || along < best.d) best = { d: along, a: b.a, key: `${j}:${b.n}:${b.a}` };
+    }
+    return best;
+  }
+
+  /**
+   * スケッチ: which way to hold the stick when the flick lands — toward the arena wall or (better) a piece of our own ink that
+   * the 1.9u throw from the target's position would cross. Directions into our own body are useless. -1 = nothing worth it.
+   */
+  private bestKnock(me: FighterState, op: FighterState): number {
+    const throwLen = 1900;
+    const toward = dirIndex(me.x - op.x, me.y - op.y);
+    let best = -1;
+    let bestScore = 0;
+    for (let d = 0; d < 32; d++) {
+      const diff = Math.min((d - toward + 32) % 32, (toward - d + 32) % 32);
+      if (diff < 6) continue;
+      const a = (d / 32) * Math.PI * 2;
+      const ex = op.x + Math.round(Math.cos(a) * throwLen);
+      const ey = op.y + Math.round(Math.sin(a) * throwLen);
+      let score = ex < 500 || ex > FIELD_W * 1000 - 500 || ey < 500 || ey > FIELD_H * 1000 - 500 ? 2 : 0;
+      this.sim.forEachInk(this.me, (x0, y0, x1, y1) => {
+        if (segsCross(op.x, op.y, ex, ey, x0, y0, x1, y1)) score = 3;
+      });
+      if (score > bestScore) {
+        bestScore = score;
+        best = d;
+      }
     }
     return best;
   }
@@ -182,6 +212,16 @@ export class CpuPlayer {
         const gettingUp = op.st === ST_WAKE && op.sf >= op.len - 2;
         const safe = lying || op.st === ST_STUN || (dist > 4.5 && seen.st !== ST_ATTACK);
         return safe && !gettingUp && me.cost < 15 && me.hp > 420 ? IN_S1 | (dist < 3 ? IN_STICK | away : 0) : 0;
+      }
+      // sketch: the flick is coming out — hold the stick where it should throw the target
+      if (m.dirKnock) return this.knockDir >= 0 ? IN_STICK | this.knockDir : 0;
+      // sketch: 1 → 2 → flick (S2 with the stick toward the wall / our ink) when there is something to throw them into
+      if (c.moves[M_S2].dirKnock && me.move === M_N2 && me.moveHit === MH_HIT && me.cost >= c.moves[M_S2].cost && this.rng.chance(0.85)) {
+        const d = this.bestKnock(me, op);
+        if (d >= 0 || this.rng.chance(0.2)) {
+          this.knockDir = d;
+          return IN_S2 | (d >= 0 ? IN_STICK | d : 0);
+        }
       }
       // blood in the overdrive: a held 1st normal becomes the guard break
       if (this.gbHold > 0 && me.move === M_N1) {
@@ -352,6 +392,8 @@ export class CpuPlayer {
       if (me.exhaust === 0 && me.cost >= 3 * COST_UNIT && (dist > 3.6 || lying) && this.rng.chance(lying ? 0.1 : 0.04)) return IN_S2;
       if (me.s1Cd === 0 && me.cost <= 11 && me.hp > 520 && (lying ? this.rng.chance(0.25) : calm && this.rng.chance(0.015))) return IN_S1;
     }
+    // ── sketch: lay ink while circling (keep 2 cost for the flick); the strafing does the drawing
+    if (c.moves[M_S1].ink && me.inkT === 0 && me.cost >= c.moves[M_S1].cost + c.moves[M_S2].cost && dist > 2.4 && dist < 6.5 && seen.st !== ST_ATTACK && this.rng.chance(0.02)) return IN_S1;
     // ── blood, burning: put the guard break on a turtle (ATK held ≥10F: the startup is 30F from the press)
     if (c.drive && me.drive && this.hexFrames > 12 && dist < myReach + 0.6 && this.rng.chance(0.12)) {
       this.gbHold = 14;

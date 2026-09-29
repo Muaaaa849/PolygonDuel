@@ -142,6 +142,10 @@ export interface FighterState {
   /** Frames left of the after-wake step bonus (SYSTEM.wakeStep; the next step uses it up); stepPct = the running step's distance in %. */
   wakeBoost: number;
   stepPct: number;
+  /** Ink trail (スケッチ): frames of drawing left, the next trail slot to write (ring), and "the pen was lifted" (the next point starts a new stroke). */
+  inkT: number;
+  trHead: number;
+  trBrk: number;
   /** Overdrive (ブラッド): 1 while active, frames since the last cost quarter drained; frames of exhaustion / no-walking left; S1 cooldown left. */
   drive: number;
   driveTick: number;
@@ -189,7 +193,18 @@ export interface GameState {
   noTimer: number;
   seed: number;
   f: [FighterState, FighterState];
+  /**
+   * Ink trails (スケッチ), both fighters: per fighter TRAIL_N points of (x, y, meta) — meta = life << 1 | pen-up flag
+   * (the point starts a new stroke: no segment joins it to the previous slot). A flat Int32Array so it stays in the
+   * snapshot / hash without adding a hundred fields to every fighter.
+   */
+  trail: Int32Array;
 }
+
+/** Ink points per fighter (a ring: the oldest is overwritten), and ints per point / per fighter. */
+export const TRAIL_N = 32;
+export const TRAIL_STRIDE = 3;
+export const TRAIL_FIGHTER = TRAIL_N * TRAIL_STRIDE;
 
 export function newFighter(): FighterState {
   return {
@@ -200,7 +215,7 @@ export function newFighter(): FighterState {
     limited: 0, buff: 0, healUses: 0, csHit: 0, prevIn: 0, lastDir: 0,
     aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, wallHits: 0, lungePct: 100, momStep: 0, momDir: 0,
     shootMode: 0, justNoMul: 0, wallGuard: 0, manualGuard: 0, faceFoe: 0, power: 0, instLock: 0, pullUsed: 0, wakeBoost: 0, stepPct: 100,
-    drive: 0, driveTick: 0, exhaust: 0, noWalk: 0, s1Cd: 0,
+    drive: 0, driveTick: 0, exhaust: 0, noWalk: 0, s1Cd: 0, inkT: 0, trHead: 0, trBrk: 0,
     sh0n: 0, sh0x: 0, sh0y: 0, sh0a: 0, sh0r: 0, sh1n: 0, sh1x: 0, sh1y: 0, sh1a: 0, sh1r: 0, sh2n: 0, sh2x: 0, sh2y: 0, sh2a: 0, sh2r: 0,
     fieldT: 0, fieldX: 0, fieldY: 0,
     ghostT: 0, ghostMode: 0, ghostX: 0, ghostY: 0, ghostSx: 0, ghostSy: 0, ghostTx: 0, ghostTy: 0, ghostFace: 0, ghostAtk: 0,
@@ -214,21 +229,23 @@ export function newGameState(): GameState {
     frame: 0, phase: 0, phaseF: 0, timer: 0, round: 0, hitstop: 0, freeze: 0, slow: 0, slowWho: 0, winsA: 0, winsB: 0,
     roundWinner: -1, matchWinner: -1, trainingRefill: 0, noTimer: 0, seed: 0,
     f: [newFighter(), newFighter()],
+    trail: new Int32Array(2 * TRAIL_FIGHTER),
   };
 }
 
 const FIGHTER_KEYS = Object.keys(newFighter()) as (keyof FighterState)[];
-const GAME_KEYS = (Object.keys(newGameState()) as (keyof GameState)[]).filter((k) => k !== 'f') as Exclude<
+const GAME_KEYS = (Object.keys(newGameState()) as (keyof GameState)[]).filter((k) => k !== 'f' && k !== 'trail') as Exclude<
   keyof GameState,
-  'f'
+  'f' | 'trail'
 >[];
 
-export const SNAPSHOT_SIZE = GAME_KEYS.length + FIGHTER_KEYS.length * 2;
+export const SNAPSHOT_SIZE = GAME_KEYS.length + FIGHTER_KEYS.length * 2 + 2 * TRAIL_FIGHTER;
 
 export function saveState(s: GameState, out: Int32Array): Int32Array {
   let i = 0;
   for (const k of GAME_KEYS) out[i++] = s[k] as number;
   for (const f of s.f) for (const k of FIGHTER_KEYS) out[i++] = f[k];
+  for (let j = 0; j < s.trail.length; j++) out[i++] = s.trail[j];
   return out;
 }
 
@@ -236,6 +253,7 @@ export function loadState(s: GameState, src: Int32Array): GameState {
   let i = 0;
   for (const k of GAME_KEYS) (s[k] as number) = src[i++];
   for (const f of s.f) for (const k of FIGHTER_KEYS) f[k] = src[i++];
+  for (let j = 0; j < s.trail.length; j++) s.trail[j] = src[i++];
   return s;
 }
 

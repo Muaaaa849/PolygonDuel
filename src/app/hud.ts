@@ -26,12 +26,14 @@ export function buildHud(sim: Sim, view: BattleView, tags: [string, string]) {
     const power = h('span', { class: 'mode-badge power' }, '⚡ ATK+');
     // ブラッド: the overdrive's remaining seconds / the exhaustion
     const drive = h('span', { class: 'mode-badge drive' }, '🔥 DRIVE');
+    // スケッチ: seconds of drawing left
+    const ink = h('span', { class: 'mode-badge ink' }, '✎ INK');
     const side = h('div', { class: `side ${i === 0 ? 'left' : 'right'}`, style: `--c:${color}` },
       h('div', { class: 'nameline' }, h('span', { class: 'tag' }, tags[i]), h('span', null, def.name), h('span', { class: 'spacer' }), wins),
       hp,
-      h('div', { class: 'res' }, pips, steps, mode, power, drive),
+      h('div', { class: 'res' }, pips, steps, mode, power, drive, ink),
     );
-    return { side, fill, lag, hp, wins, pips, steps, mode, power, drive, last: { hp: -1, win: -1, cost: -1, steps: -1, mode: -1, power: -1, drive: -1 } };
+    return { side, fill, lag, hp, wins, pips, steps, mode, power, drive, ink, last: { hp: -1, win: -1, cost: -1, steps: -1, mode: -1, power: -1, drive: -1, ink: -1 } };
   });
   const clock = h('div', { class: 'clock' }, String(SYSTEM.round.seconds));
   const clockSub = h('small', null, 'ROUND 1');
@@ -86,6 +88,12 @@ export function buildHud(sim: Sim, view: BattleView, tags: [string, string]) {
             d.drive.classList.toggle('spent', key < 0);
             d.last.drive = key;
           }
+        }
+        const inkKey = f.inkT > 0 ? Math.ceil(f.inkT / 60) : 0; // seconds of drawing left (スケッチ)
+        if (inkKey !== d.last.ink) {
+          d.ink.textContent = inkKey > 0 ? `✎ INK ${inkKey}s` : '';
+          d.ink.classList.toggle('on', inkKey > 0);
+          d.last.ink = inkKey;
         }
         if (f.power !== d.last.power) {
           d.power.textContent = `⚡ ATK+${f.power}%`;

@@ -11,7 +11,7 @@ import {
 import {
   type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN,
   EV_STEP, EV_HEAL, EV_KO, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END, HF_COUNTER, HF_JA, HF_OTG,
-  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL, EV_WAKE, EV_UP, EV_DRIVE, EV_CHARGE, HF_SHOT, HF_PUNISH,
+  EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL, EV_WAKE, EV_UP, EV_DRIVE, EV_CHARGE, EV_INK, EV_TRAIL, HF_SHOT, HF_PUNISH,
 } from '../core/events';
 import { Morph, SHAPE_RADII, toPoints } from './shapes';
 import { Vfx } from './vfx';
@@ -613,6 +613,33 @@ export class BattleView {
         }
         break;
       }
+      case EV_INK: {
+        // スケッチのインク: the pen touches down (a ripple + "INK"), or lifts
+        const f = s.f[e.who];
+        const px = toPx(f.x);
+        const py = toPx(f.y);
+        const fv = this.fighters[e.who];
+        if (e.a === 1) {
+          this.fx.spawn('ripple_t', { x: px, y: py, size: 3 * PX, tint: fv.color, alpha: 0.7 });
+          this.vfx.ring(px, py, fv.color, 20, 120, 16, 4);
+          this.vfx.text('INK', px, py - 90, fv.color, 30, 50, -0.5);
+        } else this.vfx.ring(px, py, fv.color, 50, 90, 12, 3);
+        break;
+      }
+      case EV_TRAIL: {
+        // a knocked-back body hits the ink: the same slam as a wall, in ink (white lines), harder
+        const px = toPx(e.x);
+        const py = toPx(e.y);
+        const col = this.fighters[1 - e.who].color;
+        this.fighters[e.who].flash = 3;
+        this.fx.spawn('wall_t', { x: px, y: py, size: 3.2 * PX, tint: col, alpha: 0.85 });
+        this.vfx.spark(px, py, col, 16, 30, 40, 5);
+        this.vfx.ring(px, py, 0xffffff, 10, 150, 14, 6);
+        this.vfx.text(`INK WALL ${e.a}`, px, py - 84, col, 32, 60, -0.6);
+        this.addShake(12);
+        this.wave(px, py, 0.9);
+        break;
+      }
       case EV_UP: {
         // v1.7: up! both sides can act on this very frame
         const f = s.f[e.who];
@@ -820,6 +847,7 @@ export class BattleView {
       if (!hide) this.drawTrail(i, dtFrames, newFrame && !frozen);
     }
     this.drawFields();
+    this.drawInk();
     for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.drawFighter(i, dtFrames, frozen);
     for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.drawPower(i);
     for (let i = 0; i < 2; i++) if (!this.hidden(i)) this.drawDrive(i);
@@ -1169,6 +1197,66 @@ export class BattleView {
     }
   }
 
+  /**
+   * スケッチのインク (v1.7): every live segment of ink, for both players to read — a bright core line with a soft glow, dots
+   * at the joints; it dims over its last second. While the pen is down a ring around the piece shows how long it keeps drawing.
+   */
+  private drawInk(): void {
+    for (let i = 0; i < 2; i++) {
+      const c = this.sim.char(i);
+      if (!c.moves.some((m) => m.ink)) continue;
+      const f = this.sim.s.f[i];
+      const col = this.fighters[i].color;
+      const g = this.glow;
+      const o = this.overlay;
+      this.sim.forEachInk(i, (x0, y0, x1, y1, life) => {
+        const k = Math.min(1, life / 60);
+        const blink = life < 60 && !settings.reduceFlash && Math.floor(this.t / 4) % 2 === 0 ? 0.5 : 1;
+        const ax = toPx(x0);
+        const ay = toPx(y0);
+        const bx = toPx(x1);
+        const by = toPx(y1);
+        g.moveTo(ax, ay).lineTo(bx, by).stroke({ width: 16, color: col, alpha: 0.1 * k * blink, cap: 'round' });
+        o.moveTo(ax, ay).lineTo(bx, by).stroke({ width: 5, color: mix(col, 0xbfd4ff, 0.35), alpha: 0.8 * k * blink, cap: 'round' });
+        o.circle(bx, by, 4).fill({ color: 0xffffff, alpha: 0.7 * k * blink });
+      });
+      if (f.inkT > 0 && f.st !== ST_KO) {
+        const ink = c.moves.find((m) => m.ink)!.ink!;
+        const cx = toPx(f.x);
+        const cy = toPx(f.y);
+        const R = 0.9 * PX;
+        const a0 = -Math.PI / 2;
+        const frac = Math.max(0, Math.min(1, f.inkT / ink.draw));
+        o.circle(cx, cy, R).stroke({ width: 2, color: col, alpha: 0.12 });
+        o.moveTo(cx + Math.cos(a0) * R, cy + Math.sin(a0) * R).arc(cx, cy, R, a0, a0 + Math.PI * 2 * frac).stroke({ width: 4, color: col, alpha: 0.7, cap: 'round' });
+        // the pen tip: a bright dot just under the piece
+        g.circle(cx, cy + 0.42 * PX, 9).fill({ color: col, alpha: 0.5 });
+        o.circle(cx, cy + 0.42 * PX, 4).fill({ color: 0xffffff, alpha: 0.95 });
+      }
+    }
+  }
+
+  /** フリック: while it is coming out, an arrow shows WHERE it will throw the target — the direction the stick points now. */
+  private drawKnockDir(i: number, x: number, y: number): void {
+    const f = this.sim.s.f[i];
+    if (f.st !== ST_ATTACK) return;
+    const m = this.sim.moveOf(f);
+    if (!m?.dirKnock || f.sf >= m.S + m.A + 4) return;
+    const a = (f.prevIn & 32 ? (f.prevIn & 31) * 32 : f.facing) * ANG_TO_RAD;
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    const g = this.overlay;
+    const col = this.fighters[i].color;
+    const from = 0.95 * PX;
+    const to = 2.2 * PX;
+    for (let d = from; d < to; d += 20) {
+      const d1 = Math.min(to, d + 11);
+      g.moveTo(x + cos * d, y + sin * d).lineTo(x + cos * d1, y + sin * d1);
+    }
+    g.stroke({ width: 4, color: col, alpha: 0.85, cap: 'round' });
+    this.arrowHead(g, x + cos * to, y + sin * to, a, 16, 0xffffff, 0.95);
+  }
+
   /** Overcharge (ヴォルト): while powered, jagged arcs crawl over a bright double halo (re-rolled each frame). */
   private drawPower(i: number): void {
     const f = this.sim.s.f[i];
@@ -1460,6 +1548,7 @@ export class BattleView {
     }
 
     if (i < 2 && (f.st === ST_DOWN || f.st === ST_WAKE)) this.drawDownTimer(f, x, y);
+    if (i < 2) this.drawKnockDir(i, x, y);
     this.drawDirection(i, x, y);
     this.drawPips(i, x, y);
 
