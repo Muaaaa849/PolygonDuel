@@ -16,6 +16,7 @@ import { KeyboardInput, keysFor, keyLabel } from '../../input/keyboard';
 import { IN_ATK, IN_S1, IN_S2, IN_AIM, aimBits, quantizeDir, AIM_DIRS } from '../../core/input';
 import { CpuPlayer, CPU_LEVELS, Dummy, DUMMY_MODES, type DummyMode } from '../../ai/cpu';
 import { sfx, vibrate } from '../../audio/sfx';
+import { bgm } from '../../audio/bgm';
 import { RollbackSession } from '../../net/rollback';
 import { EventFilter } from '../../net/event-filter';
 import type { PeerLink } from '../../net/transport';
@@ -758,6 +759,8 @@ export function battleScreen(cfg: BattleConfig): Screen {
     };
     touch.setAvailability({ s1: av(M_S1), s2: av(sim.s2Slot(f)), step: f.steps > 0 ? 'ok' : 'off' });
     // just-dodge slow motion: the attack button pulses ("press now → blink attack")
+    // the music drops to silence for the whole just-dodge slow motion
+    bgm.duck(sim.s.slow > 0);
     touch.setPrompt('atk', sim.s.slow > 0 && sim.s.slowWho === cfg.local && f.justWin > 0);
   }
 
@@ -795,12 +798,14 @@ export function battleScreen(cfg: BattleConfig): Screen {
 
   return {
     el: root,
+    bgm: 'battle',
     onBack: () => {
       openPause();
       return true;
     },
     dispose: () => {
       disposed = true;
+      bgm.duck(false);
       window.removeEventListener('mousemove', onMouseMove);
       cancelAnimationFrame(raf);
       document.removeEventListener('visibilitychange', onVis);

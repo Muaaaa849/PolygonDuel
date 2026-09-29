@@ -7,6 +7,8 @@ export type KeyBindings = Partial<Record<'solo' | 'p1' | 'p2', Partial<Record<st
 
 export interface Settings {
   volume: number;
+  /** BGM volume (0 = off). */
+  bgmVolume: number;
   haptics: boolean;
   lefty: boolean;
   buttonScale: number;
@@ -36,6 +38,7 @@ export interface Settings {
 
 const DEFAULTS: Settings = {
   volume: 0.7,
+  bgmVolume: 0.6,
   haptics: true,
   lefty: false,
   buttonScale: 1,
@@ -92,7 +95,7 @@ export function onSettings(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
-const EXPORT_KEYS: (keyof Settings)[] = ['volume', 'haptics', 'lefty', 'buttonScale', 'quality', 'reduceFlash', 'dynamicCamera', 'aimMode', 'guardMode', 'attackDir', 'showBrief', 'layout', 'keys', 'touchControls', 'mouseAim'];
+const EXPORT_KEYS: (keyof Settings)[] = ['volume', 'bgmVolume', 'haptics', 'lefty', 'buttonScale', 'quality', 'reduceFlash', 'dynamicCamera', 'aimMode', 'guardMode', 'attackDir', 'showBrief', 'layout', 'keys', 'touchControls', 'mouseAim'];
 
 /** Settings as a portable JSON file (controls layout included). */
 export function exportSettings(): string {

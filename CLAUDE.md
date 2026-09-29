@@ -104,6 +104,8 @@
          **S1 インクトレイル**（コスト1・五角・3F目から・全体10F）：5秒間、歩く・ステップ・踏み込みの跡が0.8uごとの点としてインクで8秒残る（`MoveDef.ink`、状態は `GameState.trail`＝両者32点の Int32Array＋`inkT`/`trHead`/`trBrk`）。**普段は通り抜け可能**。**ノックバックで吹き飛ばされている相手（のけぞり・ダウン・スタン）が相手のインクに触れる**と壁に当たった扱い：追加ダメージ45＋最大45（アリーナの壁は30＋30）で、触れたインクは消える。壁とインクは合わせて1コンボ2回まで（`wallHits`）。ガード中の押し戻し・歩き・ステップ・自分のインクでは起きない。
          **S2 フリック**（コスト2・円）：S16 A4 T45、リーチ2.8の**±75°の広い扇**（旧：細い突き）、40ダメージ、ノックバック1.9u（3段目のダウンの吹き飛ばし1.6uより少し強い）。**当たった瞬間の攻撃側の移動スティックの方向へ吹き飛ばす**（コマの向きは関係ない。`MoveDef.dirKnock`、`FighterState.prevIn`）。スティックを離していれば相手を押した方向。2段目から繋がる（1→2→S2＝116）。相手の方向へ吹き飛ばすと体でぶつかる。ガードされたら普通の円。
      - **固有エフェクト（v1.7追記）**：ブラッド＝ヘヴィブロウは予兆で赤い輪が収束→全周の深紅の薙ぎ `heavy_spin`→着弾・ガードとも `smash_t`、クラッシュブロウは赤い三角の破片が砕ける `crush_blow`、点火 `drive_t`。スケッチ＝インクトレイル点火で `ink_burst`（ペンキの飛沫の王冠）、インクの壁に激突で `ink_wall`（大きなペンキの飛散）、フリックは振りで扇状のペンキの帯 `flick_swing`、着弾で吹き飛ばす方向へ `flick_hit`（流動的なペンキ、シアン→紫→ピンク）。通常技の汎用の斬撃は、これらの技では出さない（`stateFx` の `ownFx`）。
+- **BGM（v1.8）**：メニュー系の画面は `menu.mp3`（Tactical Calm）、対戦（チュートリアル・オンライン含む）は `battle.mp3`（Velocity Breach）。`Screen.bgm` で画面ごとに指定（既定 menu）、`router.show` で切替（1.2秒クロスフェード）。
+  ループは末尾4秒を先頭とクロスフェード（`<audio>` 2本が交代。ストリーミングなのでメモリを食わない）。ジャスト回避のスロー中（`sim.s.slow>0`）だけ `bgm.duck(true)` で無音へフェード、終わると戻る。設定に「BGM音量」（`settings.bgmVolume`、既定0.6）。SWは mp3 を素通し（Range要求のため）。
 - **ダウンの演出（可読性重視）**：倒れた瞬間に氷色の六角の盾（`down_t`）、コマの周りにカウントダウンの輪（`drawDownTimer`。弧の残り＝両者が動けるようになるまで。15F＝0.25秒ごとの目盛り、最後の琥珀色の断片＝起き上がり、その前10Fは点滅）、起き上がりの瞬間に上向きの矢羽根（`wake_t`）、動けるようになった瞬間に収束する輪（`ready_t`。イベント `EV_UP`）。音は `sfx.wake` / `sfx.ready`。
 
 ---
@@ -149,7 +151,7 @@ src/net/       qr-signaling.ts（SDP圧縮）、transport.ts（WebRTC）、rollb
 src/input/     touch.ts（フローティングスティック＋形アイコンボタン）、keyboard.ts（＋ゲームパッド）
 src/render/    pixi-app.ts（アプリ・60fps上限・Pixiの不具合回避）、battle-view.ts（描画本体）、shapes.ts（64頂点モーフ）、
                vfx.ts（手続き的パーティクル）、fx-sprites.ts（焼き込みスプライト）、warmup.ts（GPUの事前準備）
-src/audio/     sfx.ts（WebAudio合成音・振動）
+src/audio/     sfx.ts（WebAudio合成音・振動）、bgm.ts（BGM。public/audio/menu.mp3＝メニュー、battle.mp3＝対戦）
 src/ai/        cpu.ts（CPU＋トレモ用ダミー）
 src/app/       ui.ts, router.ts, settings.ts, hud.ts, qr-view.ts, frame-clock.ts（対戦ループのフレーム配分）,
                screens/{title,select,battle,online,tutorial,info,frame-meter}.ts

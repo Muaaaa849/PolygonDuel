@@ -7,6 +7,16 @@ let master: GainNode | null = null;
 let comp: DynamicsCompressorNode | null = null;
 let noiseBuf: AudioBuffer | null = null;
 
+const unlockHooks: (() => void)[] = [];
+/** Shared AudioContext (null until the first user gesture). */
+export function audioCtx(): AudioContext | null {
+  return ctx;
+}
+/** Run when the AudioContext is (re)unlocked — the BGM starts / retries from here. */
+export function onAudioUnlock(cb: () => void): void {
+  unlockHooks.push(cb);
+}
+
 /** Must be called from a user gesture (iOS). */
 export function unlockAudio(): void {
   if (!ctx) {
@@ -24,6 +34,7 @@ export function unlockAudio(): void {
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   }
   if (ctx.state === 'suspended') void ctx.resume();
+  for (const cb of unlockHooks) cb();
 }
 
 export function setVolume(v: number): void {

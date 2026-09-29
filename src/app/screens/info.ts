@@ -4,6 +4,7 @@ import { SYSTEM } from '../../data/system';
 import { backButton, h, hex, shapeIcon, SHAPE_INFO } from '../ui';
 import { settings, saveSettings } from '../settings';
 import { sfx, setVolume } from '../../audio/sfx';
+import { setBgmVolume } from '../../audio/bgm';
 import { show, type Screen } from '../router';
 import { layoutEditorScreen, exportSettingsFile, openImport } from './layout-editor';
 import { keybindScreen } from './keybind-editor';
@@ -166,7 +167,8 @@ export function settingsScreen(onBack: () => void): Screen {
     h('div', { class: 'topbar' }, backButton(onBack), h('h2', null, 'SETTINGS'), h('span', { class: 'sub' }, '設定')),
     h('div', { class: 'scroll' },
       h('div', { class: 'list', style: 'max-width:640px;margin:8px auto 0' },
-        range('音量', '効果音はすべてその場で合成しています', 0, 1, 0.05, () => settings.volume, (v) => { saveSettings({ volume: v }); setVolume(v); }),
+        range('効果音の音量', '効果音はすべてその場で合成しています', 0, 1, 0.05, () => settings.volume, (v) => { saveSettings({ volume: v }); setVolume(v); }),
+        range('BGM音量', 'メニューと対戦の音楽（0で消音）', 0, 1, 0.05, () => settings.bgmVolume, (v) => { saveSettings({ bgmVolume: v }); setBgmVolume(v); }),
         toggle('haptics', '振動', 'Androidのみ。ヒット/ガード/クラッシュで振動'),
         range('ボタンの大きさ', 'スティックとボタンの大きさ', 0.8, 1.3, 0.05, () => settings.buttonScale, (v) => saveSettings({ buttonScale: v })),
         toggle('lefty', '左右入れ替え', 'スティックを右手、ボタンを左手に（ボタン配置を編集していない時）'),

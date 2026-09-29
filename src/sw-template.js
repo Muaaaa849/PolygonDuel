@@ -24,6 +24,8 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  // music streams with Range requests: leave it to the network / HTTP cache
+  if (/\.mp3$/.test(new URL(req.url).pathname)) return;
   if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req)

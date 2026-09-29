@@ -2365,3 +2365,30 @@ kbd {
   border-color: var(--accent, #6ff3ff);
   box-shadow: 0 0 12px rgba(111, 243, 255, 0.4);
 }
+
+/* opponent picker: scrolls sideways so the confirm button always stays on screen */
+.select-footer .opp-scroll {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.select-footer .opp-scroll::-webkit-scrollbar {
+  display: none;
+}
+.select-footer .opp-scroll .segmented {
+  display: flex;
+  width: max-content;
+}
+.select-footer .segmented:not(.compact),
+.select-footer .hint:empty {
+  flex: 0 0 auto;
+}
+.select-footer .hint:empty {
+  display: none;
+}
+.select-footer .btn {
+  flex-shrink: 0;
+}

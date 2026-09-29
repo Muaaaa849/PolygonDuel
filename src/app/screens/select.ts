@@ -294,6 +294,8 @@ export function selectScreen(opts: SelectOptions): Screen {
   }, initial);
 
   const oppSeg = h('div', { class: `segmented${CHARACTERS.length >= 5 ? ' compact' : ''}` });
+  // the opponent list scrolls sideways when the roster outgrows the screen
+  const oppScroll = h('div', { class: 'opp-scroll' }, oppSeg);
   const levelSeg = h('div', { class: 'segmented' });
   const refreshSeg = () => {
     oppSeg.innerHTML = '';
@@ -305,6 +307,7 @@ export function selectScreen(opts: SelectOptions): Screen {
         refresh();
       };
       oppSeg.append(b);
+      if (i === p2) requestAnimationFrame(() => b.scrollIntoView({ inline: 'nearest', block: 'nearest' }));
     });
     levelSeg.innerHTML = '';
     CPU_LEVELS.forEach((l, i) => {
@@ -351,9 +354,9 @@ export function selectScreen(opts: SelectOptions): Screen {
 
   const footer = h('div', { class: 'select-footer' });
   if (opts.mode === 'cpu') {
-    footer.append(h('span', { style: 'font-size:12px;color:var(--muted)' }, '相手'), oppSeg, h('span', { style: 'font-size:12px;color:var(--muted)' }, '強さ'), levelSeg);
+    footer.append(h('span', { style: 'font-size:12px;color:var(--muted)' }, '相手'), oppScroll, h('span', { style: 'font-size:12px;color:var(--muted)' }, '強さ'), levelSeg);
   } else if (opts.mode === 'training') {
-    footer.append(h('span', { style: 'font-size:12px;color:var(--muted)' }, 'ダミー'), oppSeg);
+    footer.append(h('span', { style: 'font-size:12px;color:var(--muted)' }, 'ダミー'), oppScroll);
   }
   footer.append(hint, confirm);
 
