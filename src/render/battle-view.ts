@@ -312,6 +312,21 @@ export class BattleView {
           this.flashScreen(col, 0.18);
         }
         if (this.moveIs(e.who, 'flareRush')) this.fx.spawn('flare', { x, y, size: 3.4 * PX });
+        if (this.moveIs(e.who, 'flick')) {
+          // v1.7 paint splashes off the target in the direction it is thrown
+          const dd = s.f[1 - e.who];
+          this.fx.spawn('flick_hit', { x: toPx(dd.x), y: toPx(dd.y), size: 3.6 * PX, rot: dd.kbAngle * ANG_TO_RAD, alpha: 0.75 });
+          this.vfx.spark(x, y, 0xb8a0ff, 10, 26, 34, 5);
+          this.addShake(8);
+        }
+        if (this.moveIs(e.who, 'driveHeavy')) {
+          this.fx.spawn('smash_t', { x, y, size: 3.6 * PX, tint: col, alpha: 0.5 });
+          this.fx.spawn('ripple_t', { x: toPx(s.f[e.who].x), y: toPx(s.f[e.who].y), size: 4.5 * PX, tint: col, alpha: 0.35 });
+          this.vfx.ring(x, y, 0xffffff, 20, 240, 20, 10);
+          this.flashScreen(col, 0.12);
+          this.wave(x, y, 1.4);
+          this.addShake(20);
+        }
         if (this.moveIs(e.who, 'blast')) {
           // point-blank scatter: a big shock front that throws the target across the arena
           this.fx.spawn('blast', { x: toPx(s.f[e.who].x), y: toPx(s.f[e.who].y), size: 4.2 * PX, rot: s.f[e.who].facing * ANG_TO_RAD, alpha: 0.9 });
@@ -345,6 +360,13 @@ export class BattleView {
           this.fx.spawn('guard_t', { x: toPx(df.x), y: toPx(df.y), size: 2.7 * PX, rot: def.wobbleAng, tint: mix(def.color, 0x9cc8ff, 0.55), speed: 0.6 });
         }
         this.addShake(3);
+        if (this.moveIs(e.who, 'driveHeavy')) {
+          // v1.7 a guarded heavy blow: the guard holds, but it is thrown 3.5u — a big slam on the guard
+          this.fx.spawn('smash_t', { x, y, size: 3.4 * PX, tint: col, alpha: 0.5 });
+          this.vfx.ring(x, y, 0xffffff, 20, 200, 18, 8);
+          this.wave(x, y, 1.1);
+          this.addShake(16);
+        }
         break;
       }
       case EV_CRUSH:
@@ -1060,6 +1082,28 @@ export class BattleView {
             this.addShake(12);
           });
           break;
+        case 'flick':
+          // v1.7 a ribbon of paint whipped out along the thrust (the ink colours: cyan → violet → pink)
+          once(f.sf >= m.S, () => {
+            this.fx.spawn('flick_swing', { x, y, size: reach * 1.9, rot: face, alpha: 0.6, follow: pos });
+            this.addShake(4);
+          });
+          break;
+        case 'driveHeavy': {
+          // v1.7 the heavy blow winds up: red rings close in on the fist, harder the closer it gets to landing
+          if (f.sf < m.S) {
+            const p = f.sf / m.S;
+            const o = this.overlay;
+            const rr = (1.6 - 1.15 * p) * PX;
+            o.circle(x, y, rr).stroke({ width: 3 + 6 * p, color: fv.color, alpha: 0.25 + 0.65 * p });
+            o.circle(x + cos * reach * 0.7, y + sin * reach * 0.7, (0.5 + 0.7 * (1 - p)) * PX).stroke({ width: 2 + 3 * p, color: 0xffffff, alpha: 0.2 + 0.6 * p });
+          }
+          once(f.sf >= m.S, () => {
+            this.fx.spawn('smash_t', { x: x + cos * reach * 0.8, y: y + sin * reach * 0.8, size: 2.8 * PX, tint: fv.color, alpha: 0.45 });
+            this.addShake(10);
+          });
+          break;
+        }
         case 'shieldBash':
           once(f.sf >= m.S, () => this.fx.spawn('bash', { x: x + cos * 60, y: y + sin * 60, size: 3.2 * PX, rot: face }));
           break;

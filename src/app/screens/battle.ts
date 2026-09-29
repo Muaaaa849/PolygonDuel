@@ -103,7 +103,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
     const f = sim.s.f[cfg.local];
     if (f.st !== ST_FREE && f.st !== ST_STEP) return false;
     if (id === 'atk' && f.justWin > 0) return false; // just attack auto-targets
-    if (id === 'atk' && f.drive) return false; // overdrive: a HELD ATK is the guard break, so it must be a plain hold
+    if (id === 'atk' && f.drive) return false; // overdrive: a HELD ATK is the heavy blow, so it must be a plain hold
     const m = sim.char(cfg.local).moves[slotFor(id)];
     return (m.hasHitbox || !!m.proj || !!m.field) && !m.autoAim && !m.radial;
   };
@@ -115,6 +115,11 @@ export function battleScreen(cfg: BattleConfig): Screen {
   touch.setManualGuard((controlModes[cfg.local] & CTL_MANUAL_GUARD) !== 0);
   const localDef = defs[cfg.local];
   const skillLook = (i: number) => ({ shape: localDef.skills[i].shape, label: `S${i + 1}`, cost: localDef.skills[i].cost });
+  /** S1's look for the move it would start now (ブラッド: the guard break while the overdrive burns). */
+  const s1Look = () => {
+    const d = sim.char(cfg.local).moves[sim.skillSlot(sim.s.f[cfg.local], M_S1)].def!;
+    return { shape: d.shape, label: 'S1', cost: d.cost };
+  };
   /** S2's look for the move it would start now (ヴォルト: overcharge from neutral, turnback after a dash). */
   const s2Look = () => {
     const d = sim.char(cfg.local).moves[sim.s2Slot(sim.s.f[cfg.local])].def!;
@@ -125,7 +130,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
   let shownKey = 0;
   const syncModeButtons = () => {
     const f = sim.s.f[cfg.local];
-    const key = f.shootMode * 64 + sim.s2Slot(f) + 1;
+    const key = f.shootMode * 64 + sim.s2Slot(f) + 1 + (f.drive ? 4096 : 0);
     if (key === shownKey || shownKey === 0) {
       shownKey = key;
       return;
@@ -133,7 +138,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
     shownKey = key;
     touch.setButtons(f.shootMode
       ? { atk: { shape: 'diamond', label: 'SHOT' }, s1: { shape: 'square', label: '通常へ' }, s2: s2Look(), step: { shape: 'arrow', label: 'STEP' } }
-      : { atk: { shape: 'circle', label: 'ATTACK' }, s1: skillLook(0), s2: s2Look(), step: { shape: 'arrow', label: 'STEP' } });
+      : { atk: { shape: 'circle', label: 'ATTACK' }, s1: s1Look(), s2: s2Look(), step: { shape: 'arrow', label: 'STEP' } });
   };
 
   const bannerLayer = h('div');

@@ -166,6 +166,7 @@
 - 倒れている時間を75Fに（`SYSTEM.down.lying`）。ダウンの演出：`down_t`（盾）・カウントダウンの輪（`drawDownTimer`）・`wake_t`（矢羽根）・`ready_t`（収束する輪）、イベント `EV_UP`、音 `sfx.wake` / `sfx.ready`。
 - 新キャラ **ブラッド**（`blood.ts`、キャラ番号7）：`MoveDef.channel`（押しっぱなしで体力→コスト、3秒CT）、`CharacterDef.drive`＋`MoveDef.driveOn`（コストが燃料の超強化・ATK長押しでGB・燃え尽き後の弱体と歩行不能）。状態 `drive/driveTick/exhaust/noWalk/s1Cd`、`Sim.powerOf/reachOf/canAfford`、`EV_DRIVE/EV_CHARGE`。血の代償は相手が無敵で倒れている間も出せる（`wakeLock` の例外）。テスト `tests/blood.test.ts`。
 - 新キャラ **スケッチ**（`sketch.ts`、キャラ番号8）：`MoveDef.ink`（インクの跡。状態は `GameState.trail`＝Int32Array・スナップショット/ハッシュに入る）、`MoveDef.dirKnock`（当たった瞬間のスティック方向へ吹き飛ばす）、`Sim.forEachInk`、`EV_INK/EV_TRAIL`、`fixed.segsCross`。壁とインクは1コンボ合わせて2回まで。テスト `tests/sketch.test.ts`。
+- **v1.7b（ユーザー指示）**：オーバードライブの点火を10F（全体18F）に。長押しは `atkHold`（途切れず押している間のフレーム数）で判定し連打では出ない。燃焼中のS1＝ガード崩し（`drive.s1`）、ATK長押し（12F）＝強攻撃ヘヴィブロウ（`driveHeavy`：発生30F・90ダメージ・大ダウン・ガードでも3.5u・壁で30）。インクトレイルは全体10Fに。エフェクト `smash_t` / `flick_swing` / `flick_hit`。
 - 描画：ブラッドの燃料の輪・炎のオーラ・充填の収束リング・燃え尽き（灰色＋⊘）、スケッチのインクの線とペン先・フリックの方向矢印。HUDにDRIVE/EXHAUST/INKの表示。技詳細シートの説明とデモ、CPUの判断も追加。
 - **人間同士では未検証**：ブラッドの数値（オーバードライブ20秒の火力・燃え尽き後の弱体・血の代償のHPコスト）、スケッチのインク（壁より痛い45〜90・キャラ選択の白い見た目）、通常攻撃中の30%移動がフレーム規約の読み合い（ヒット確認・GC）に与える影響。
 

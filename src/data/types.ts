@@ -255,7 +255,8 @@ export interface CharacterDef {
   /**
    * Overdrive (ブラッドのS2): while it lasts the cost gauge drains (1 quarter per `drainFrames`; no cost can be gained)
    * and the fighter gets `power` % damage, `walk` % speed, `reach` % reach and a guard gauge that drains at half speed (3 s).
-   * Holding ATK for `hold.at` frames after a fresh 1st normal turns it into the guard break `hold.move`.
+   * S1 becomes the move `s1` (a guard break) while it burns. ATK held CONTINUOUSLY for `hold.at` frames from the press that
+   * started a 1st normal turns it into the heavy attack `hold.move` (mashing never counts: the hold restarts on every release).
    * When the cost runs out: `exhaust.frames` of weakness (damage `exhaust.power` %, no overdrive) and
    * `exhaust.noWalk` frames in which only steps move the fighter.
    */
@@ -266,6 +267,7 @@ export interface CharacterDef {
     power: number;
     walk: number;
     reach: number;
+    s1: string;
     hold: { at: number; move: string };
     exhaust: { frames: number; noWalk: number; power: number };
   };

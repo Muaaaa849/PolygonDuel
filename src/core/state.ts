@@ -144,6 +144,8 @@ export interface FighterState {
   stepPct: number;
   /** Ink trail (スケッチ): frames of drawing left, the next trail slot to write (ring), and "the pen was lifted" (the next point starts a new stroke). */
   inkT: number;
+  /** Frames the ATK button has been held down without a break (the overdrive's hold-for-heavy needs a real hold, not a mash). */
+  atkHold: number;
   trHead: number;
   trBrk: number;
   /** Overdrive (ブラッド): 1 while active, frames since the last cost quarter drained; frames of exhaustion / no-walking left; S1 cooldown left. */
@@ -215,7 +217,7 @@ export function newFighter(): FighterState {
     limited: 0, buff: 0, healUses: 0, csHit: 0, prevIn: 0, lastDir: 0,
     aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, wallHits: 0, lungePct: 100, momStep: 0, momDir: 0,
     shootMode: 0, justNoMul: 0, wallGuard: 0, manualGuard: 0, faceFoe: 0, power: 0, instLock: 0, pullUsed: 0, wakeBoost: 0, stepPct: 100,
-    drive: 0, driveTick: 0, exhaust: 0, noWalk: 0, s1Cd: 0, inkT: 0, trHead: 0, trBrk: 0,
+    drive: 0, driveTick: 0, exhaust: 0, noWalk: 0, s1Cd: 0, inkT: 0, atkHold: 0, trHead: 0, trBrk: 0,
     sh0n: 0, sh0x: 0, sh0y: 0, sh0a: 0, sh0r: 0, sh1n: 0, sh1x: 0, sh1y: 0, sh1a: 0, sh1r: 0, sh2n: 0, sh2x: 0, sh2y: 0, sh2a: 0, sh2r: 0,
     fieldT: 0, fieldX: 0, fieldY: 0,
     ghostT: 0, ghostMode: 0, ghostX: 0, ghostY: 0, ghostSx: 0, ghostSy: 0, ghostTx: 0, ghostTy: 0, ghostFace: 0, ghostAtk: 0,

@@ -63,11 +63,13 @@ function facts(m: MoveDef, c?: CharacterDef): [string, string][] {
   }
   if (m.driveOn && c?.drive) {
     const d = c.drive;
-    const gb = c.extraMoves?.find((x) => x.id === d.hold.move);
+    const gb = c.extraMoves?.find((x) => x.id === d.s1);
+    const hv = c.extraMoves?.find((x) => x.id === d.hold.move);
     rows.push(['発動', `${m.driveOn}F目に点火（全体${m.T}F）。コスト0だが${d.minCost}以上が必要。コストを燃料に、コスト1あたり${(COST_UNIT * d.drainFrames) / 60}秒で減っていく（コスト4なら${(SYSTEM.cost.max * COST_UNIT * d.drainFrames) / 60}秒）`]);
     rows.push(['超強化', `攻撃力+${d.power}%・移動速度+${d.walk}%・リーチ+${d.reach}%・ガードゲージの減りが半分（3秒ガードできる）`]);
     rows.push(['縛り', '解除できない。燃焼中はコストが増えず、血の代償も使えない']);
-    if (gb) rows.push(['ATK長押し', `通常攻撃を${d.hold.at}F以上押しっぱなしで「${gb.name}」（ガード崩し）に変わる。押してから${gb.S}Fで発生。ガード中→クラッシュ${gb.guardBreak?.crush}F`]);
+    if (gb) rows.push(['燃焼中のS1', `「${gb.name}」（ガード崩し）に変わる（血の代償は使えない）。発生${gb.S}F。ガード中→クラッシュ${gb.guardBreak?.crush}F`]);
+    if (hv) rows.push(['ATK長押し', `通常攻撃を${d.hold.at}F以上押しっぱなし（連打では出ない）で「${hv.name}」（強攻撃）。発生${hv.S}F（ガード崩しと同じ）、${hv.dmg}ダメージ＋大ダウン。ガードされても${hv.pushback}u吹き飛ばす（壁で30）`]);
     rows.push(['燃え尽きると', `${d.exhaust.frames / 60}秒間は弱体化（攻撃力${d.exhaust.power}%・オーバードライブ不可）。さらに${d.exhaust.noWalk / 60}秒は歩けず、ステップだけで移動する`]);
     rows.push(['弱点', '溜めが五角で見える。燃焼中も残り時間が輪で見える＝時間切れまで逃げられる。燃え尽きた直後は最大のチャンス']);
     return rows;

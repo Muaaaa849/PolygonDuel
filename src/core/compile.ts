@@ -137,7 +137,7 @@ export interface CChar {
   /** Shooting-mode character: walk in the mode (milli-u / tick) and move slots. */
   shooter: { walk: number; shots: number[]; off: number; blast: number } | null;
   /** Overdrive character (ブラッド): the spec, with the hold-ATK guard break's slot. */
-  drive: { drainFrames: number; minCost: number; power: number; walk: number; reach: number; holdAt: number; holdMove: number; exhaustFrames: number; noWalkFrames: number; exhaustPower: number } | null;
+  drive: { drainFrames: number; minCost: number; power: number; walk: number; reach: number; holdAt: number; holdMove: number; s1Move: number; exhaustFrames: number; noWalkFrames: number; exhaustPower: number } | null;
   /** S2 from neutral / a step starts this slot (-1 = S2 itself). */
   s2Neutral: number;
   /** A non-shooter's projectile move (its bullets' spec), -1 = none. */
@@ -315,7 +315,7 @@ export function compileCharacter(def: CharacterDef, idx: number): CChar {
     drive: def.drive
       ? {
           drainFrames: def.drive.drainFrames, minCost: Math.round(def.drive.minCost * COST_UNIT), power: def.drive.power, walk: def.drive.walk,
-          reach: def.drive.reach, holdAt: def.drive.hold.at, holdMove: slotIds[def.drive.hold.move],
+          reach: def.drive.reach, holdAt: def.drive.hold.at, holdMove: slotIds[def.drive.hold.move], s1Move: slotIds[def.drive.s1],
           exhaustFrames: def.drive.exhaust.frames, noWalkFrames: def.drive.exhaust.noWalk, exhaustPower: def.drive.exhaust.power,
         }
       : null,

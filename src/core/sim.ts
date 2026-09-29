@@ -151,7 +151,7 @@ export class Sim {
         lastDir: i === 0 ? 0 : 16,
         aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, lungePct: 100, wallHits: 0, momStep: 0, momDir: 0,
         ghostT: 0, ghostMode: 0, shootMode: 0, justNoMul: 0, wallGuard: 0, fieldT: 0, power: 0, instLock: 0, pullUsed: 0, wakeBoost: 0, stepPct: 100,
-        drive: 0, driveTick: 0, exhaust: 0, noWalk: 0, s1Cd: 0, inkT: 0, trHead: 0, trBrk: 0,
+        drive: 0, driveTick: 0, exhaust: 0, noWalk: 0, s1Cd: 0, inkT: 0, atkHold: 0, trHead: 0, trBrk: 0,
       });
       for (let j = 0; j < MAX_SHOTS; j++) setShot(f, j, null);
       f.char = keepChar;
@@ -258,6 +258,7 @@ export class Sim {
     const pressed = w & ~f.prevIn;
     f.prevIn = w;
     if (w & IN_STICK) f.lastDir = w & 31;
+    f.atkHold = w & IN_ATK ? Math.min(f.atkHold + 1, 1000) : 0;
     const B = SYSTEM.buffer + 1; // decremented once before use this frame
     // an aimed press carries its direction + reach level with the buffered press
     const ang = aimAngle(w);
@@ -312,8 +313,9 @@ export class Sim {
         this.carry(f);
         if (m.walkPct > 0 && w & IN_STICK) this.walk(f, dirAngle(w), m.walkPct);
         if (m.channel && this.channelFrame(i, w, m)) break;
-        // overdrive: ATK held after a fresh 1st normal → the guard break (its startup counts from the press)
-        if (f.drive && f.move === M_N1 && w & IN_ATK && f.sf === COMPILED[f.char].drive!.holdAt) {
+        // overdrive: ATK held without a break for `holdAt` frames since the press that began this 1st normal → the heavy
+        // attack (its startup counts from the press). A mash restarts the count at every release, so it never gets there.
+        if (f.drive && f.move === M_N1 && w & IN_ATK && f.atkHold === COMPILED[f.char].drive!.holdAt) {
           const keep = f.sf;
           this.startMove(i, COMPILED[f.char].drive!.holdMove, w, true);
           f.sf = keep;
@@ -592,7 +594,10 @@ export class Sim {
    * off while it is on, and out of N2 it is the switch blast. Everyone else: the slot itself.
    */
   skillSlot(f: FighterState, slot: number, from = -1): number {
-    const sh = COMPILED[f.char].shooter;
+    const c = COMPILED[f.char];
+    // (ブラッド in the overdrive: S1 is the guard break — the life charge is not available then)
+    if (c.drive && f.drive && slot === M_S1) return c.drive.s1Move;
+    const sh = c.shooter;
     if (!sh || slot !== M_S1) return slot;
     if (from === M_N2) return sh.blast;
     return f.shootMode ? sh.off : slot;
@@ -904,7 +909,7 @@ export class Sim {
     if (m.channel) this.charge(i, m.channel.hp, m.channel.gain);
     // which button started it (shots = ATK; mode off / blast = S1)
     const sh = c.shooter;
-    const btn = mi === M_N1 || mi === M_JA || m.proj ? 1 : mi === M_S1 || (sh && (mi === sh.off || mi === sh.blast)) ? 2 : mi === M_S2 || mi === c.s2Neutral ? 3 : 0;
+    const btn = mi === M_N1 || mi === M_JA || m.proj ? 1 : mi === M_S1 || (c.drive && mi === c.drive.s1Move) || (sh && (mi === sh.off || mi === sh.blast)) ? 2 : mi === M_S2 || mi === c.s2Neutral ? 3 : 0;
     const aim = btn === 1 ? f.aimAtk : btn === 2 ? f.aimS1 : btn === 3 ? f.aimS2 : 0;
     if (btn === 1) f.bufAtk = f.aimAtk = 0;
     else if (btn === 2) f.bufS1 = f.aimS1 = 0;

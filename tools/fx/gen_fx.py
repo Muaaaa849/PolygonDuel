@@ -1013,6 +1013,133 @@ def drive_burst(size=320, n=16):
     save('drive_t', frames, tint=True)
 
 
+def smash_heavy(size=320, n=14):
+    """v1.7 ブラッドのヘヴィブロウ (white, tinted): a ground-pound. A heavy shock ring slams out, jagged cracks
+    race across the floor, a fan of debris lines flies out, and the middle flashes hard then collapses. Heavier and
+    blunter than `hit_heavy_t`: fewer, thicker shapes."""
+    x, y, r, th = grid(size)
+    frames = []
+    g = np.random.default_rng(8181)
+    cracks = [(g.uniform(0, 2 * math.pi), g.uniform(0.6, 1.0)) for _ in range(9)]
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(min(1.0, t * 1.5))
+        inten = gauss(r - (0.12 + 0.8 * e), 0.05 + 0.05 * t) * (1 - t) ** 1.1 * 2.4            # slam ring
+        inten += gauss(r - (0.06 + 0.5 * e), 0.09) * (1 - t) ** 1.6 * 0.9                        # inner echo
+        inten += gauss(r, 0.13 + 0.22 * e) * (1 - t) ** 2.5 * 1.5                                # core flash
+        for a, ln in cracks:                                                                     # jagged cracks
+            d = np.abs(np.angle(np.exp(1j * (th - a))))
+            jag = 0.02 * np.sin(r * 34 + a * 5)
+            reach = ln * (0.25 + 0.72 * e)
+            inten += gauss((d + jag) * r, 0.008 + 0.012 * (1 - t)) * (r < reach) * (r > 0.1) * (1 - t) ** 0.8 * 1.5
+        for a, ln in cracks[:6]:                                                                 # debris chunks
+            u = x * math.cos(a) + y * math.sin(a)
+            v = -x * math.sin(a) + y * math.cos(a)
+            head = 0.25 + 0.7 * e * ln
+            inten += gauss(v, 0.02) * (u < head) * (u > head - 0.14) * (1 - t) ** 1.2 * 1.6
+        frames.append(rgba(glowify(inten, 4, 0.6), white_core=0.8))
+    save('smash_t', frames, tint=True)
+
+
+def _paint_color(u):
+    """Paint gradient along a stroke, u in [0, 1]: cyan → violet → hot pink."""
+    u = np.clip(u, 0, 1)[..., None]
+    c0 = np.array((0.30, 0.88, 1.0), np.float32)
+    c1 = np.array((0.60, 0.42, 1.0), np.float32)
+    c2 = np.array((1.0, 0.38, 0.72), np.float32)
+    return np.where(u < 0.5, c0 + (c1 - c0) * (u * 2), c1 + (c2 - c1) * (u * 2 - 1))
+
+
+def _goo(x, y, blobs):
+    """Sum of gaussian blobs (cx, cy, radius): thresholding it gives merging liquid edges (metaballs)."""
+    f = np.zeros_like(x)
+    for cx, cy, rad in blobs:
+        if rad <= 0.004:
+            continue
+        f += np.exp(-(((x - cx) ** 2 + (y - cy) ** 2) / (rad * rad)))
+    return f
+
+
+def _paint_rgba(field, u, fade=1.0):
+    """Liquid paint shading: a smooth threshold for the body, a bright thick middle, a white specular rim."""
+    body = smooth(0.38, 0.55, field)
+    thick = smooth(0.9, 2.0, field)
+    rim = np.clip(body - smooth(0.55, 0.85, field), 0, 1)
+    col = _paint_color(u) * (0.75 + 0.25 * thick[..., None])
+    col = col * (1 - 0.25 * thick[..., None]) + 0.25 * thick[..., None]
+    col = np.clip(col * 0.85 + rim[..., None] * 0.3, 0, 1)
+    a = np.clip(body * fade, 0, 1)
+    glow = blur(body.astype(np.float32), 5) * 0.35 * fade
+    out = np.dstack([col, np.clip(a + glow * (1 - a), 0, 1)])
+    return out.astype(np.float32)
+
+
+def flick_swing(size=384, n=12):
+    """v1.7 スケッチのフリック、振り (baked colour): a ribbon of liquid paint whipped out along +x from the piece
+    (sprite centre = the attacker). The head races out and rolls, the tail retracts, droplets fly off the tip."""
+    x, y, r, th = grid(size)
+    frames = []
+    g = np.random.default_rng(6161)
+    drops = [(g.uniform(0.15, 0.9), g.uniform(-1, 1), g.uniform(0.02, 0.05)) for _ in range(14)]
+    for k in range(n):
+        t = k / (n - 1)
+        head = 0.94 * ease_out(min(1.0, (k + 1) / 4))
+        tail = 0.9 * max(0.0, (k - 3) / (n - 3)) ** 1.4
+        fade = 1.0 if t < 0.6 else max(0.0, 1 - (t - 0.6) / 0.4)
+        blobs = []
+        for j in range(40):
+            q = j / 39
+            px = tail + (head - tail) * q
+            if px < 0.02:
+                continue
+            thick = 0.04 + 0.11 * math.sin(math.pi * min(1.0, q * 0.85 + 0.12)) * (1 - 0.5 * t)
+            wob = 0.09 * math.sin(7.0 * px + 2.4 - k * 0.55) * (0.3 + 0.7 * q) * (1 - 0.4 * t)
+            blobs.append((px, wob, thick))
+        # a rolling bulb at the head
+        blobs.append((head, 0.09 * math.sin(7.0 * head + 2.4 - k * 0.55) * (1 - 0.4 * t), 0.12 * (1 - 0.4 * t)))
+        # droplets torn off the tip: they fly ahead and outward
+        for dx, dy, rad in drops:
+            life = np.clip((t - 0.1) / 0.9, 0, 1)
+            if life <= 0:
+                continue
+            blobs.append((min(0.99, head * 0.55 + dx * 0.55 * ease_out(life) + 0.1), dy * 0.34 * ease_out(life) + 0.06 * math.sin(k + dx * 9), rad * (1 - life * 0.6)))
+        field = _goo(x, y, blobs)
+        frames.append(_paint_rgba(field, np.clip(x * 0.55 + 0.5, 0, 1), fade))
+    save('flick_swing', frames)
+
+
+def flick_splash(size=320, n=14):
+    """v1.7 スケッチのフリック、着弾 (baked colour): the paint splashes from the hit point in a fan toward +x —
+    a fat splat in the middle, streaks that pull out into tongues, drops that break off. Rotate it to the knock direction."""
+    x, y, r, th = grid(size)
+    frames = []
+    g = np.random.default_rng(7373)
+    rays = [(g.uniform(-0.75, 0.75), g.uniform(0.55, 1.0)) for _ in range(9)]
+    drops = [(g.uniform(-0.9, 0.9), g.uniform(0.3, 1.0), g.uniform(0.018, 0.04)) for _ in range(16)]
+    for k in range(n):
+        t = k / (n - 1)
+        e = ease_out(min(1.0, t * 1.4))
+        fade = 1.0 if t < 0.55 else max(0.0, 1 - (t - 0.55) / 0.45)
+        blobs = [(0.0, 0.0, 0.16 * (1 - 0.5 * t) + 0.05 * math.sin(t * 9) * (1 - t))]          # the splat
+        for a, ln in rays:
+            L = ln * (0.18 + 0.78 * e)
+            for j in range(14):
+                q = j / 13
+                d = L * q
+                rad = (0.075 * (1 - q) ** 0.8 + 0.018) * (1 - 0.6 * max(0, t - 0.5) * 2)
+                sway = 0.05 * math.sin(q * 5 + a * 3 + k * 0.4) * q
+                blobs.append((d * math.cos(a) - sway * math.sin(a), d * math.sin(a) + sway * math.cos(a), rad))
+        for a, ln, rad in drops:                                                                    # broken-off drops
+            life = np.clip((t - 0.15) / 0.85, 0, 1)
+            if life <= 0:
+                continue
+            d = (0.35 + 0.6 * ln) * ease_out(life)
+            blobs.append((d * math.cos(a), d * math.sin(a) + 0.03 * math.sin(k + a * 7), rad * (1 - 0.5 * life)))
+        field = _goo(x, y, blobs)
+        frames.append(_paint_rgba(field, np.clip(np.sqrt(x * x + y * y) * 0.9, 0, 1), fade))
+    save('flick_hit', frames)
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     if '--only' in sys.argv:
@@ -1062,6 +1189,9 @@ if __name__ == '__main__':
     wake_up()
     ready_ring()
     drive_burst()
+    smash_heavy()
+    flick_swing()
+    flick_splash()
     with open(os.path.join(OUT, 'fx.json'), 'w') as f:
         json.dump(MANIFEST, f, indent=1)
     total = sum(os.path.getsize(os.path.join(OUT, m['file'])) for m in MANIFEST.values())

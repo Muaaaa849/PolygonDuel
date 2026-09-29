@@ -66,7 +66,7 @@ export class CpuPlayer {
   private dashFor = -1;
   private stepSeenFor = -1;
   private shotAware = 0;
-  /** Blood: frames left to keep ATK held (a held 1st normal turns into the guard break in the overdrive). */
+  /** Blood: frames left to keep ATK held (a held 1st normal turns into the heavy blow in the overdrive). */
   private gbHold = 0;
   /** Sketch: the stick direction (0..31) held while the flick comes out, or -1 (no stick: straight away). */
   private knockDir = -1;
@@ -223,7 +223,7 @@ export class CpuPlayer {
           return IN_S2 | (d >= 0 ? IN_STICK | d : 0);
         }
       }
-      // blood in the overdrive: a held 1st normal becomes the guard break
+      // blood in the overdrive: a held 1st normal becomes the heavy blow
       if (this.gbHold > 0 && me.move === M_N1) {
         this.gbHold--;
         return IN_ATK | IN_STICK | toward;
@@ -394,10 +394,14 @@ export class CpuPlayer {
     }
     // ── sketch: lay ink while circling (keep 2 cost for the flick); the strafing does the drawing
     if (c.moves[M_S1].ink && me.inkT === 0 && me.cost >= c.moves[M_S1].cost + c.moves[M_S2].cost && dist > 2.4 && dist < 6.5 && seen.st !== ST_ATTACK && this.rng.chance(0.02)) return IN_S1;
-    // ── blood, burning: put the guard break on a turtle (ATK held ≥10F: the startup is 30F from the press)
-    if (c.drive && me.drive && this.hexFrames > 12 && dist < myReach + 0.6 && this.rng.chance(0.12)) {
-      this.gbHold = 14;
-      return IN_ATK | IN_STICK | toward;
+    // ── blood, burning: guard break on a turtle (S1), the heavy blow (ATK held ≥12F: startup 30F from the press)
+    if (c.drive && me.drive && dist < myReach + 0.6) {
+      if (this.hexFrames > 12 && this.rng.chance(0.12)) return IN_S1 | IN_STICK | toward; // S1 = the guard break while burning
+      // a held ATK (≥12F in a row) is the heavy blow: on a stunned / lying-soon target, or now and then
+      if ((op.st === ST_STUN || this.rng.chance(0.01)) && me.st === ST_FREE) {
+        this.gbHold = 16;
+        return IN_ATK | IN_STICK | toward;
+      }
     }
 
     // ── kinesis: pull from mid range when they are neither swinging (it reverses) nor guarding
@@ -561,10 +565,10 @@ export class Dummy {
         const gbSlot = c.moves[M_S2].gb ? IN_S2 : c.moves[M_S1].gb ? IN_S1 : IN_ATK;
         me.infCost = 1;
         if (c.drive) {
-          // ブラッド: its guard break is a held ATK in the overdrive
+          // ブラッド: its guard break is S1 while the overdrive burns
           me.drive = 1;
           if (dist > 2.8) return IN_STICK | toward;
-          return this.t % 80 < 40 ? IN_ATK | IN_STICK | toward : 0;
+          return this.t % 60 === 0 ? IN_S1 | IN_STICK | toward : 0;
         }
         if (c.moves[M_S2].def?.cancelFrom?.includes('dashThrust')) {
           // ヴォルト: its guard break only comes out of a dash (step → dash → turnback)

@@ -51,9 +51,9 @@ export const sketch: CharacterDef = {
     {
       id: 'inkTrail', name: 'インクトレイル', kind: 'skill', shape: 'pentagon',
       desc: '5秒間、動いた跡がインクとして8秒残る。通り抜けはできるが、ノックバックで吹き飛ばされた相手が触れると、壁に当たったように追加ダメージ（壁より痛い）。インクは当たると消える',
-      cost: 1, S: 6, A: 0, T: 22, reach: 0, lunge: 0,
+      cost: 1, S: 3, A: 0, T: 10, reach: 0, lunge: 0,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 0,
-      ink: { at: 6, draw: 300, life: 480, gap: 0.8, dmg: 45, bonus: 45 },
+      ink: { at: 3, draw: 300, life: 480, gap: 0.8, dmg: 45, bonus: 45 },
       cancelFrom: ['neutral'],
     },
     {

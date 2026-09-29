@@ -100,6 +100,7 @@ function scriptFor(c: CharacterDef, kind: DemoKind): Script {
     // ブラッド S2: ignite the overdrive, then a buffed 1→2→3 on the dummy, then a HELD ATK (the 30F guard break) into its guard
     return {
       dist: 2.6,
+      loop: 210,
       setup: (sim) => {
         sim.s.f[0].infCost = 0;
         sim.s.f[0].cost = 16;
@@ -108,7 +109,8 @@ function scriptFor(c: CharacterDef, kind: DemoKind): Script {
         const op = sim.s.f[1];
         if (t === 6) return [IN_S2, 0];
         if (t >= 44 && t < 92) return [t % 4 === 0 ? IN_ATK : 0, op.statHitsTaken > 0 && op.st !== ST_FREE ? 0 : shuffle(t)];
-        if (t >= 100 && t < 150) return [IN_ATK, 0];
+        if (t >= 96 && t < 100) return [IN_S1, 0];
+        if (t >= 128 && t < 170) return [IN_ATK, 0];
         return [0, 0];
       },
     };

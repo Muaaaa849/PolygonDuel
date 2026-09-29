@@ -505,5 +505,44 @@
    0.5
   ],
   "scale": 1.0
+ },
+ "smash_t": {
+  "file": "smash_t.webp",
+  "size": 320,
+  "count": 14,
+  "cols": 4,
+  "fps": 60,
+  "tint": true,
+  "anchor": [
+   0.5,
+   0.5
+  ],
+  "scale": 1.0
+ },
+ "flick_swing": {
+  "file": "flick_swing.webp",
+  "size": 384,
+  "count": 12,
+  "cols": 4,
+  "fps": 60,
+  "tint": false,
+  "anchor": [
+   0.5,
+   0.5
+  ],
+  "scale": 1.0
+ },
+ "flick_hit": {
+  "file": "flick_hit.webp",
+  "size": 320,
+  "count": 14,
+  "cols": 4,
+  "fps": 60,
+  "tint": false,
+  "anchor": [
+   0.5,
+   0.5
+  ],
+  "scale": 1.0
  }
 }

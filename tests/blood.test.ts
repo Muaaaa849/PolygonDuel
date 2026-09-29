@@ -5,7 +5,7 @@ import { Scenario, sequence, stick, guard, type Bot, IN_ATK, IN_S1, IN_S2, IN_ST
 import { getChar } from '../src/core/sim';
 import { charIndex } from '../src/data/characters';
 import { M_N1, M_N2, M_N3, M_S1, M_S2, SH, COST_UNIT } from '../src/core/compile';
-import { EV_CHARGE, EV_DRIVE, EV_CRUSH, EV_GUARD_BREAK } from '../src/core/events';
+import { EV_CHARGE, EV_DRIVE, EV_CRUSH, EV_GUARD_BREAK, EV_KNOCKDOWN } from '../src/core/events';
 import { ST_ATTACK, ST_DOWN, ST_FREE, ST_STUN } from '../src/core/state';
 
 const B = getChar(charIndex('blood'));
@@ -132,7 +132,7 @@ describe('ブラッド', () => {
   });
 
   describe('S2 オーバードライブ', () => {
-    it('needs at least 1 cost; starts on its 22nd frame and burns 1 quarter per 75F (cost 4 = 20 s)', () => {
+    it('needs at least 1 cost; starts on its 10th frame and burns 1 quarter per 75F (cost 4 = 20 s)', () => {
       const no = new Scenario('blood', 'bastion', 8);
       no.s.f[0].cost = q(0.5);
       no.run(60, held(IN_S2, 0, 2), idle);
@@ -225,28 +225,76 @@ describe('ブラッド', () => {
       expect(od).toBeLessThan(190);
     });
 
-    it('ATK held after a fresh 1st normal becomes a 30F guard break; a tap stays a normal', () => {
-      const N1S = B.moves[M_N1].S;
+    it('S1 is the 30F guard break while it burns (no life charge)', () => {
+      const sc = new Scenario('blood', 'bastion', 2.5);
+      sc.s.f[0].drive = 1;
+      sc.s.f[0].cost = q(4);
+      const hp = sc.s.f[0].hp;
+      let shape = -1;
+      sc.run(60, (me, _o, _s, t) => {
+        if (t === 12) shape = me.st === ST_ATTACK ? getChar(me.char).moves[me.move].shape : -1;
+        return t < 2 ? IN_S1 : 0;
+      }, idle);
+      expect(shape).toBe(SH.triangle);
+      expect(sc.events(EV_CHARGE, 0).length).toBe(0);
+      expect(sc.s.f[0].hp).toBe(hp);
+      expect(sc.events(EV_CRUSH, 0)[0].lf).toBe(30);
+    });
+
+    it('ATK held 12F in a row → a 30F heavy blow that is guardable but throws even a guard 3.5u; a tap / a mash stays normal', () => {
       const tap = new Scenario('blood', 'bastion', 2.5);
       tap.s.f[0].drive = 1;
       tap.s.f[0].cost = q(4);
       tap.run(50, held(IN_ATK, 0, 3), idle);
-      expect(tap.events(EV_CRUSH, 0).length).toBe(0);
-      expect(tap.blocks(0).length).toBe(1); // the plain N1 is guarded
+      expect(tap.blocks(0).length).toBe(1);
+      expect(tap.s.f[0].move).not.toBe(getChar(charIndex('blood')).moves.findIndex((m) => m.id === 'driveHeavy'));
 
+      // a mash: presses every other frame for 60F — the hold never reaches 12F, so no heavy blow
+      const mashed = new Scenario('blood', 'bastion', 2.5);
+      mashed.s.f[0].drive = 1;
+      mashed.s.f[0].cost = q(4);
+      const heavyIdx = getChar(charIndex('blood')).moves.findIndex((m) => m.id === 'driveHeavy');
+      let sawHeavy = false;
+      mashed.run(120, (me, _o, _s, t) => {
+        if (me.st === ST_ATTACK && me.move === heavyIdx) sawHeavy = true;
+        return t < 100 && t % 2 === 0 ? IN_ATK : 0;
+      }, idle);
+      expect(sawHeavy).toBe(false);
+      expect(mashed.events(EV_CRUSH, 0).length).toBe(0);
+
+      // a 3-frames-on / 1-frame-off "stutter hold" also never reaches 12
+      const stutter = new Scenario('blood', 'bastion', 2.5);
+      stutter.s.f[0].drive = 1;
+      stutter.s.f[0].cost = q(4);
+      let sawHeavy2 = false;
+      stutter.run(120, (me, _o, _s, t) => {
+        if (me.st === ST_ATTACK && me.move === heavyIdx) sawHeavy2 = true;
+        return t < 100 && t % 4 !== 3 ? IN_ATK : 0;
+      }, idle);
+      expect(sawHeavy2).toBe(false);
+
+      // a real hold: heavy, 30F from the press, guardable, thrown far
       const sc = new Scenario('blood', 'bastion', 2.5);
       sc.s.f[0].drive = 1;
       sc.s.f[0].cost = q(4);
+      const bx = sc.s.f[1].x;
       let shape = -1;
-      sc.run(60, (me, _o, _s, t) => {
-        if (t === 12) shape = me.st === ST_ATTACK ? getChar(me.char).moves[me.move].shape : -1;
+      sc.run(90, (me, _o, _s, t) => {
+        if (t === 14) shape = me.st === ST_ATTACK ? getChar(me.char).moves[me.move].id === 'driveHeavy' ? SH.circle : -2 : -1;
         return t < 40 ? IN_ATK : 0;
       }, idle);
-      expect(shape).toBe(SH.triangle);
-      const crush = sc.events(EV_CRUSH, 0)[0];
-      expect(crush).toBeTruthy();
-      expect(crush.lf).toBe(30); // startup 30F counted from the press (the press frame = 1)
-      expect(30).toBeGreaterThan(N1S);
+      expect(shape).toBe(SH.circle);
+      const blk = sc.blocks(0);
+      expect(blk.length).toBe(1);
+      expect(blk[0].lf).toBe(30);
+      expect((sc.s.f[1].x - bx) / 1000).toBeGreaterThan(3); // even guarded, 3.5u away
+      // unguarded: 90 × 1.6 and a knockdown
+      const open = new Scenario('blood', 'bastion', 2.5);
+      open.s.f[0].drive = 1;
+      open.s.f[0].cost = q(4);
+      open.run(90, (_m, _o, _s, t) => (t < 40 ? IN_ATK : 0), (me) => (me.statHitsTaken > 0 ? 0 : stick(16)));
+      expect(open.hits(0)[0].a).toBe(144);
+      expect(open.events(EV_KNOCKDOWN, 1).length).toBe(1);
     });
 
     it('when the fuel is gone: 10 s of exhaustion (no new drive, −20% damage) and 3 s in which only steps move it', () => {
