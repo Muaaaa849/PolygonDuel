@@ -47,6 +47,16 @@ body {
   -webkit-touch-callout: none;
   overscroll-behavior: none;
   touch-action: none;
+  /* iOS Safari inflates text in landscape unless told not to: the whole UI looked zoomed in
+     and overflowed the screen (which then zoomed the page itself) */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  /* iOS: keep the page pinned to the screen (no rubber-band scroll of the layout viewport) */
+  position: fixed;
+  inset: 0;
 }
 
 body {
@@ -60,6 +70,8 @@ body {
 #ui {
   position: fixed;
   inset: 0;
+  /* nothing may stick out of the screen: iOS grows the page (= zooms) to fit overflow */
+  overflow: hidden;
 }
 
 #stage canvas {
@@ -2374,6 +2386,7 @@ kbd {
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
+  touch-action: pan-x;
 }
 .select-footer .opp-scroll::-webkit-scrollbar {
   display: none;

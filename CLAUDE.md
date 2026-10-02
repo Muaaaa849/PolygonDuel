@@ -106,6 +106,10 @@
      - **固有エフェクト（v1.7追記）**：ブラッド＝ヘヴィブロウは予兆で赤い輪が収束→全周の深紅の薙ぎ `heavy_spin`→着弾・ガードとも `smash_t`、クラッシュブロウは赤い三角の破片が砕ける `crush_blow`、点火 `drive_t`。スケッチ＝インクトレイル点火で `ink_burst`（ペンキの飛沫の王冠）、インクの壁に激突で `ink_wall`（大きなペンキの飛散）、フリックは振りで扇状のペンキの帯 `flick_swing`、着弾で吹き飛ばす方向へ `flick_hit`（流動的なペンキ、シアン→紫→ピンク）。通常技の汎用の斬撃は、これらの技では出さない（`stateFx` の `ownFx`）。
 - **BGM（v1.8）**：メニュー系の画面は `menu.mp3`（Tactical Calm）、対戦（チュートリアル・オンライン含む）は `battle.mp3`（Velocity Breach）。`Screen.bgm` で画面ごとに指定（既定 menu）、`router.show` で切替（1.2秒クロスフェード）。
   ループは末尾4秒を先頭とクロスフェード（`<audio>` 2本が交代。ストリーミングなのでメモリを食わない）。ジャスト回避のスロー中（`sim.s.slow>0`）だけ `bgm.duck(true)` で無音へフェード、終わると戻る。設定に「BGM音量」（`settings.bgmVolume`、既定0.6）。SWは mp3 を素通し（Range要求のため）。
+- **iOS Safari（v1.8.1）**：横画面で文字が自動拡大されて「ずっとズームされている」ように見え、はみ出しでページ自体も拡大→操作UIが画面外になっていた。
+  `html { -webkit-text-size-adjust: 100% }`（消さないこと）、`body` を fixed、`#stage`/`#ui` は `overflow: hidden`（はみ出しで iOS がページを広げる）。
+  `app/no-zoom.ts`：iOS は `user-scalable=no` を無視するので、`gesturestart` と2本指の `touchmove` を止め、`visualViewport.scale>1` になったら viewport の meta を書き直して1倍へ戻す。横スクロールする要素は `touch-action: pan-x` を付ける。
+  確認：`npx playwright install webkit && npx playwright install-deps webkit` → `webkit` + `devices['iPhone 13 landscape']`（ただし文字の自動拡大は再現しない）。
 - **ダウンの演出（可読性重視）**：倒れた瞬間に氷色の六角の盾（`down_t`）、コマの周りにカウントダウンの輪（`drawDownTimer`。弧の残り＝両者が動けるようになるまで。15F＝0.25秒ごとの目盛り、最後の琥珀色の断片＝起き上がり、その前10Fは点滅）、起き上がりの瞬間に上向きの矢羽根（`wake_t`）、動けるようになった瞬間に収束する輪（`ready_t`。イベント `EV_UP`）。音は `sfx.wake` / `sfx.ready`。
 
 ---

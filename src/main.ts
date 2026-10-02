@@ -1,4 +1,5 @@
 import { installFullscreenKeeper } from './app/fullscreen';
+import { installNoZoom } from './app/no-zoom';
 import './styles.css';
 import { initPixi, setAmbient } from './render/pixi-app';
 import { fxSources, loadFx } from './render/fx-sprites';
@@ -98,6 +99,7 @@ async function boot(): Promise<void> {
   window.addEventListener('pointerdown', () => unlockAudio(), { once: true });
   // fullscreen chosen on the title comes back after sharing an invite / switching apps
   installFullscreenKeeper();
+  installNoZoom();
 
   const hash = decodeURIComponent(location.hash || '');
   const room = /^#room=/i.test(hash) ? parseRoomCode(hash) : null;
