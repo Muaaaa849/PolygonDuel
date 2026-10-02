@@ -109,6 +109,8 @@
 - **iOS Safari（v1.8.1）**：横画面で文字が自動拡大されて「ずっとズームされている」ように見え、はみ出しでページ自体も拡大→操作UIが画面外になっていた。
   `html { -webkit-text-size-adjust: 100% }`（消さないこと）、`body` を fixed、`#stage`/`#ui` は `overflow: hidden`（はみ出しで iOS がページを広げる）。
   `app/no-zoom.ts`：iOS は `user-scalable=no` を無視するので、`gesturestart` と2本指の `touchmove` を止め、`visualViewport.scale>1` になったら viewport の meta を書き直して1倍へ戻す。横スクロールする要素は `touch-action: pan-x` を付ける。
+  ダブルタップのズームは touch-action では止まらなかった：`.controls` 内の touchend は常に、それ以外は350ms以内の2回目のタップ（ボタン・入力欄・`[role=button]` 以外）の touchend を `preventDefault`（操作はポインターイベントなので影響しない）。
+  タイトルの「全画面にする」は角に固定せずメニュー列の中（iPhoneは「ホーム画面に追加」の説明を出す）。高さ340px以下・290px以下ではメニューを詰める（Safariのバーで高さが減る）。
   確認：`npx playwright install webkit && npx playwright install-deps webkit` → `webkit` + `devices['iPhone 13 landscape']`（ただし文字の自動拡大は再現しない）。
 - **ダウンの演出（可読性重視）**：倒れた瞬間に氷色の六角の盾（`down_t`）、コマの周りにカウントダウンの輪（`drawDownTimer`。弧の残り＝両者が動けるようになるまで。15F＝0.25秒ごとの目盛り、最後の琥珀色の断片＝起き上がり、その前10Fは点滅）、起き上がりの瞬間に上向きの矢羽根（`wake_t`）、動けるようになった瞬間に収束する輪（`ready_t`。イベント `EV_UP`）。音は `sfx.wake` / `sfx.ready`。
 

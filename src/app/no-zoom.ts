@@ -26,7 +26,20 @@ export function installNoZoom(): void {
   document.addEventListener('touchmove', (e) => {
     if (e.touches.length > 1 || ((e as TouchEvent & { scale?: number }).scale ?? 1) !== 1) e.preventDefault();
   }, { passive: false });
-  // double-tap zoom is already off: touch-action none / manipulation everywhere (styles.css)
+  // Double-tap zoom: iOS Safari still zooms on a double tap despite touch-action (seen in battle).
+  // Cancelling the touchend stops it. The on-screen controls are driven by pointer events only,
+  // so every touchend there is cancelled; elsewhere only a quick second tap on something that is
+  // not a control (buttons, fields keep their click).
+  let lastEnd = 0;
+  const interactive = 'button, a, input, select, textarea, label, [role=button], .card';
+  document.addEventListener('touchend', (e) => {
+    const t = e.target instanceof Element ? e.target : null;
+    const quick = e.timeStamp - lastEnd < 350;
+    lastEnd = e.timeStamp;
+    if (!e.cancelable || !t) return;
+    if (t.closest('.controls') || (quick && !t.closest(interactive))) e.preventDefault();
+  }, { passive: false });
+  document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
 
   const vv = window.visualViewport;
   if (vv) {

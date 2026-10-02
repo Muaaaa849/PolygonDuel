@@ -1,5 +1,5 @@
 import { enterFullscreen } from '../fullscreen';
-import { h, ICONS, shapeIcon, SHAPE_INFO } from '../ui';
+import { h, ICONS, modal, shapeIcon, SHAPE_INFO } from '../ui';
 import { sfx, unlockAudio } from '../../audio/sfx';
 import { settings } from '../settings';
 import type { Screen } from '../router';
@@ -16,6 +16,16 @@ export interface TitleActions {
 
 const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const standalone = () => matchMedia('(display-mode: standalone)').matches || (navigator as unknown as { standalone?: boolean }).standalone === true;
+
+function fullBtn(fn: () => void): HTMLElement {
+  const b = h('button', { class: 'btn small ghost fs-btn' }, h('span', { html: ICONS.expand, style: 'width:14px;height:14px;display:inline-flex' }), '全画面にする');
+  b.onclick = () => {
+    unlockAudio();
+    sfx.ui();
+    fn();
+  };
+  return b;
+}
 
 export function titleScreen(a: TitleActions): Screen {
   const item = (cls: string, icon: string, label: string, sub: string, fn: () => void) => {
@@ -71,14 +81,20 @@ export function titleScreen(a: TitleActions): Screen {
     };
     el.append(lb);
   } else if (isIos() && !standalone()) {
-    el.append(h('div', { class: 'install-hint' }, h('span', { html: ICONS.expand, style: 'width:14px;height:14px;display:inline-flex' }), '共有ボタン →「ホーム画面に追加」で全画面になります'));
+    // iPhone Safari has no fullscreen API: explain "Add to Home Screen" (opens without the bars).
+    // Lives in the menu row (not pinned to a corner): Safari's toolbars hid the corner on short screens.
+    menu.append(fullBtn(() => {
+      const m = modal(
+        h('div', { class: 'list' },
+          h('h3', null, '全画面で遊ぶ（iPhone / iPad）'),
+          h('p', { class: 'prose' }, 'Safari の共有ボタン（□↑）→「ホーム画面に追加」。追加したアイコンから開くと、アドレスバー無しの全画面で遊べます。'),
+          h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: () => m.close() }, 'OK')),
+        ),
+        { onBackdrop: () => m.close() },
+      );
+    }));
   } else if (!standalone() && document.fullscreenEnabled) {
-    const fs = h('button', { class: 'btn small ghost', style: 'position:absolute;left:calc(12px + var(--safe-l));bottom:calc(6px + var(--safe-b));font-size:11px;color:var(--muted)' },
-      h('span', { html: ICONS.expand, style: 'width:16px;height:16px;display:inline-flex' }), '全画面にする');
-    fs.onclick = () => {
-      enterFullscreen();
-    };
-    el.append(fs);
+    menu.append(fullBtn(() => enterFullscreen()));
   }
   return { el };
 }
