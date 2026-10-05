@@ -7,10 +7,11 @@ import {
   M_N1, M_N2, M_GC, M_JA, M_S1, M_S2, M_STRIKE, KIND_GC, KIND_JA, KIND_NORMAL, KIND_SKILL, CANCEL_NEUTRAL, CANCEL_STEP, SH, COST_UNIT,
 } from './compile';
 import {
-  ANG, U, angDiff, atan2A, clamp, idiv, isqrt, offX, offY, segPointDist2, segsCross, turnToward, u,
+  ANG, U, angDiff, atan2A, clamp, cosA, idiv, isqrt, offX, offY, segPointDist2, segsCross, sinA, turnToward, u,
 } from './fixed';
 import {
   type FighterState, type GameState, newGameState, getShot, setShot, MAX_SHOTS, TRAIL_N, TRAIL_STRIDE, TRAIL_FIGHTER,
+  INK_LIFE, INK_PENUP, INK_SAFE, INK_ONE,
   ST_FREE, ST_ATTACK, ST_BLOCKSTUN, ST_HITSTUN, ST_STEP, ST_DOWN, ST_WAKE, ST_STUN, ST_KO, ST_JAM,
   MH_NONE, MH_HIT, MH_BLOCK, MH_SPENT,
   PH_INTRO, PH_FIGHT, PH_END, PH_MATCH_OVER,
@@ -21,6 +22,7 @@ import {
   EV_MOVE, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN, EV_STEP,
   EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_WAKE, EV_GUARD, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END,
   EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL, EV_UP, EV_DRIVE, EV_CHARGE, EV_INK, EV_TRAIL,
+  EV_TELEPORT, EV_CLONE, EV_SWAP, HF_CLONE,
   HF_COUNTER, HF_JA, HF_OTG, HF_KNOCKDOWN, HF_FORCED_DOWN, HF_SHOT, HF_PUNISH, HF_PULL,
 } from './events';
 
@@ -151,7 +153,8 @@ export class Sim {
         lastDir: i === 0 ? 0 : 16,
         aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, lungePct: 100, wallHits: 0, momStep: 0, momDir: 0,
         ghostT: 0, ghostMode: 0, shootMode: 0, justNoMul: 0, wallGuard: 0, fieldT: 0, power: 0, instLock: 0, pullUsed: 0, wakeBoost: 0, stepPct: 100,
-        drive: 0, driveTick: 0, exhaust: 0, noWalk: 0, s1Cd: 0, inkT: 0, atkHold: 0, trHead: 0, trBrk: 0,
+        drive: 0, driveTick: 0, exhaust: 0, noWalk: 0, s1Cd: 0, inkT: 0, atkHold: 0, trHead: 0, trBrk: 0, inkIn: 0,
+        cloneT: 0, cloneX: 0, cloneY: 0, cloneFace: 0, cloneMove: -1, cloneSf: 0, cloneHit: 0,
       });
       for (let j = 0; j < MAX_SHOTS; j++) setShot(f, j, null);
       f.char = keepChar;
@@ -285,6 +288,7 @@ export class Sim {
     if (f.wakeBoost > 0) f.wakeBoost--;
     this.driveTimers(i);
     this.tryInstant(i);
+    if (f.cloneT > 0) this.cloneTick(i);
     f.sf++;
     if (f.st !== ST_ATTACK) f.momStep = 0;
     if (f.st !== ST_BLOCKSTUN) f.wallGuard = 0;
@@ -300,6 +304,7 @@ export class Sim {
         this.carry(f);
         if (m.walkPct > 0 && w & IN_STICK) this.walk(f, dirAngle(w), m.walkPct);
         if (m.channel && this.channelFrame(i, w, m)) break;
+        if (m.inkBox && !f.csHit) this.inkCast(i, w, m);
         // overdrive: ATK held without a break for `holdAt` frames since the press that began this 1st normal → the heavy
         // attack (its startup counts from the press). A mash restarts the count at every release, so it never gets there.
         if (f.drive && f.move === M_N1 && w & IN_ATK && f.atkHold === COMPILED[f.char].drive!.holdAt) {
@@ -309,7 +314,8 @@ export class Sim {
           break;
         }
         // a normal that touched nothing recovers faster (whiffT < T)
-        if (f.sf > (f.moveHit === MH_NONE ? m.whiffT : f.moveHit === MH_HIT ? m.hitT : m.T)) {
+        const hitRes = this.contact(f);
+        if (f.sf > (hitRes === MH_NONE ? m.whiffT : hitRes === MH_HIT ? m.hitT : m.T)) {
           this.toFree(f);
           this.freeLogic(i, w);
         } else if (!this.tryChain(i, w)) {
@@ -418,10 +424,40 @@ export class Sim {
     this.emit(EV_INK, i, 1, 0, f.x, f.y);
   }
 
+  /** Writes one ink point at fighter i's ring head (the slot after it becomes the start of a stroke). */
+  private inkPoint(i: number, x: number, y: number, life: number, flags: number): void {
+    const f = this.s.f[i];
+    const t = this.s.trail;
+    const base = i * TRAIL_FIGHTER;
+    const at = base + f.trHead * TRAIL_STRIDE;
+    t[at] = x;
+    t[at + 1] = y;
+    t[at + 2] = (life << INK_LIFE) | flags;
+    f.trHead = (f.trHead + 1) % TRAIL_N;
+    // the slot after it is now the oldest: its old neighbour is gone, so it can't be joined to this new point
+    t[base + f.trHead * TRAIL_STRIDE + 2] |= INK_PENUP;
+  }
+
+  /** v1.9 スケッチのS1 (tap): a square of ink around the opponent, one side facing her (closed: it heals her inside). */
+  private placeInkBox(i: number, half: number, life: number): void {
+    const f = this.s.f[i];
+    const o = this.s.f[1 - i];
+    const a = atan2A(f.y - o.y, f.x - o.x);
+    const r = idiv(half * 1414, 1000);
+    for (let k = 0; k <= 4; k++) {
+      const ang = (a + ANG / 8 + (k % 4) * (ANG / 4)) & (ANG - 1);
+      this.inkPoint(i, clamp(o.x + offX(ang, r), 0, FIELD_W), clamp(o.y + offY(ang, r), 0, FIELD_H), life, k === 0 ? INK_PENUP : 0);
+    }
+    f.trBrk = 1;
+    this.emit(EV_INK, i, 2, 0, o.x, o.y);
+  }
+
   /**
    * After the bodies settled: the ink ages, and while the pen is down (walking, stepping, attacking — not while being
    * hit) a point is dropped every `gap` milli-u of travel. A point starts a new stroke (no segment to the previous slot)
    * after a lifted pen, a big jump, or when the ring overwrote the slot before it.
+   * v1.9: the normals draw along the blade's tip too ("safe" ink until the exchange is over: no wall for its own combo),
+   * and standing inside a closed loop of her ink heals.
    */
   private updateInk(): void {
     const s = this.s;
@@ -429,49 +465,102 @@ export class Sim {
       const f = s.f[i];
       const ink = INK_OF[f.char];
       if (!ink) continue;
+      const c = COMPILED[f.char];
       const t = s.trail;
       const base = i * TRAIL_FIGHTER;
+      const o = s.f[1 - i];
+      const m = f.st === ST_ATTACK ? this.moveOf(f) : null;
+      const swinging = !!m && m.kind !== KIND_SKILL;
+      // the exchange is over (the opponent is out of hit / guard stun and our swing has ended): swing ink turns live
+      const calm = !swinging && o.st !== ST_HITSTUN && o.st !== ST_STUN && o.st !== ST_DOWN && o.st !== ST_BLOCKSTUN && o.st !== ST_KO;
       for (let k = 0; k < TRAIL_N; k++) {
-        const m = base + k * TRAIL_STRIDE + 2;
-        if (t[m] >= 2) t[m] -= 2;
+        const mi = base + k * TRAIL_STRIDE + 2;
+        if (t[mi] >= INK_ONE) {
+          t[mi] -= INK_ONE;
+          if (calm) t[mi] &= ~INK_SAFE;
+        }
       }
-      if (f.inkT <= 0) continue;
-      f.inkT--;
-      if (f.inkT === 0) this.emit(EV_INK, i, 0, 0, f.x, f.y);
-      const down = f.st === ST_FREE || f.st === ST_ATTACK || f.st === ST_STEP;
-      if (!down) {
-        f.trBrk = 1;
-        continue;
+      // the blade's tip leaves ink over the arc it swept this frame
+      const tip = c.inkSwing && swinging && m!.isSweep && f.sf >= m!.S && f.sf < m!.S + m!.A;
+      if (tip) this.swingInk(i, m!, ink.life);
+      if (f.inkT > 0) {
+        f.inkT--;
+        if (f.inkT === 0) this.emit(EV_INK, i, 0, 0, f.x, f.y);
+        const down = f.st === ST_FREE || f.st === ST_ATTACK || f.st === ST_STEP;
+        if (!down || tip) {
+          if (!tip) f.trBrk = 1;
+        } else {
+          const last = base + ((f.trHead + TRAIL_N - 1) % TRAIL_N) * TRAIL_STRIDE;
+          const alive = t[last + 2] >= INK_ONE;
+          const dx = f.x - t[last];
+          const dy = f.y - t[last + 1];
+          const d2 = dx * dx + dy * dy;
+          if (!alive || f.trBrk || d2 >= ink.gap * ink.gap) {
+            this.inkPoint(i, f.x, f.y, ink.life, !alive || f.trBrk || d2 > INK_JUMP2 ? INK_PENUP : 0);
+            f.trBrk = 0;
+          }
+        }
       }
-      const last = base + ((f.trHead + TRAIL_N - 1) % TRAIL_N) * TRAIL_STRIDE;
-      const alive = t[last + 2] >= 2;
-      const dx = f.x - t[last];
-      const dy = f.y - t[last + 1];
-      const d2 = dx * dx + dy * dy;
-      if (alive && !f.trBrk && d2 < ink.gap * ink.gap) continue;
-      const at = base + f.trHead * TRAIL_STRIDE;
-      t[at] = f.x;
-      t[at + 1] = f.y;
-      t[at + 2] = (ink.life << 1) | (!alive || f.trBrk || d2 > INK_JUMP2 ? 1 : 0);
-      f.trHead = (f.trHead + 1) % TRAIL_N;
-      // the slot after it is now the oldest: its old neighbour is gone, so it can't be joined to this new point
-      t[base + f.trHead * TRAIL_STRIDE + 2] |= 1;
-      f.trBrk = 0;
+      // inside a closed loop of her own ink: a little life back now and then
+      const heal = c.inkHeal;
+      if (heal && s.frame % heal.every === 0) {
+        f.inkIn = f.st !== ST_KO && s.phase === PH_FIGHT && this.enclosed(i, heal.ray) ? 1 : 0;
+        if (f.inkIn && f.hp < c.hp) f.hp = Math.min(c.hp, f.hp + heal.hp);
+      }
     }
   }
 
   /**
-   * The segments of fighter i's ink that are still there: fn(x0, y0, x1, y1, life left, slot). The renderer and the CPU
-   * use it; the slot (the segment's end point) is what EV_TRAIL reports.
+   * The arc the blade's tip covered on this active frame (from where the swing started on its 1st active frame), as ink
+   * points at most ~34° apart, flagged safe. The stroke goes on frame to frame (trBrk = 2 while it does).
    */
-  forEachInk(i: number, fn: (x0: number, y0: number, x1: number, y1: number, life: number, slot: number) => void): void {
+  private swingInk(i: number, m: CMove, life: number): void {
+    const f = this.s.f[i];
+    const reach = this.reachOf(f, m);
+    const first = f.sf === m.S || f.trBrk !== 2;
+    const a0 = first ? m.sweepFrom : this.swingAngle(m, f.sf - 1);
+    const a1 = this.swingAngle(m, f.sf);
+    const n = Math.max(1, Math.ceil(Math.abs(a1 - a0) / 96));
+    for (let k = first ? 0 : 1; k <= n; k++) {
+      const a = (f.facing + a0 + idiv((a1 - a0) * k, n)) & (ANG - 1);
+      this.inkPoint(i, f.x + offX(a, reach), f.y + offY(a, reach), life, INK_SAFE | (k === 0 ? INK_PENUP : 0));
+    }
+    f.trBrk = 2;
+  }
+
+  /** Is fighter i walled in by her own ink — a live segment on every one of 8 rays of length `ray`? */
+  private enclosed(i: number, ray: number): boolean {
+    const f = this.s.f[i];
+    const t = this.s.trail;
+    const base = i * TRAIL_FIGHTER;
+    for (let d = 0; d < 8; d++) {
+      const a = d * (ANG / 8);
+      const ex = f.x + offX(a, ray);
+      const ey = f.y + offY(a, ray);
+      let hit = false;
+      for (let k = 0; k < TRAIL_N && !hit; k++) {
+        const p = base + k * TRAIL_STRIDE;
+        const q = base + ((k + TRAIL_N - 1) % TRAIL_N) * TRAIL_STRIDE;
+        if (t[p + 2] < INK_ONE || t[p + 2] & INK_PENUP || t[q + 2] < INK_ONE) continue;
+        hit = segsCross(f.x, f.y, ex, ey, t[q], t[q + 1], t[p], t[p + 1]);
+      }
+      if (!hit) return false;
+    }
+    return true;
+  }
+
+  /**
+   * The segments of fighter i's ink that are still there: fn(x0, y0, x1, y1, life left, slot, safe). The renderer and the
+   * CPU use it; the slot (the segment's end point) is what EV_TRAIL reports. `safe`: swing ink not yet live.
+   */
+  forEachInk(i: number, fn: (x0: number, y0: number, x1: number, y1: number, life: number, slot: number, safe: boolean) => void): void {
     const t = this.s.trail;
     const base = i * TRAIL_FIGHTER;
     for (let k = 0; k < TRAIL_N; k++) {
       const a = base + k * TRAIL_STRIDE;
       const b = base + ((k + TRAIL_N - 1) % TRAIL_N) * TRAIL_STRIDE;
-      if (t[a + 2] < 2 || (t[a + 2] & 1) || t[b + 2] < 2) continue;
-      fn(t[b], t[b + 1], t[a], t[a + 1], t[a + 2] >> 1, k);
+      if (t[a + 2] < INK_ONE || t[a + 2] & INK_PENUP || t[b + 2] < INK_ONE) continue;
+      fn(t[b], t[b + 1], t[a], t[a + 1], t[a + 2] >> INK_LIFE, k, !!((t[a + 2] | t[b + 2]) & INK_SAFE));
     }
   }
 
@@ -488,7 +577,7 @@ export class Sim {
     for (let k = 0; k < TRAIL_N; k++) {
       const a = base + k * TRAIL_STRIDE;
       const b = base + ((k + TRAIL_N - 1) % TRAIL_N) * TRAIL_STRIDE;
-      if (t[a + 2] < 2 || (t[a + 2] & 1) || t[b + 2] < 2) continue;
+      if (t[a + 2] < INK_ONE || t[a + 2] & INK_PENUP || t[b + 2] < INK_ONE || (t[a + 2] | t[b + 2]) & INK_SAFE) continue;
       const bx = t[b];
       const by = t[b + 1];
       const ax = t[a];
@@ -500,7 +589,7 @@ export class Sim {
         hit = d1 <= INK_R2 && d1 < segPointDist2(bx, by, ax, ay, x0, y0);
       }
       if (!hit) continue;
-      t[a + 2] |= 1; // this piece of ink is used up
+      t[a + 2] |= INK_PENUP; // this piece of ink is used up
       f.kbDist = 0;
       f.wallHits++;
       const bonus = idiv(ink.bonus * Math.min(speed, LAUNCH), LAUNCH);
@@ -565,7 +654,11 @@ export class Sim {
   canAfford(f: FighterState, m: CMove): boolean {
     if (m.ghost && f.ghostT > 0) return false;
     if (m.powerUp && f.power > 0) return false;
-    if (m.ink && f.inkT > 0) return false;
+    // (the trail can't be restarted while it draws; the tap's square can — it is decided on release)
+    if (m.ink && !m.inkBox && f.inkT > 0) return false;
+    if (m.clone && f.cloneT > 0) return false;
+    if (m.teleport && f.st !== ST_FREE && f.st !== ST_ATTACK && f.st !== ST_STEP) return false;
+    if (m.swap && !this.canSwap(f)) return false;
     if (m.channel && (f.s1Cd > 0 || f.drive || f.cost >= COST_MAX || f.hp <= m.channel.hp + 1)) return false;
     if (m.driveOn) {
       const dr = COMPILED[f.char].drive;
@@ -593,6 +686,7 @@ export class Sim {
   /** The move S2 starts now (UI): skills[1], or `s2Neutral` unless the current move can cancel into skills[1]. */
   s2Slot(f: FighterState): number {
     const c = COMPILED[f.char];
+    if (c.swapSlot >= 0 && f.cloneT > 0) return c.swapSlot;
     if (c.s2Neutral < 0) return M_S2;
     return f.st === ST_ATTACK && f.move >= 0 && c.moves[M_S2].cancelFrom & (1 << f.move) ? M_S2 : c.s2Neutral;
   }
@@ -632,7 +726,8 @@ export class Sim {
       }
     }
     if (f.bufS2) {
-      const slot = c.s2Neutral >= 0 ? c.s2Neutral : M_S2;
+      // (ミラー: with the clone out S2 is the instant swap)
+      const slot = c.swapSlot >= 0 && f.cloneT > 0 ? c.swapSlot : c.s2Neutral >= 0 ? c.s2Neutral : M_S2;
       if (c.moves[slot].instant && !reserved(M_S2)) {
         f.bufS2 = f.aimS2 = 0;
         if (f.instLock === 0) this.useInstant(i, slot);
@@ -645,7 +740,9 @@ export class Sim {
     const m = COMPILED[f.char].moves[slot];
     if (!this.canAfford(f, m)) return;
     if (!f.infCost) f.cost -= m.cost;
-    f.instLock = SYSTEM.instantLock;
+    f.instLock = m.lock;
+    if (m.teleport) this.teleport(i, m.teleport);
+    if (m.swap) this.swapClone(i);
     if (m.mode >= 0 && m.mode !== f.shootMode) {
       f.shootMode = m.mode;
       this.emit(EV_MODE, i, m.mode, 0, f.x, f.y);
@@ -755,6 +852,28 @@ export class Sim {
     this.toFree(f);
     this.freeLogic(i, w);
     return true;
+  }
+
+  /**
+   * v1.9 スケッチのS1: let go before `hold` frames → the square around the opponent (its own cost); still held at `hold` →
+   * the trail (the move's cost). Either way the move then winds down quickly. csHit marks it decided.
+   */
+  private inkCast(i: number, w: number, m: CMove): void {
+    const f = this.s.f[i];
+    const box = m.inkBox!;
+    const held = (w & IN_S1) !== 0;
+    if (held && f.sf < box.hold) return;
+    f.csHit = 1;
+    if (!held) {
+      if (f.infCost || f.cost >= box.cost) {
+        if (!f.infCost) f.cost -= box.cost;
+        this.placeInkBox(i, box.half, m.ink!.life);
+      }
+    } else if (f.inkT === 0 && (f.infCost || f.cost >= m.cost)) {
+      if (!f.infCost) f.cost -= m.cost;
+      this.startInk(i, m.ink!);
+    }
+    f.sf = Math.max(f.sf, m.T - 6);
   }
 
   /** Per-frame overdrive bookkeeping: the cost gauge is the fuel; the exhaustion afterwards wears off. */
@@ -888,7 +1007,8 @@ export class Sim {
       f.jaChain = 0;
     }
     if (m.kind === KIND_SKILL && mi !== M_STRIKE) {
-      if (!f.infCost) f.cost -= m.cost;
+      // (スケッチのS1 pays when the tap / hold is decided: inkCast)
+      if (!f.infCost && !m.inkBox) f.cost -= m.cost;
       if (m.usesPerRound > 0) f.healUses++;
     }
     if (m.channel) this.charge(i, m.channel.hp, m.channel.gain);
@@ -928,6 +1048,8 @@ export class Sim {
       f.lungePct = aimLungePct((aim - 1) >> 10);
     } else if (!chained) f.facing = w & IN_STICK && !f.faceFoe ? dirAngle(w) : this.angleTo(i);
     this.emit(EV_MOVE, i, mi, 0, f.x, f.y);
+    // (ミラー: the clone swings along — the same normal / GC / JA, turned toward the opponent)
+    if (f.cloneT > 0 && (m.kind === KIND_NORMAL || m.kind === KIND_GC || m.kind === KIND_JA)) this.cloneStart(i, mi);
     if (m.mode >= 0 && m.mode !== f.shootMode) {
       f.shootMode = m.mode;
       this.emit(EV_MODE, i, m.mode, 0, f.x, f.y);
@@ -1042,6 +1164,212 @@ export class Sim {
     this.emit(EV_GHOST_END, i, reason, f.ghostMode, f.ghostX, f.ghostY);
     f.ghostT = 0;
     f.ghostMode = 0;
+  }
+
+  // ───────────────────────────── teleport / clone (ミラー) ─────────────────────────────
+
+  /** The current move's contact, counting the clone's copy of it (a swing that only the clone landed still chains). */
+  private contact(f: FighterState): number {
+    if (f.moveHit !== MH_NONE) return f.moveHit;
+    if (f.cloneT > 0 && f.cloneMove === f.move && f.cloneHit !== MH_SPENT) return f.cloneHit;
+    return MH_NONE;
+  }
+
+  /** ミラーのS1: `dist` along the stick (else the step / facing direction); an attack goes on from there, turned to the opponent. */
+  private teleport(i: number, dist: number): void {
+    const f = this.s.f[i];
+    const ox = f.x;
+    const oy = f.y;
+    const a = f.prevIn & IN_STICK ? dirAngle(f.prevIn) : f.st === ST_STEP ? f.moveDir : f.facing;
+    // a jump that would end inside the opponent goes through to its far side (taking its back)
+    const o = this.s.f[1 - i];
+    const along = idiv((o.x - f.x) * cosA(a) + (o.y - f.y) * sinA(a), 16384);
+    let d = dist;
+    if (o.st !== ST_DOWN && o.st !== ST_KO && along > 0 && along < dist + BODY_R * 2) {
+      const ex = f.x + offX(a, dist);
+      const ey = f.y + offY(a, dist);
+      if (segPointDist2(f.x, f.y, ex, ey, o.x, o.y) < BODY_R * BODY_R * 4) d = Math.max(dist, along + BODY_R * 2);
+    }
+    f.x = clamp(f.x + offX(a, d), BODY_R, FIELD_W - BODY_R);
+    f.y = clamp(f.y + offY(a, d), BODY_R, FIELD_H - BODY_R);
+    if (f.st === ST_ATTACK) f.facing = this.angleTo(i);
+    this.emit(EV_TELEPORT, i, ox, oy, f.x, f.y);
+  }
+
+  /** Swapping with the clone: needs the clone, and no guarded attack (a blocked swing can't be escaped this way). */
+  private canSwap(f: FighterState): boolean {
+    if (f.cloneT <= 0) return false;
+    if (f.st === ST_FREE || f.st === ST_STEP) return true;
+    if (f.st !== ST_ATTACK) return false;
+    if (f.moveHit === MH_BLOCK || f.moveHit === MH_SPENT) return false;
+    return !(f.cloneMove >= 0 && f.cloneHit === MH_BLOCK);
+  }
+
+  /** The real one and the clone trade places; the current attack / step is over (its recovery too). */
+  private swapClone(i: number): void {
+    const f = this.s.f[i];
+    const ox = f.x;
+    const oy = f.y;
+    f.x = f.cloneX;
+    f.y = f.cloneY;
+    f.cloneX = ox;
+    f.cloneY = oy;
+    if (f.st === ST_ATTACK || f.st === ST_STEP) this.toFree(f);
+    f.kbDist = 0;
+    f.momStep = 0;
+    f.facing = this.angleTo(i);
+    const o = this.s.f[1 - i];
+    f.cloneMove = -1;
+    f.cloneFace = atan2A(o.y - f.cloneY, o.x - f.cloneX);
+    this.emit(EV_SWAP, i, ox, oy, f.x, f.y);
+  }
+
+  /** ミラーのS2: the clone appears — where it was aimed, or on the far side of the opponent (mirrored through it). */
+  private placeClone(i: number, m: CMove): void {
+    const f = this.s.f[i];
+    const o = this.s.f[1 - i];
+    const C = m.clone!;
+    let x: number;
+    let y: number;
+    if (f.aimed) {
+      const dist = idiv(C.maxDist * f.lungePct, 100);
+      x = f.x + offX(f.facing, dist);
+      y = f.y + offY(f.facing, dist);
+    } else {
+      const dx = o.x - f.x;
+      const dy = o.y - f.y;
+      const d = isqrt(dx * dx + dy * dy);
+      const k = Math.min(d, C.mirror);
+      x = d > 0 ? o.x + idiv(dx * k, d) : o.x + k;
+      y = d > 0 ? o.y + idiv(dy * k, d) : o.y;
+    }
+    f.cloneX = clamp(x, BODY_R, FIELD_W - BODY_R);
+    f.cloneY = clamp(y, BODY_R, FIELD_H - BODY_R);
+    f.cloneT = C.frames;
+    f.cloneFace = atan2A(o.y - f.cloneY, o.x - f.cloneX);
+    f.cloneMove = -1;
+    f.cloneSf = 0;
+    f.cloneHit = MH_NONE;
+    this.emit(EV_CLONE, i, 1, 0, f.cloneX, f.cloneY);
+  }
+
+  /** The clone starts the move its owner just started (same frame count), facing the opponent. */
+  private cloneStart(i: number, mi: number): void {
+    const f = this.s.f[i];
+    const o = this.s.f[1 - i];
+    f.cloneMove = mi;
+    f.cloneSf = 1;
+    f.cloneHit = MH_NONE;
+    f.cloneFace = atan2A(o.y - f.cloneY, o.x - f.cloneX);
+    this.cloneFrame(i, COMPILED[f.char].moves[mi]);
+  }
+
+  /** Per frame: the clone's lifetime, and its copied attack (homing in the first frames, the lunge until it touches). */
+  private cloneTick(i: number): void {
+    const f = this.s.f[i];
+    if (--f.cloneT === 0) {
+      f.cloneMove = -1;
+      this.emit(EV_CLONE, i, 0, 0, f.cloneX, f.cloneY);
+      return;
+    }
+    if (f.cloneMove < 0) return;
+    f.cloneSf++;
+    const m = COMPILED[f.char].moves[f.cloneMove];
+    if (f.cloneSf > (f.cloneHit === MH_NONE ? m.whiffT : f.cloneHit === MH_HIT ? m.hitT : m.T)) {
+      f.cloneMove = -1;
+      return;
+    }
+    this.cloneFrame(i, m);
+  }
+
+  private cloneFrame(i: number, m: CMove): void {
+    const f = this.s.f[i];
+    const o = this.s.f[1 - i];
+    const mf = f.cloneSf;
+    if (mf < m.S && mf <= SYSTEM.homingFrames) f.cloneFace = turnToward(f.cloneFace, atan2A(o.y - f.cloneY, o.x - f.cloneX), HOMING_STEP);
+    const lunge = mf < m.lungeAt.length ? m.lungeAt[mf] : 0;
+    if (lunge > 0 && f.cloneHit === MH_NONE) {
+      f.cloneX = clamp(f.cloneX + offX(f.cloneFace, lunge), BODY_R, FIELD_W - BODY_R);
+      f.cloneY = clamp(f.cloneY + offY(f.cloneFace, lunge), BODY_R, FIELD_H - BODY_R);
+    }
+  }
+
+  /** Fighter i's clone as a fighter-like state (rendering, contact, the CPU), or null. Pure: not part of the state. */
+  cloneOf(i: number): FighterState | null {
+    const f = this.s.f[i];
+    if (f.cloneT <= 0) return null;
+    const atk = f.cloneMove >= 0;
+    return {
+      ...f,
+      x: f.cloneX,
+      y: f.cloneY,
+      facing: f.cloneFace,
+      moveDir: f.cloneFace,
+      st: atk ? ST_ATTACK : ST_FREE,
+      sf: atk ? f.cloneSf : 1,
+      move: f.cloneMove,
+      moveHit: f.cloneHit,
+      guardF: 0,
+      kbDist: 0,
+      ghostT: 0,
+      cloneT: 0,
+      inkT: 0,
+    };
+  }
+
+  /**
+   * The clones' copied attacks (after the real ones, so hits on the same frame both count): 75% damage, no cost for the
+   * owner, the knockback away from the clone. A guard blocks them like any attack; a just-dodge frame simply passes.
+   */
+  private cloneHits(): void {
+    const s = this.s;
+    for (let i = 0; i < 2; i++) {
+      const f = s.f[i];
+      if (f.cloneT <= 0 || f.cloneMove < 0 || f.cloneHit !== MH_NONE) continue;
+      const c = COMPILED[f.char];
+      const m = c.moves[f.cloneMove];
+      if (!m.hasHitbox || f.cloneSf < m.S || f.cloneSf >= m.S + m.A) continue;
+      const d = s.f[1 - i];
+      if (d.st === ST_KO || d.st === ST_WAKE || d.st === ST_DOWN) continue;
+      const cl = this.cloneOf(i)!;
+      if (!this.touches(cl, d, m)) continue;
+      const ex = idiv(cl.x + d.x, 2);
+      const ey = idiv(cl.y + d.y, 2);
+      const away = atan2A(d.y - cl.y, d.x - cl.x);
+      if (d.st === ST_STEP && d.sf <= SYSTEM.step.justFrames) {
+        f.cloneHit = MH_SPENT;
+        continue;
+      }
+      if (this.isGuarding(d)) {
+        f.cloneHit = MH_BLOCK;
+        const left = d.st === ST_BLOCKSTUN ? d.len - d.sf + 1 : 0;
+        d.st = ST_BLOCKSTUN;
+        d.sf = 1;
+        d.len = Math.max(left, m.blockstun);
+        if (m.kind === KIND_GC) d.noGc = 1;
+        d.move = -1;
+        if (d.guardF < SYSTEM.guard.startup) d.guardF = SYSTEM.guard.startup;
+        d.kbDist = m.pushback;
+        d.kbAngle = away;
+        d.wallGuard = 0;
+        d.statBlocks++;
+        if (SYSTEM.guard.refillOnBlock) d.guardQ = COMPILED[d.char].guardMaxQ;
+        s.hitstop = Math.max(s.hitstop, m.hitstop);
+        this.emit(EV_BLOCK, i, m.idx, 2, ex, ey);
+        continue;
+      }
+      f.cloneHit = MH_HIT;
+      const forced = d.comboFrames > SYSTEM.comboForceDownFrames;
+      const dmg = this.damage(f, d, idiv(m.dmg * c.moves[M_S2].clone!.dmgPct, 100), false);
+      let flags = HF_CLONE | (f.jaChain ? HF_JA : 0);
+      if (m.knockdown || forced) {
+        flags |= HF_KNOCKDOWN;
+        this.knockDown(d, away, m.launch);
+      } else this.stagger(d, m.hitstun, m.knockback, away);
+      this.gainHurtCost(d);
+      s.hitstop = Math.max(s.hitstop, m.hitstop);
+      this.emit(EV_HIT, i, dmg, flags | (d.comboHits << 8), ex, ey);
+    }
   }
 
   // ───────────────────────────── bullets / fields ─────────────────────────────
@@ -1359,8 +1687,9 @@ export class Sim {
     const c = COMPILED[f.char];
     const m = c.moves[f.move];
     const mf = f.sf;
-    const hit = f.moveHit === MH_HIT;
-    const blocked = f.moveHit === MH_BLOCK;
+    const res = this.contact(f);
+    const hit = res === MH_HIT;
+    const blocked = res === MH_BLOCK;
     // contact-free chains / cancels: a shot's next shot, a dash's turnback
     if (f.bufAtk && m.next >= 0 && this.inWin(m.chainAny, mf) && (!m.proj || f.shootMode)) {
       this.startMove(i, m.next, w, true);
@@ -1409,7 +1738,8 @@ export class Sim {
     if (m.proj && mf === m.proj.at) this.fire(i, m);
     if (m.field && mf === m.field.at) this.placeField(i, m);
     if (m.driveOn && mf === m.driveOn) this.startDrive(i);
-    if (m.ink && mf === m.ink.at) this.startInk(i, m.ink);
+    if (m.ink && m.ink.at > 0 && mf === m.ink.at) this.startInk(i, m.ink);
+    if (m.clone && mf === m.clone.at) this.placeClone(i, m);
     if (m.powerUp && mf === m.powerUp.frame) {
       f.power = m.powerUp.pct;
       this.emit(EV_POWER, i, 1, 0, f.x, f.y);
@@ -1548,6 +1878,11 @@ export class Sim {
   }
 
   private detectHits(): void {
+    this.detectBodyHits();
+    this.cloneHits();
+  }
+
+  private detectBodyHits(): void {
     const s = this.s;
     const touching = [false, false];
     for (let i = 0; i < 2; i++) {

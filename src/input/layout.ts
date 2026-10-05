@@ -2,8 +2,9 @@
 // viewport (centers), sizes as a multiplier of each control's base size, so a layout
 // carries over between phones of different sizes.
 
-export type CtrlId = 'atk' | 's1' | 's2' | 'step' | 'guard' | 'stick';
-export const CTRL_IDS: CtrlId[] = ['stick', 'atk', 's1', 's2', 'step', 'guard'];
+export type CtrlId = 'atk' | 's1' | 's2' | 'step' | 'guard' | 'stick' | 'cancel';
+/** (`cancel` = the aim-cancel button: only shown while an attack / skill is held to aim) */
+export const CTRL_IDS: CtrlId[] = ['stick', 'atk', 's1', 's2', 'step', 'guard', 'cancel'];
 
 export interface CtrlPlace {
   /** Center x / y as a fraction of the viewport. */
@@ -15,7 +16,7 @@ export interface CtrlPlace {
 export type ControlsLayout = Record<CtrlId, CtrlPlace>;
 
 /** Base diameters (css px at scale 1) — must match styles.css. */
-export const BASE_SIZE: Record<CtrlId, number> = { atk: 88, s1: 58, s2: 58, step: 54, guard: 58, stick: 128 };
+export const BASE_SIZE: Record<CtrlId, number> = { atk: 88, s1: 58, s2: 58, step: 54, guard: 58, stick: 128, cancel: 62 };
 export const SIZE_MIN = 0.6;
 export const SIZE_MAX = 1.8;
 
@@ -28,6 +29,8 @@ export function defaultLayout(vw: number, vh: number, lefty: boolean, k: number)
     step: [vw - 6 - 57 * k, vh - 6 - 155 * k],
     guard: [vw - 6 - 205 * k, vh - 6 - 129 * k],
     stick: [110 * k, vh - 100 * k],
+    // above the stick's home, where the stick thumb can tap it while the other thumb holds a skill
+    cancel: [110 * k, Math.max(40 * k, vh - 240 * k)],
   };
   const out = {} as ControlsLayout;
   for (const id of CTRL_IDS) {
@@ -51,6 +54,11 @@ export function sanitizeLayout(v: unknown): ControlsLayout | null {
   if (!o.guard && o.s2 && typeof o.s2 === 'object') {
     const s2 = o.s2 as Partial<CtrlPlace>;
     if (typeof s2.x === 'number' && typeof s2.y === 'number') o.guard = { x: Math.max(0, s2.x - 0.09), y: s2.y, s: 1 };
+  }
+  // (layouts saved before the aim-cancel button existed: put it above the stick)
+  if (!o.cancel && o.stick && typeof o.stick === 'object') {
+    const st = o.stick as Partial<CtrlPlace>;
+    if (typeof st.x === 'number' && typeof st.y === 'number') o.cancel = { x: st.x, y: Math.max(0.12, st.y - 0.36), s: 1 };
   }
   for (const id of CTRL_IDS) {
     const p = o[id] as Partial<CtrlPlace> | undefined;

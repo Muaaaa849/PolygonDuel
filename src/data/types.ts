@@ -205,6 +205,23 @@ export interface MoveDef {
    * 30 + 30) — and that piece of ink is gone.
    */
   ink?: { at: number; draw: number; life: number; gap: number; dmg: number; bonus: number };
+  /**
+   * v1.9 (スケッチのS1): a TAP draws a square of ink around the opponent instead (half side `half` u, `cost`), a HOLD of
+   * `hold` frames draws the trail above (the move's own cost). Decided on release / at `hold`; `ink.at` is unused then.
+   */
+  inkBox?: { hold: number; half: number; cost: number };
+  /** Instant teleport (ミラーのS1): `dist` u along the stick (or the facing), during any move. */
+  teleport?: { dist: number };
+  /** Frames the instant-skill buttons stay locked after this instant skill (default SYSTEM.instantLock). */
+  lock?: number;
+  /**
+   * Clone (ミラーのS2): placed on move frame `at` — aimed: `maxDist` × reach level away; a tap: on the far side of the
+   * opponent (mirrored through it, at most `mirror` u from it). It lasts `frames`, copies every normal / GC / JA the
+   * owner starts (turned toward the opponent) for `dmgPct`% damage, gains no cost and can't be hit.
+   */
+  clone?: { at: number; frames: number; maxDist: number; mirror: number; dmgPct: number };
+  /** Instant swap with the clone (ミラー: S2 while the clone is out). Not out of a guarded attack / guard stun. */
+  swap?: boolean;
   /** The knockback goes in the direction the attacker is holding on the stick when it lands (not where it faces). */
   dirKnock?: boolean;
   /** Starts the character's overdrive (`CharacterDef.drive`) on this move frame. */
@@ -250,6 +267,15 @@ export interface CharacterDef {
   shooter?: { walk: number; shots: [string, string, string]; off: string; blast: string };
   /** S2 pressed from neutral / a step starts this extra move instead (skills[1] then only comes out of its cancelFrom moves). */
   s2Neutral?: string;
+  /**
+   * v1.9 (スケッチ): the normals / GC / JA leave ink along the blade's tip. That ink is "safe" (no wall for the opponent)
+   * until the exchange it was drawn in is over, so a combo never slams into its own swing.
+   */
+  inkSwing?: boolean;
+  /** v1.9 (スケッチ): standing inside a closed loop of her own ink heals `hp` every `every` frames (enclosed = ink on all 8 sides within `ray` u). */
+  inkHeal?: { every: number; hp: number; ray: number };
+  /** Mirror (ミラー): the instant swap move used by S2 while the clone is out. */
+  cloneSwap?: string;
   /** How the normals are drawn: a swung blade (default) or telekinesis (the hit area itself ripples). */
   style?: 'blade' | 'psychic';
   /**

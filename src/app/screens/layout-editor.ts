@@ -7,13 +7,14 @@ import { h, modal, shapeIcon, toast } from '../ui';
 import { sfx } from '../../audio/sfx';
 import type { Screen } from '../router';
 
-const LOOK: Record<CtrlId, { label: string; shape: 'circle' | 'hexagon' | 'triangle' | 'arrow' }> = {
+const LOOK: Record<CtrlId, { label: string; shape: 'circle' | 'hexagon' | 'triangle' | 'arrow' | 'square' }> = {
   stick: { label: 'スティック', shape: 'hexagon' },
   atk: { label: 'ATTACK', shape: 'circle' },
   s1: { label: 'S1', shape: 'circle' },
   s2: { label: 'S2', shape: 'triangle' },
   step: { label: 'STEP', shape: 'arrow' },
   guard: { label: 'GUARD', shape: 'hexagon' },
+  cancel: { label: 'キャンセル（エイム中）', shape: 'square' },
 };
 
 export function downloadText(name: string, text: string): void {
@@ -157,7 +158,7 @@ export function layoutEditorScreen(onBack: () => void): Screen {
       h('button', { class: 'btn small primary', onclick: save }, '保存'),
     ),
   );
-  const hint = h('div', { class: 'le-hint' }, 'ドラッグで移動・上のスライダーで大きさ。スティックは置いた側の画面半分どこでも使えます。');
+  const hint = h('div', { class: 'le-hint' }, 'ドラッグで移動・上のスライダーで大きさ。スティックは置いた側の画面半分どこでも使えます。キャンセルは攻撃・スキルを長押ししている間だけ出ます。');
   const el = h('div', { class: 'screen layout-edit' }, stage, hint, bar);
   const onResize = () => placeAll();
   window.addEventListener('resize', onResize);

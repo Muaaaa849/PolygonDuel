@@ -15,6 +15,11 @@ export interface Settings {
   quality: 'auto' | 'high' | 'mid' | 'low';
   reduceFlash: boolean;
   dynamicCamera: boolean;
+  /**
+   * v1.9 touch play: when your piece goes down toward the controls / thumbs at the bottom of the screen, the camera
+   * moves further and keeps you near the middle (zooming out to keep the opponent in view). Off = the classic midpoint camera.
+   */
+  selfCamera: boolean;
   /** Touch: drag ATK / skill buttons to aim, release to fire. */
   aimMode: boolean;
   /** Guard: 'auto' = stand still (stick released) to guard; 'manual' = hold the GUARD button. */
@@ -45,6 +50,7 @@ const DEFAULTS: Settings = {
   quality: 'auto',
   reduceFlash: false,
   dynamicCamera: true,
+  selfCamera: true,
   aimMode: true,
   guardMode: 'auto',
   attackDir: 'foe',
@@ -95,7 +101,7 @@ export function onSettings(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
-const EXPORT_KEYS: (keyof Settings)[] = ['volume', 'bgmVolume', 'haptics', 'lefty', 'buttonScale', 'quality', 'reduceFlash', 'dynamicCamera', 'aimMode', 'guardMode', 'attackDir', 'showBrief', 'layout', 'keys', 'touchControls', 'mouseAim'];
+const EXPORT_KEYS: (keyof Settings)[] = ['volume', 'bgmVolume', 'haptics', 'lefty', 'buttonScale', 'quality', 'reduceFlash', 'dynamicCamera', 'selfCamera', 'aimMode', 'guardMode', 'attackDir', 'showBrief', 'layout', 'keys', 'touchControls', 'mouseAim'];
 
 /** Settings as a portable JSON file (controls layout included). */
 export function exportSettings(): string {

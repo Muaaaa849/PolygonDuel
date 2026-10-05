@@ -14,11 +14,12 @@ const only = process.argv[3]?.split(',');
 const all = [['リポスト', [900, 1300]], ['シールドバッシュ', [1500, 2200]], ['ブリーズ', [1600]], ['フレアラッシュ', [1000, 1400]],
   ['モード切替', [900, 1500, 2200]], ['スタティックフィールド', [900, 1500]], ['ダッシュスラスト', [700, 1100]], ['ターンバック', [1100, 1700]],
   ['サイコプル', [1200, 2000, 2800]], ['サイコバースト', [1500, 2300]],
-  ['血の代償', [900, 1600]], ['オーバードライブ', [1200, 2400, 3200]]];
+  ['血の代償', [900, 1600]], ['オーバードライブ', [1200, 2400, 3200]],
+  ['インク', [700, 1500, 3200]], ['ミラーステップ', [800, 1300, 2200]], ['ミラーイメージ', [900, 1600, 2400, 3200]]];
 const shots = only ? all.filter(([n]) => only.includes(n)) : all;
 let i = 0;
 for (const [name, waits] of shots) {
-  await p.locator('.skill-tag', { hasText: name }).click();
+  await p.locator('.skill-tag', { hasText: name }).first().click();
   let last = 0;
   for (const w of waits) {
     await p.waitForTimeout(w - last);

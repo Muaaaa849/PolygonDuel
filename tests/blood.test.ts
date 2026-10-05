@@ -169,7 +169,7 @@ describe('ブラッド', () => {
       expect(sc.events(EV_DRIVE, 0).length).toBe(0); // (drive was set directly: no second start)
     });
 
-    it('+60% damage: 1→2→3 = 54+48+86 (instead of 34+30+54)', () => {
+    it('+70% damage (v1.9): 1→2→3 = 57+51+91 (instead of 34+30+54)', () => {
       const run = (drive: number) => {
         const sc = new Scenario('blood', 'bastion', 1.4);
         sc.s.f[0].drive = drive;
@@ -178,10 +178,10 @@ describe('ブラッド', () => {
         return sc.hits(0).map((e) => e.a);
       };
       expect(run(0)).toEqual([34, 30, 54]);
-      expect(run(1)).toEqual([54, 48, 86]);
+      expect(run(1)).toEqual([57, 51, 91]);
     });
 
-    it('+30% reach: hits from a distance the plain N1 cannot reach', () => {
+    it('+35% reach: hits from a distance the plain N1 cannot reach', () => {
       const N1 = B.moves[M_N1];
       const far = (N1.reach + N1.lunge) / 1000 + 0.5 + 0.3; // just past the plain max
       const plain = new Scenario('blood', 'bastion', far);
@@ -194,7 +194,7 @@ describe('ブラッド', () => {
       expect(od.hits(0).length + od.blocks(0).length).toBe(1);
     });
 
-    it('+40% walking speed', () => {
+    it('+50% walking speed (v1.9)', () => {
       const dist = (drive: number) => {
         const sc = new Scenario('blood', 'bastion', 8);
         sc.s.f[0].drive = drive;
@@ -203,8 +203,8 @@ describe('ブラッド', () => {
         sc.run(30, () => stick(8), idle);
         return sc.s.f[0].y - y0;
       };
-      expect(dist(1) / dist(0)).toBeGreaterThan(1.38);
-      expect(dist(1) / dist(0)).toBeLessThan(1.42);
+      expect(dist(1) / dist(0)).toBeGreaterThan(1.48);
+      expect(dist(1) / dist(0)).toBeLessThan(1.52);
     });
 
     it('the guard gauge lasts 3 s instead of 1.5 s', () => {
@@ -286,12 +286,12 @@ describe('ブラッド', () => {
       expect(blk.length).toBe(1);
       expect(blk[0].lf).toBe(30);
       expect((sc.s.f[1].x - bx) / 1000).toBeGreaterThan(3); // even guarded, 3.5u away
-      // unguarded: 90 × 1.6 and a knockdown
+      // unguarded: 90 × 1.7 and a knockdown (v1.9)
       const open = new Scenario('blood', 'bastion', 2.5);
       open.s.f[0].drive = 1;
       open.s.f[0].cost = q(4);
       open.run(90, (_m, _o, _s, t) => (t < 40 ? IN_ATK : 0), (me) => (me.statHitsTaken > 0 ? 0 : stick(16)));
-      expect(open.hits(0)[0].a).toBe(144);
+      expect(open.hits(0)[0].a).toBe(153);
       expect(open.events(EV_KNOCKDOWN, 1).length).toBe(1);
     });
 

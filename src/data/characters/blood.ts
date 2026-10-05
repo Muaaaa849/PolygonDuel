@@ -8,7 +8,7 @@ import type { CharacterDef } from '../types';
 //     Only walking (−30%) is possible meanwhile; it ends on release / full cost / when hit, and
 //     3 s of cooldown follow. It is at its safest while the opponent is on the floor (v1.6).
 //  S2 オーバードライブ (pentagon): the cost gauge becomes the fuel — 1 quarter per 1.25 s (cost 4 =
-//     20 s), no cost can be gained meanwhile. Damage +60%, walk +40%, reach +30%, the guard gauge
+//     20 s), no cost can be gained meanwhile. Damage +70%, walk +50%, reach +35% (v1.9), the guard gauge
 //     lasts 3 s; S1 becomes a guard break (startup 30F) and ATK held for 12F in a row (a mash never
 //     counts) becomes a heavy blow (same 30F startup, knockdown, 3.5u pushback even when guarded). When the fuel runs out: 10 s of exhaustion (damage −20%, no new overdrive) and 3 s
 //     in which only steps move it.
@@ -59,7 +59,7 @@ export const blood: CharacterDef = {
     },
     {
       id: 'overdrive', name: 'オーバードライブ', kind: 'skill', shape: 'pentagon',
-      desc: 'コストを燃料に超強化（攻撃+60%・移動+40%・リーチ+30%・ガード3秒）。コストが徐々に減り、4なら20秒。解除不能・その間コストは増えない。燃焼中はS1がガード崩し、通常攻撃の長押しが強攻撃（どちらも発生30F）。燃え尽きると10秒間弱体化し、3秒は歩けずステップだけ',
+      desc: 'コストを燃料に超強化（攻撃+70%・移動+50%・リーチ+35%・ガード3秒）。コストが徐々に減り、4なら20秒。解除不能・その間コストは増えない。燃焼中はS1がガード崩し、通常攻撃の長押しが強攻撃（どちらも発生30F）。燃え尽きると10秒間弱体化し、3秒は歩けずステップだけ',
       cost: 0, S: 10, A: 0, T: 18, reach: 0, lunge: 0,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 0,
       driveOn: 10, cancelFrom: ['neutral'],
@@ -83,7 +83,7 @@ export const blood: CharacterDef = {
     },
   ],
   drive: {
-    drainFrames: 75, minCost: 1, power: 60, walk: 40, reach: 30,
+    drainFrames: 75, minCost: 1, power: 70, walk: 50, reach: 35, // (v1.9: +60/+40/+30 → +70/+50/+35)
     s1: 'driveBreak',
     hold: { at: 12, move: 'driveHeavy' },
     exhaust: { frames: 600, noWalk: 180, power: -20 },
@@ -91,7 +91,7 @@ export const blood: CharacterDef = {
   combos: [
     { route: '1→2→3', cost: 0, note: '基本。弱いので無理に振らない' },
     { route: 'S1(長押し)→S2', cost: 0, note: '体力を払ってコストを溜め、オーバードライブへ' },
-    { route: 'S2中: 1→2→3', cost: 0, note: '+60%・リーチ+30%。3段目でダウンさせたら仕切り直し' },
+    { route: 'S2中: 1→2→3', cost: 0, note: '+70%・リーチ+35%。3段目でダウンさせたら仕切り直し' },
     { route: 'S2中: S1', cost: 0, note: '30Fのガード崩し（クラッシュブロウ）。ガード固めへの回答' },
     { route: 'S2中: ATK長押し', cost: 0, note: '30Fの強攻撃（ヘヴィブロウ）。ヒットで大ダウン、ガードされても3.5u吹き飛ばす' },
     { route: 'JA→2→3', cost: 0, note: 'ジャスト回避から' },

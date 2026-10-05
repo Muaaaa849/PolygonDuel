@@ -9,7 +9,7 @@
 // Everywhere else (chains, GC in blockstun, cancels) buttons fire the moment they're pressed.
 import { h, shapeIcon } from '../app/ui';
 import { settings } from '../app/settings';
-import { placePx } from './layout';
+import { placePx, defaultLayout } from './layout';
 import { AIM_DIRS, AIM_LEVELS, IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, IN_GUARD, aimBits, quantizeDir } from '../core/input';
 import type { Shape } from '../data/types';
 
@@ -76,6 +76,10 @@ export class TouchControls {
   private aimKnob: HTMLElement;
   private aimInner: HTMLElement;
   private aimT0 = 0;
+  /** Aim-cancel button (shown while aiming; position from the layout, above the stick by default). */
+  private cancelEl: HTMLElement;
+  /** The aim pointer is over the cancel button (releasing there cancels). */
+  private overCancel = false;
   /** Should a press of this button aim (fire on release)? Decided at touch-down. */
   aimPolicy: (id: BtnId) => boolean = () => false;
   /** Anything touched at all (used to hide keyboard hints). */
@@ -95,7 +99,8 @@ export class TouchControls {
     this.aimKnob = h('div', { class: 'aim-knob' });
     this.aimInner = h('div', { class: 'aim-inner' }, h('span', null, 'AUTO'));
     this.aimPad = h('div', { class: 'aim-pad' }, this.aimInner, this.aimKnob);
-    this.el = h('div', { class: `controls${settings.lefty ? ' lefty' : ''}` }, this.zone, this.stickEl, this.stickHint, this.btnWrap, this.aimPad);
+    this.cancelEl = h('div', { class: 'aim-cancel', 'aria-label': 'キャンセル' }, h('span', { class: 'x' }, '✕'), h('span', { class: 'lbl' }, 'キャンセル'));
+    this.el = h('div', { class: `controls${settings.lefty ? ' lefty' : ''}` }, this.zone, this.stickEl, this.stickHint, this.btnWrap, this.aimPad, this.cancelEl);
 
     this.el.addEventListener('pointerdown', this.onDown, { passive: false });
     this.el.addEventListener('pointermove', this.onMove, { passive: false });
@@ -124,7 +129,7 @@ export class TouchControls {
       b.append(h('span', { class: 'lbl' }, l.label));
       if (l.cost) {
         const c = h('span', { class: 'cost' });
-        for (let i = 0; i < Math.ceil(l.cost); i++) c.append(h('i'));
+        for (let i = 0; i < Math.ceil(l.cost); i++) c.append(h('i', i + 1 > l.cost ? { class: 'half' } : null));
         b.append(c);
       }
     }
@@ -161,6 +166,27 @@ export class TouchControls {
       st.width = st.height = `${size}px`;
     }
     this.stickEl.style.setProperty('--stick-s', String(L?.stick.s ?? 1));
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const cp = (L ?? defaultLayout(vw, vh, settings.lefty, settings.buttonScale)).cancel;
+    const c = placePx(cp, 'cancel', vw, vh, settings.buttonScale);
+    const cs = this.cancelEl.style;
+    cs.left = `${c.cx - c.size / 2}px`;
+    cs.top = `${c.cy - c.size / 2}px`;
+    cs.width = cs.height = `${c.size}px`;
+  }
+
+  /** Is (x, y) on the aim-cancel button (a little slack around it)? */
+  private onCancel(x: number, y: number): boolean {
+    const r = this.cancelEl.getBoundingClientRect();
+    if (!r.width) return false;
+    return Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2)) <= r.width * 0.65;
+  }
+
+  /** Drops the aim in progress without firing (the cancel button / key). */
+  cancelAim(): void {
+    if (!this.aimState) return;
+    this.endAim(false);
   }
 
   private isStickSide(x: number): boolean {
@@ -176,6 +202,11 @@ export class TouchControls {
     this.used = true;
     const x = e.clientX;
     const y = e.clientY;
+    if (this.aimState && this.onCancel(x, y)) {
+      // the other thumb taps the cancel button while one holds a skill
+      this.cancelAim();
+      return;
+    }
     if (this.isStickSide(x) && this.stickPointer < 0 && y > window.innerHeight * 0.16) {
       this.stickPointer = e.pointerId;
       this.origin = { x, y };
@@ -278,20 +309,26 @@ export class TouchControls {
     const dy = y - this.aimStart.y;
     const len = Math.hypot(dx, dy);
     const auto = len < AIM_INNER * k;
-    const cancel = len > AIM_CANCEL * k;
+    // dragged far away, or onto the cancel button
+    this.overCancel = this.onCancel(x, y);
+    const cancel = len > AIM_CANCEL * k || this.overCancel;
     const frac = Math.max(0, Math.min(1, (len - AIM_INNER * k) / ((AIM_RANGE - AIM_INNER) * k)));
     // free aim is exactly where the thumb points (no snapping; the sim gets 256 directions)
     this.aimState = { id: this.aimState.id, x: len > 0 ? dx / len : 1, y: len > 0 ? dy / len : 0, frac: auto ? 1 : frac, auto, cancel };
     const shown = Math.min(len, AIM_RANGE * k);
     this.aimKnob.style.transform = `translate(calc(-50% + ${(dx / (len || 1)) * shown}px), calc(-50% + ${(dy / (len || 1)) * shown}px))`;
     this.aimPad.className = `aim-pad on${auto ? ' auto' : ''}${cancel ? ' cancel' : ''}`;
+    this.cancelEl.classList.toggle('show', true);
+    this.cancelEl.classList.toggle('hot', this.overCancel);
   }
 
   private endAim(fire: boolean): void {
     const a = this.aimState;
     this.aimPtr = -1;
     this.aimState = null;
+    this.overCancel = false;
     this.aimPad.className = 'aim-pad';
+    this.cancelEl.classList.remove('show', 'hot');
     if (!a) return;
     this.btns[a.id].classList.remove('down');
     if (!fire || a.cancel) return;
@@ -304,6 +341,7 @@ export class TouchControls {
   tickAim(): void {
     if (this.aimState?.auto && !this.aimPad.classList.contains('on') && performance.now() - this.aimT0 >= AUTO_PREVIEW_MS) {
       this.aimPad.className = 'aim-pad on auto';
+      this.cancelEl.classList.add('show');
     }
   }
 

@@ -7,6 +7,7 @@ import {
   type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE,
   EV_KNOCKDOWN, EV_STEP, EV_HEAL, EV_KO, EV_ROUND, EV_FIGHT, EV_TIMEUP, EV_ROUND_END, EV_MATCH_END, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END, EV_POWER, EV_PULL,
   EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_WAKE, EV_UP, EV_DRIVE, EV_CHARGE, EV_INK, EV_TRAIL, HF_COUNTER, HF_KNOCKDOWN, HF_PUNISH, HF_SHOT,
+  EV_TELEPORT, EV_CLONE, EV_SWAP,
 } from '../../core/events';
 import { PH_FIGHT, PH_INTRO, ST_FREE, ST_STEP, ST_ATTACK, type FighterState } from '../../core/state';
 import { BattleView } from '../../render/battle-view';
@@ -60,7 +61,7 @@ function keyLegend(): HTMLElement {
   const move = `${first('up')}${first('left')}${first('down')}${first('right')}`;
   const items: [string, string][] = [
     ['移動', move], ['攻撃', all('atk')], ['S1', all('s1')], ['S2', all('s2')], ['ステップ', all('step')],
-    ['ガード', settings.guardMode === 'manual' ? all('guard') : '止まる'], ['ポーズ', 'Esc'],
+    ['ガード', settings.guardMode === 'manual' ? all('guard') : '止まる'], ['スキル取消', all('cancel')], ['ポーズ', 'Esc'],
   ];
   return h('div', { class: 'key-legend' }, ...items.map(([t, v]) => h('span', null, h('b', null, v), t)));
 }
@@ -89,7 +90,11 @@ export function battleScreen(cfg: BattleConfig): Screen {
         ? cfg.local === 0 ? ['YOU', 'RIVAL'] : ['RIVAL', 'YOU']
         : cfg.local === 0 ? ['YOU', training ? 'DUMMY' : 'CPU'] : [training ? 'DUMMY' : 'CPU', 'YOU'];
   setAmbient(false);
-  const view = new BattleView(sim, { local: cfg.mode === 'local' ? -1 : cfg.local, tags });
+  // (touch play: the camera can keep "you" clear of the thumbs and controls at the bottom — settings.selfCamera)
+  const view = new BattleView(sim, {
+    local: cfg.mode === 'local' ? -1 : cfg.local, tags,
+    focusSelf: cfg.mode !== 'local' && settings.selfCamera && showTouchControls(),
+  });
   view.mount();
 
   // ───────── DOM ─────────
@@ -98,16 +103,19 @@ export function battleScreen(cfg: BattleConfig): Screen {
   root.append(hud.el);
   const touch = new TouchControls();
   root.append(touch.el);
-  // aim (drag-to-aim) only when a fresh attack / aimable skill would start
-  touch.aimPolicy = (id) => {
-    if (!settings.aimMode || id === 'step') return false;
+  /** Would this button start a fresh attack / skill that can be aimed (and so fire on release, cancelable)? */
+  const aimable = (id: string) => {
+    if (id === 'step' || id === 'guard') return false;
     const f = sim.s.f[cfg.local];
     if (f.st !== ST_FREE && f.st !== ST_STEP) return false;
     if (id === 'atk' && f.justWin > 0) return false; // just attack auto-targets
     if (id === 'atk' && f.drive) return false; // overdrive: a HELD ATK is the heavy blow, so it must be a plain hold
     const m = sim.char(cfg.local).moves[slotFor(id)];
-    return (m.hasHitbox || !!m.proj || !!m.field) && !m.autoAim && !m.radial;
+    if (m.instant) return false;
+    return (m.hasHitbox || !!m.proj || !!m.field || !!m.clone) && !m.autoAim && !m.radial;
   };
+  // aim (drag-to-aim) only when a fresh attack / aimable skill would start
+  touch.aimPolicy = (id) => settings.aimMode && aimable(id);
   /** The move a button starts from neutral (shooting mode: ATK = shot, S1 = back to normal). */
   const slotFor = (id: string) => {
     const f = sim.s.f[cfg.local];
@@ -156,12 +164,25 @@ export function battleScreen(cfg: BattleConfig): Screen {
   // ───────── input sources ─────────
   const kb = new KeyboardInput(cfg.mode === 'local' ? 'p1' : 'solo', 0);
   const kb2 = cfg.mode === 'local' ? new KeyboardInput('p2', 1) : null;
+  // keyboard: an aimable skill fires on the key's release; while it is held the range shows and the cancel key drops it
+  kb.deferPolicy = (id) => aimable(id);
+  if (kb2) {
+    const other = (1 - cfg.local) as 0 | 1;
+    kb2.deferPolicy = (id) => {
+      const f = sim.s.f[other];
+      if (f.st !== ST_FREE && f.st !== ST_STEP) return false;
+      const m = sim.char(other).moves[id === 's1' ? sim.skillSlot(f, M_S1) : sim.s2Slot(f)];
+      return !m.instant && (m.hasHitbox || !!m.proj || !!m.field || !!m.clone) && !m.autoAim && !m.radial;
+    };
+  }
+  const cancelHint = h('div', { class: 'key-cancel-hint' }, h('b', null, keysFor(cfg.mode === 'local' ? 'p1' : 'solo').cancel.map(keyLabel).join('/') || '—'), '離すと発動・キャンセル');
   // PC: no on-screen controls; a legend of the keys instead, and (optionally) aim with the mouse
   const touchShown = showTouchControls();
   if (!touchShown) {
     touch.el.style.display = 'none';
     root.append(keyLegend());
   }
+  root.append(cancelHint);
   const mouseAim = !touchShown && settings.mouseAim && cfg.mode !== 'local' && cfg.mode !== 'tutorial';
   const mouse = { x: 0, y: 0, seen: false };
   const onMouseMove = (e: MouseEvent) => {
@@ -286,6 +307,16 @@ export function battleScreen(cfg: BattleConfig): Screen {
         break;
       case EV_BLINK:
         sfx.blink();
+        break;
+      case EV_TELEPORT:
+        sfx.mirror();
+        break;
+      case EV_CLONE:
+        sfx.clone(e.a === 1);
+        break;
+      case EV_SWAP:
+        sfx.swap();
+        if (involvesLocal(e.who)) vibrate(15);
         break;
       case EV_SHOT:
         if (sim.char(e.who).shooter) sfx.shot(e.a);
@@ -684,7 +715,8 @@ export function battleScreen(cfg: BattleConfig): Screen {
     try {
       touch.tickAim();
       const a = touch.aim;
-      view.aim = a ? { slot: slotFor(a.id), x: a.x, y: a.y, frac: a.frac, auto: a.auto, cancel: a.cancel, who: cfg.local } : null;
+      view.aim = a ? { slot: slotFor(a.id), x: a.x, y: a.y, frac: a.frac, auto: a.auto, cancel: a.cancel, who: cfg.local } : keyAim();
+      cancelHint.classList.toggle('show', !!kb.holding);
       view.render((drawDt / TICK_MS) * devTime);
       app.render();
     } catch (err) {
@@ -724,6 +756,21 @@ export function battleScreen(cfg: BattleConfig): Screen {
       perfSkip = 30;
     }
     perfN = perfAcc = perfLate = rafN = rafAcc = 0;
+  }
+
+  /** A skill key held on the keyboard: its range (toward the mouse cursor with mouse aim, else auto-targeted). */
+  function keyAim(): typeof view.aim {
+    if (!kb.holding) return null;
+    const slot = slotFor(kb.holding);
+    if (mouseAim && mouse.seen) {
+      const p = view.screenOf(cfg.local);
+      const r = app.canvas.getBoundingClientRect();
+      const dx = mouse.x - r.left - p.x;
+      const dy = mouse.y - r.top - p.y;
+      const len = Math.hypot(dx, dy);
+      if (len > 16) return { slot, x: dx / len, y: dy / len, frac: 1, auto: false, cancel: false, who: cfg.local };
+    }
+    return { slot, x: 1, y: 0, frac: 1, auto: true, cancel: false, who: cfg.local };
   }
 
   function updateNetBadge(): void {

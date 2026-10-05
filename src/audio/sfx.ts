@@ -123,6 +123,24 @@ export const sfx = {
     tone(1976, 0.35, 'triangle', 0.06, 988, 0.15);
     tone(330, 0.25, 'sine', 0.12, 660, 0.12);
   },
+  /** ミラーステップ: a short glassy ping (lighter than the JA blink). */
+  mirror() {
+    noise(0.06, 2400, 2, 0.12, 'bandpass', 7000);
+    tone(1760, 0.08, 'sine', 0.08, 2640);
+  },
+  /** ミラー: the clone steps out (a shimmer) / the swap (two pings crossing). */
+  clone(on: boolean) {
+    if (on) {
+      tone(880, 0.25, 'triangle', 0.08, 1320, 0.0);
+      tone(1320, 0.25, 'sine', 0.06, 1980, 0.06);
+      noise(0.2, 3000, 1.5, 0.08, 'bandpass', 6000);
+    } else tone(1320, 0.2, 'sine', 0.05, 660);
+  },
+  swap() {
+    tone(2200, 0.07, 'sine', 0.09, 990);
+    tone(990, 0.07, 'sine', 0.09, 2200, 0.03);
+    noise(0.08, 1800, 2, 0.12, 'bandpass', 8000);
+  },
   /** JA teleport: a zipped-up swish that snaps into place. */
   blink() {
     noise(0.12, 1200, 1.5, 0.22, 'bandpass', 9000);
@@ -255,7 +273,11 @@ export const sfx = {
   },
   /** v1.7 スケッチのインク (a = 1 the pen touches down: a quick scribble; 0 it lifts: a soft tick). */
   ink(a: number) {
-    if (a === 1) {
+    if (a === 2) {
+      // the tap's box: four quick strokes snapping shut
+      for (let i = 0; i < 4; i++) noise(0.04, 3000 + i * 500, 5, 0.1, 'bandpass', 4600, i * 0.035);
+      tone(1200, 0.1, 'triangle', 0.06, 1800, 0.14);
+    } else if (a === 1) {
       for (let i = 0; i < 4; i++) noise(0.05, 3400 + (i % 2) * 1800, 5, 0.09, 'bandpass', 5200 - (i % 2) * 1800, i * 0.045);
       tone(1500, 0.08, 'triangle', 0.05, 2200, 0.02);
     } else tone(900, 0.05, 'sine', 0.05, 600);

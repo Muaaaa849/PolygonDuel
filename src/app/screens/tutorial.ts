@@ -2,6 +2,7 @@
 import type { Sim } from '../../core/sim';
 import {
   type SimEvent, EV_BLOCK, EV_CRUSH, EV_HIT, EV_MOVE, EV_JUST,
+  comboOf,
 } from '../../core/events';
 import { M_GC, M_N1, M_S2 } from '../../core/compile';
 import { IN_ATK, IN_S2, IN_STICK } from '../../core/input';
@@ -205,10 +206,10 @@ export function createTutorial(onFinish: () => void): TutorialHooks {
       if (lesson === 3 && step === 0 && e.type === EV_CRUSH && e.who === 0) progress();
       if (lesson === 3 && step === 1 && e.type === EV_HIT && e.who === 0) {
         // hits after the crush (crush = hit 1 of the combo)
-        if ((e.b >> 8) + 1 >= 2) progress();
+        if (comboOf(e.b) + 1 >= 2) progress();
       }
       if (lesson === 4 && e.type === EV_HIT && e.who === 0) {
-        const combo = (e.b >> 8) + 1;
+        const combo = comboOf(e.b) + 1;
         if (combo === 1) comboStart = t;
         const goal = LESSONS[4].steps[step].goal;
         if (combo >= goal) {

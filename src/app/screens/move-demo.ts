@@ -7,7 +7,7 @@ import { u } from '../../core/fixed';
 import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK } from '../../core/input';
 import { ST_FREE } from '../../core/state';
 import { M_N2, M_N3, M_S1, M_STRIKE } from '../../core/compile';
-import { TRAIL_STRIDE } from '../../core/state';
+import { TRAIL_STRIDE, INK_LIFE, INK_PENUP } from '../../core/state';
 import { SYSTEM } from '../../data/system';
 import { CHARACTERS, charIndex } from '../../data/characters';
 import type { CharacterDef, MoveDef } from '../../data/types';
@@ -37,16 +37,55 @@ function scriptFor(c: CharacterDef, kind: DemoKind): Script {
   const m: MoveDef = c.skills[slot];
   const btn = kind === 's1' ? IN_S1 : IN_S2;
   const press = (t: number) => (t === 20 ? btn | IN_STICK : 0); // stick 0 = toward the dummy (right)
+  if (m.teleport) {
+    // ミラー S1: N1 swung from out of range → a teleport in during its startup → it lands → 2 → 3
+    return {
+      dist: 4.4,
+      loop: 190,
+      setup: (sim) => (sim.s.f[0].cost = 16),
+      input: (t, sim) => {
+        const me = sim.s.f[0];
+        const dummy = sim.s.f[1].statHitsTaken > 0 ? 0 : shuffle(t);
+        if (t === 20) return [IN_ATK, dummy];
+        if (me.move === 0 && me.sf === 9 && !me.moveHit) return [IN_S1 | IN_STICK, dummy];
+        return [t > 30 && t < 120 && t % 4 === 0 && sim.s.f[1].statHitsTaken > 0 ? IN_ATK : 0, dummy];
+      },
+    };
+  }
+  if (m.clone) {
+    // ミラー S2: the clone appears behind the dummy, both swing 1 → 2, swap, then 1 → 2 → 3
+    let swapped = false;
+    return {
+      dist: 1.8,
+      loop: 260,
+      setup: (sim) => (sim.s.f[0].cost = 16),
+      input: (t, sim) => {
+        const me = sim.s.f[0];
+        const dummy = sim.s.f[1].statHitsTaken > 0 ? 0 : shuffle(t);
+        if (t === 8) return [IN_S2, dummy];
+        if (t < 44) return [0, dummy];
+        if (me.move === M_N2 && me.sf === 20 && !swapped) {
+          swapped = true;
+          return [IN_S2, dummy];
+        }
+        return [t < 200 && t % 4 === 0 && (t < 50 || sim.s.f[1].statHitsTaken > 0) ? IN_ATK : 0, dummy];
+      },
+    };
+  }
   if (m.ink) {
-    // スケッチ S1: press, then walk a loop around the dummy — the path stays as ink (and is shown for both to read)
+    // スケッチ S1: a tap boxes the dummy in; then a hold, and a walk around it — the path stays as ink
     return {
       dist: 3.4,
-      loop: 220,
-      setup: (sim) => (sim.s.f[0].infCost = 0),
+      loop: 240,
+      setup: (sim) => {
+        sim.s.f[0].infCost = 0;
+        sim.s.f[0].cost = 16;
+      },
       input: (t) => {
         const path = [[24, 26], [0, 60], [8, 44], [16, 60]]; // up, right, down, left (a box)
-        if (t === 4) return [IN_S1, 0];
-        let k = t - 26;
+        if (t >= 4 && t < 7) return [IN_S1, 0];
+        if (t >= 26 && t < 40) return [IN_S1, 0];
+        let k = t - 46;
         if (k < 0) return [0, 0];
         for (const [dir, len] of path) {
           if (k < len) return [IN_STICK | dir, 0];
@@ -70,7 +109,7 @@ function scriptFor(c: CharacterDef, kind: DemoKind): Script {
         [[x, y - u(2.6)], [x, y], [x, y + u(2.6)]].forEach(([px, py], k) => {
           t[k * TRAIL_STRIDE] = px;
           t[k * TRAIL_STRIDE + 1] = py;
-          t[k * TRAIL_STRIDE + 2] = (600 << 1) | (k === 0 ? 1 : 0);
+          t[k * TRAIL_STRIDE + 2] = (600 << INK_LIFE) | (k === 0 ? INK_PENUP : 0);
         });
         sim.s.f[0].trHead = 3;
       },

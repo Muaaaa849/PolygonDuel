@@ -31,10 +31,36 @@ function facts(m: MoveDef, c?: CharacterDef): [string, string][] {
     rows.push(['切替ブラスト', `2段目のヒット／ガード後にS1：発生${bl.S}F・${bl.dmg}ダメージ＋ダウン（${bl.launch}u吹き飛ばす）、ガードでも${bl.pushback}u（壁で30）。射撃モードへ（コスト${bl.cost}）`]);
     return rows;
   }
+  if (m.teleport) {
+    rows.push(['発動', `押した瞬間（0F）。スティックの方向（離していれば向いている方向）へ${m.teleport.dist}u。相手の体に重なる時は相手の向こう側まで抜ける`]);
+    rows.push(['いつでも', '通常時・ステップ中・攻撃中（発生前でも硬直中でも）。攻撃は止まらず、新しい位置から相手へ向き直って続く。被弾中・ガード硬直中は不可']);
+    rows.push(['連続', `コスト${m.cost}ずつ、あるだけ続けて使える（${m.lock ?? SYSTEM.instantLock}Fあける）`]);
+    rows.push(['使い方', '届かない間合いで1段目を振り、発生前に飛び込んで当てる。1段目→テレポート→2→3（通常攻撃の硬直は他より6F長く、間に入る）。壁を背負ったら相手の向こうへ抜けて逆に壁へ']);
+    return rows;
+  }
+  if (m.clone) {
+    const C = m.clone;
+    const sw = c?.extraMoves?.find((x) => x.swap);
+    rows.push(['フレーム', `${C.at}F目に分身が出る（全体${m.T}F）。${C.frames / 60}秒で消える`]);
+    rows.push(['場所', `タップ：相手を挟んだ向こう側（相手から最大${C.mirror}u）／ドラッグ：エイムした地点（最大${C.maxDist}u）`]);
+    rows.push(['分身の攻撃', `本体が通常攻撃（1〜3段目・GC・JA）を出すと、分身も相手へ向いて同じ攻撃を振る。威力${C.dmgPct}%・コストは溜まらない。本体と同時に当たれば両方のダメージが入る。分身だけが当たっても次の段へ繋がる`]);
+    rows.push(['分身は', '相手の攻撃が当たらない（消されない）。1つまで']);
+    if (sw) rows.push(['入れ替え（分身中のS2）', `コスト${sw.cost}。押した瞬間（0F）に本体と分身の場所を入れ替え、今の攻撃・ステップの硬直も消える（空振りの硬直キャンセル・1→2→入れ替え→1→2→3）。攻撃をガードされた後・ガード硬直中は使えない`]);
+    rows.push(['エイム', 'ボタンをドラッグで置く場所を指定できる']);
+    return rows;
+  }
   if (m.ink) {
     const k = m.ink;
-    rows.push(['フレーム', `${k.at}F目に発動（全体${m.T}F）`]);
-    rows.push(['インク', `発動から${k.draw / 60}秒間、歩く・ステップ・攻撃の踏み込みで動いた跡が${k.life / 60}秒残る（${k.gap}uごとに点）。古いものから消える`]);
+    if (m.inkBox) {
+      rows.push(['タップ', `相手の周りを一辺${m.inkBox.half * 2}uの四角いインクで囲む（コスト${m.inkBox.cost}）。閉じているので自分が中に入ると回復もできる`]);
+      rows.push(['長押し', `${m.inkBox.hold}F押し続けると軌跡（コスト${m.cost}）：${k.draw / 60}秒間、歩く・ステップ・攻撃の踏み込みで動いた跡がインクになる（${k.gap}uごとに点）`]);
+      rows.push(['残る時間', `${k.life / 60}秒。古いものから消える`]);
+      rows.push(['通常攻撃', '振った刃の先にもインクが残る（空振りでも）。そのコンボ中は相手に当たらず、やり取りが終わると壁になる']);
+      rows.push(['回復', '閉じたインク（四角・3段目の一回転の円・ぐるっと歩いた輪）の中にいると、体力がじわじわ回復']);
+    } else {
+      rows.push(['フレーム', `${k.at}F目に発動（全体${m.T}F）`]);
+      rows.push(['インク', `発動から${k.draw / 60}秒間、歩く・ステップ・攻撃の踏み込みで動いた跡が${k.life / 60}秒残る（${k.gap}uごとに点）。古いものから消える`]);
+    }
     rows.push(['通り抜け', '自分も相手も、普段はインクを通り抜けられる（邪魔にならない）']);
     rows.push(['壁になる時', `ノックバックで吹き飛ばされている相手（のけぞり・ダウン・スタン中）がインクに触れると、壁に当たったように止まって追加ダメージ ${k.dmg}〜${k.dmg + k.bonus}（アリーナの壁は30〜60）。触れたインクは消える`]);
     rows.push(['回数', `壁ダメージと合わせて1コンボ${SYSTEM.wall.perCombo}回まで`]);
@@ -162,7 +188,8 @@ const whiffT = (m: MoveDef): number => m.S + m.A - 1 + Math.ceil((m.T - (m.S + m
 function skillBlock(c: CharacterDef, m: MoveDef, slot: number): HTMLElement {
   const info = SHAPE_INFO.find((x) => x.shape === m.shape)!;
   const cost = h('span', { class: 'ms-cost' });
-  for (let i = 0; i < Math.ceil(m.cost ?? 0); i++) cost.append(h('i'));
+  const cv = m.cost ?? 0;
+  for (let i = 0; i < Math.ceil(cv); i++) cost.append(h('i', i + 1 > cv ? { class: 'half' } : null));
   const table = h('div', { class: 'ms-facts' });
   for (const [k, v] of facts(m, c)) table.append(h('span', null, k), h('b', null, v));
   return h('div', { class: 'ms-skill' },
@@ -173,10 +200,15 @@ function skillBlock(c: CharacterDef, m: MoveDef, slot: number): HTMLElement {
     ),
     h('div', { class: 'ms-text' },
       m.desc ? h('p', null, m.desc) : null,
-      h('div', { class: 'ms-read', style: `--sc:${info.color}` },
-        h('span', { html: shapeIcon(m.shape, info.color) }),
-        h('span', null, `相手には「${info.name}」に見える → `, h('b', null, info.act)),
-      ),
+      m.teleport
+        ? h('div', { class: 'ms-read', style: `--sc:${info.color}` },
+          h('span', { html: shapeIcon(m.shape, info.color) }),
+          h('span', null, '形は変わらず一瞬で消えて現れる → ', h('b', null, '飛んだ先の動きを見ろ')),
+        )
+        : h('div', { class: 'ms-read', style: `--sc:${info.color}` },
+          h('span', { html: shapeIcon(m.shape, info.color) }),
+          h('span', null, `相手には「${info.name}」に見える → `, h('b', null, info.act)),
+        ),
       table,
     ),
   );

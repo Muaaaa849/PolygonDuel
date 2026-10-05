@@ -22,15 +22,21 @@ export interface CpuLevel {
   /** Chance to confirm a hit into the full chain. */
   confirm: number;
   aggression: number;
+  /**
+   * v1.9 HARD: plays the waiting game instead of swinging into a guard — keeps moving around the tip of its reach, never
+   * attacks a guard (it waits for the gauge, or breaks it with a triangle), places N1 at the tip as the opponent walks in,
+   * feints with a step in and out, and punishes whiffs with a step-in attack.
+   */
+  patient?: boolean;
 }
 
 export const CPU_LEVELS: CpuLevel[] = [
   { name: 'EASY', react: 30, accuracy: 0.35, gc: 0.25, confirm: 0.6, aggression: 0.012 },
   { name: 'NORMAL', react: 19, accuracy: 0.65, gc: 0.6, confirm: 0.9, aggression: 0.02 },
-  { name: 'HARD', react: 13, accuracy: 0.85, gc: 0.9, confirm: 1, aggression: 0.03 },
+  { name: 'HARD', react: 13, accuracy: 0.85, gc: 0.9, confirm: 1, aggression: 0.03, patient: true },
 ];
 
-const PREFERRED: Record<string, number> = { blaze: 2.6, zephyr: 3.3, bastion: 2.6, phantom: 3.0, ray: 2.5, volt: 2.9, kinesis: 2.3, blood: 2.4, sketch: 2.6 };
+const PREFERRED: Record<string, number> = { blaze: 2.6, zephyr: 3.3, bastion: 2.6, phantom: 3.0, ray: 2.5, volt: 2.9, kinesis: 2.3, blood: 2.4, sketch: 2.6, mirror: 2.9 };
 const FIELD_W = SYSTEM.field.w;
 const FIELD_H = SYSTEM.field.h;
 
@@ -47,6 +53,8 @@ export class CpuPlayer {
   private strafe = 1;
   private strafeT = 0;
   private hexFrames = 0;
+  /** Frames the opponent has been seen as a plain square (free, not guarding). */
+  private sqFrames = 0;
   private holdGuard = 0;
   private t = 0;
   private mashParity = 0;
@@ -70,6 +78,16 @@ export class CpuPlayer {
   private gbHold = 0;
   /** Sketch: the stick direction (0..31) held while the flick comes out, or -1 (no stick: straight away). */
   private knockDir = -1;
+  /** Sketch: S1 is a tap (the box) or a hold (the trail) — frames left to keep it held. */
+  private inkHold = 0;
+  /** Patient (HARD): feint — 1 stepping in (a step back follows), 2 stepping back out. */
+  private feint = 0;
+  /** Mirror: the plan for the current N1 (1 = teleport in during its startup), and whether this combo already teleported / swapped. */
+  private tpPlan = 0;
+  private tpUsed = false;
+  private swapUsed = false;
+  /** Distance to the opponent on the previous frame (u): the closing speed. */
+  private prevDist = 0;
 
   constructor(private sim: Sim, private me: 0 | 1, public level: CpuLevel, seed = 1) {
     this.rng = new Rng(seed * 7919 + 17);
@@ -152,6 +170,79 @@ export class CpuPlayer {
     return x < 0.6 || x > FIELD_W - 0.6 || y < 0.6 || y > FIELD_H - 0.6;
   }
 
+  /** How far the opponent's current attack can reach us (u, centre to centre), or 0 when it has no hitbox. */
+  private threat(op: FighterState): number {
+    const om = op.st === ST_ATTACK ? this.sim.moveOf(op) : null;
+    if (!om || !om.hasHitbox) return 0;
+    const lunge = om.lungeAt.reduce((a, v, k) => (k >= op.sf ? a + v : a), 0);
+    return (this.sim.reachOf(op, om) + lunge + (om.dash ? om.dash.per * om.A : 0)) / 1000 + 0.5;
+  }
+
+  /**
+   * HARD in neutral: never swing into a guard; dance around the tip of the reach; place N1 at the tip as they walk in;
+   * break a long guard with a triangle (or just wait for the gauge); now and then a feint (step in, step straight out).
+   */
+  private patientNeutral(me: FighterState, op: FighterState, seenSt: number, seenShape: number, dist: number, lastDist: number, toward: number, away: number, tip: number, canStep: boolean): number {
+    const c = this.sim.char(this.me);
+    if (--this.strafeT <= 0) {
+      this.strafeT = 30 + this.rng.int(60);
+      this.strafe = this.rng.chance(0.5) ? 1 : -1;
+    }
+    const around = (d: number) => IN_STICK | ((d + this.strafe * 8 + 32) % 32);
+    const guarding = (op.st === ST_FREE && op.guardF > 0) || op.st === ST_BLOCKSTUN;
+    if (guarding && this.hexFrames > 4) {
+      // a guard break (the triangle) when it is ours to use; S2 from neutral for most, S1 for the burning blood
+      const s1 = c.moves[M_S1];
+      const s2 = c.moves[M_S2];
+      const gb = s2.gb && c.s2Neutral < 0 && me.cost >= s2.cost ? IN_S2 : s1.gb && me.cost >= s1.cost ? IN_S1 : c.drive && me.drive ? IN_S1 : 0;
+      const gbMove = gb === IN_S2 ? s2 : gb === IN_S1 ? c.moves[this.sim.skillSlot(me, M_S1)] : null;
+      if (gb && gbMove) {
+        const gbReach = (gbMove.reach + gbMove.lunge) / 1000 + 0.4;
+        if (this.hexFrames > 10 && dist < gbReach && this.rng.chance(0.06)) return gb | IN_STICK | toward;
+        if (this.hexFrames > 10 && dist >= gbReach) return IN_STICK | ((toward + this.strafe * 2 + 32) % 32);
+      }
+      // no swing into the guard: hover just outside, close enough that the idle guard keeps draining
+      const want = tip + 0.6;
+      if (dist < want - 0.3) return IN_STICK | ((away + this.strafe * 5 + 32) % 32);
+      if (dist > want + 0.6) return IN_STICK | ((toward + this.strafe * 3 + 32) % 32);
+      return around(toward);
+    }
+    if (op.st === ST_STUN && dist < tip + 0.3) return IN_ATK | IN_STICK | toward;
+    if (op.st === ST_DOWN || op.st === ST_WAKE) {
+      // wait for them to get up, just outside the reach
+      return dist < tip + 0.4 ? IN_STICK | away : around(toward);
+    }
+    // the opponent walks into the tip of the reach: put N1 where they will be when it lands (at the tip — a guard
+    // can't GC it from there). Only while they are closing in: a swing at someone backing off is a free whiff punish.
+    const closing = lastDist - dist;
+    const n1 = c.moves[M_N1];
+    const landsAt = dist - closing * n1.S;
+    const walkingIn = op.st === ST_FREE && op.guardF === 0 && seenSt !== ST_ATTACK && closing > 0.02;
+    // (and not so close that their guard counter reaches back after the push: the blocked tip must be safe)
+    const on1 = this.sim.char(1 - this.me).moves[M_N1];
+    const gcReach = (this.sim.reachOf(op, on1) + on1.lunge) / 1000 + 0.5 - n1.pushback / 1000 + 0.15;
+    if (walkingIn && dist <= tip + 0.15 && landsAt <= tip - 0.15 && landsAt > Math.max(tip - 0.9, gcReach + 0.3) && this.rng.chance(0.2)) return IN_ATK | IN_STICK | toward;
+    // their guard is down (they walk to let the gauge recover, or just wander) and they are not swinging: that is the
+    // opening — in reach, swing; a step away, step in and swing out of the step
+    if (seenShape === SH.square && op.st === ST_FREE && op.guardF === 0 && this.sqFrames > 6) {
+      if (dist <= tip - 0.1 && this.rng.chance(0.12)) return IN_ATK | IN_STICK | toward;
+      if (canStep && dist > tip - 0.1 && dist < tip + (c.stepDist / 1000) * 0.7 && this.rng.chance(0.04)) {
+        this.stepIn = true;
+        return IN_STEP | IN_STICK | toward;
+      }
+    }
+    // a feint: step in, then straight back out (bait a swing to punish)
+    if (canStep && me.steps >= 2 && dist > tip + 0.4 && dist < tip + 2 && op.st === ST_FREE && this.rng.chance(0.01)) {
+      this.feint = 1;
+      return IN_STEP | IN_STICK | toward;
+    }
+    // keep moving: drift in and out around the tip, circling
+    const want = tip + 0.35 + 0.45 * Math.sin(this.t / 32 + this.me);
+    if (dist > want + 0.3) return IN_STICK | ((toward + this.strafe * 3 + 32) % 32);
+    if (dist < want - 0.3) return IN_STICK | ((away + this.strafe * 4 + 32) % 32);
+    return around(toward);
+  }
+
   input(): number {
     const s = this.sim.s;
     const me = s.f[this.me];
@@ -170,6 +261,8 @@ export class CpuPlayer {
     const toward = dirIndex(dx, dy);
     const away = (toward + 16) % 32;
     const c = this.sim.char(this.me);
+    const lastDist = this.prevDist;
+    this.prevDist = dist;
     const n1 = c.moves[M_N1];
     const myReach = this.sim.reachOf(me, n1) / 1000 + n1.lunge / 1000 + 0.5;
     const mash = () => ((this.mashParity ^= 1) ? IN_ATK : 0);
@@ -179,6 +272,12 @@ export class CpuPlayer {
     this.lastOpSf = op.sf;
     if (seen.shape === SH.hexagon) this.hexFrames++;
     else this.hexFrames = 0;
+    if (seen.shape === SH.square && seen.st === ST_FREE) this.sqFrames++;
+    else this.sqFrames = 0;
+    if (op.st === ST_FREE || op.st === ST_STEP) this.tpUsed = this.swapUsed = false;
+    if (me.st !== ST_STEP && me.st !== ST_ATTACK) {
+      if (this.feint === 2 || me.st !== ST_FREE) this.feint = 0;
+    }
 
     // ── in blockstun: GC?
     if (me.st === ST_BLOCKSTUN) {
@@ -193,6 +292,29 @@ export class CpuPlayer {
     if (me.st === ST_ATTACK) {
       const m = this.sim.moveOf(me)!;
       const id = c.def.id;
+      // sketch: S1 decides on release — a tap boxes the opponent in, a hold draws the trail
+      if (m.inkBox && !me.csHit) return this.inkHold-- > 0 ? IN_S1 : 0;
+      // mirror: the teleport plays
+      if (c.swapSlot >= 0) {
+        const tp = c.moves[M_S1];
+        // an N1 swung from out of range: blink in before it lands
+        if (me.move === M_N1 && this.tpPlan === 1 && me.moveHit === MH_NONE && me.cloneHit !== MH_HIT && me.sf === 8) {
+          this.tpPlan = 0;
+          if (me.cost >= tp.cost && dist > myReach - 0.6) return IN_S1 | IN_STICK | toward;
+        }
+        // 1 → teleport through them → 2 → 3 (the back is theirs now: N3 sends them where we came from)
+        if (me.move === M_N1 && me.moveHit === MH_HIT && me.sf === 24 && !this.tpUsed && me.cost >= tp.cost && this.rng.chance(0.4)) {
+          this.tpUsed = true;
+          return IN_S1 | IN_STICK | toward;
+        }
+        // 1 → 2 → swap → 1 → 2 → 3
+        const hit = me.moveHit === MH_HIT || me.cloneHit === MH_HIT;
+        if (me.move === M_N2 && hit && me.cloneT > 0 && me.sf === 20 && !this.swapUsed && me.cost >= c.moves[c.swapSlot].cost && this.rng.chance(0.7)) {
+          this.swapUsed = true;
+          return IN_S2;
+        }
+        if (me.move === M_N1 && me.sf > 30) this.tpPlan = 0;
+      }
       // ray: a volley — one shot and watch, or all three at a wall / into a field; the
       // next shot on a random frame of its window (the rhythm is harder to step into)
       if (m.proj && m.chainAny && m.next >= 0) {
@@ -200,7 +322,7 @@ export class CpuPlayer {
           this.shotFor = this.t - me.sf;
           const pinned = this.wallBehind(op, me.facing) || this.inField(op, me);
           const hitLast = op.st === ST_HITSTUN;
-          const go = pinned ? 0.9 : hitLast ? 0.2 : 0.45;
+          const go = pinned ? 0.9 : hitLast ? 0.2 : this.level.patient ? 0.15 : 0.45;
           this.nextShotAt = this.rng.chance(go) ? m.chainAny.a + this.rng.int(m.chainAny.b - m.chainAny.a + 1) : -1;
         }
         return me.sf === this.nextShotAt - 1 ? IN_ATK : 0;
@@ -273,6 +395,13 @@ export class CpuPlayer {
     this.gbHold = 0;
     if (me.st === ST_STEP) {
       if (me.justWin > 0) return mash();
+      // feint: in, and straight back out
+      if (this.feint === 1) {
+        if (me.sf < SYSTEM.step.chainFrom) return 0;
+        this.feint = 2;
+        return me.steps > 0 ? IN_STEP | IN_STICK | ((away + (this.strafe > 0 ? 2 : -2) + 32) % 32) : 0;
+      }
+      if (this.feint === 2) return 0;
       // volt: a step turns into the dash — into a startup (before it becomes active), or
       // through a guard (then the turnback). Not into a riposte stance.
       if (c.def.id === 'volt' && me.sf >= SYSTEM.step.attackCancelFrom && me.cost >= c.moves[M_S1].cost && dist < 4) {
@@ -347,6 +476,15 @@ export class CpuPlayer {
         else this.reaction = 'guard';
       }
       if (seen.shape === SH.pentagon && dist < myReach + 1.5) return this.rng.chance(0.5) ? IN_ATK : IN_STICK | toward;
+      // mirror: swap out of the way of a swing (it whiffs; the clone side is free to hit back)
+      if (me.cloneT > 0 && c.swapSlot >= 0 && me.cost >= c.moves[c.swapSlot].cost && (seen.shape === SH.circle || seen.shape === SH.triangle) && this.reaction !== 'ignore') {
+        if (this.decidedFor !== this.riposteFor) {
+          this.riposteFor = this.decidedFor;
+          if (this.rng.chance(this.level.accuracy * 0.45)) return IN_S2;
+        }
+      }
+      // patient: an attack that can't reach us is no reason to stand in guard — stay out and wait for the whiff
+      if (this.level.patient && this.reaction === 'guard' && dist > this.threat(op) + 0.25) return IN_STICK | ((away + this.strafe * 6 + 32) % 32);
       // counter-stance characters sometimes answer a circle with the riposte (hexagon)
       if (this.reaction === 'guard' && seen.shape === SH.circle && c.moves[M_S1].cs && me.cost >= c.moves[M_S1].cost) {
         if (this.decidedFor !== this.riposteFor) {
@@ -364,7 +502,13 @@ export class CpuPlayer {
     if (op.st === ST_ATTACK && op.moveHit === MH_NONE) {
       const om = this.sim.moveOf(op)!;
       const end = op.moveHit === MH_NONE ? om.whiffT : om.T;
-      if (op.sf > om.S + om.A && end - op.sf > n1.S && dist < myReach) return IN_ATK;
+      if (op.sf > om.S + om.A && end - op.sf > n1.S && dist < myReach) return IN_ATK | IN_STICK | toward;
+      // patient: a whiff a little out of reach → step in and swing out of the step (its momentum carries the attack)
+      const stepReach = c.stepDist / 1000;
+      if (this.level.patient && seen.st === ST_ATTACK && seen.moveHit === MH_NONE && op.sf > om.S + om.A && end - op.sf > n1.S + 5 && dist >= myReach && dist < myReach + stepReach * 0.85 && canStep) {
+        this.stepIn = true;
+        return IN_STEP | IN_STICK | toward;
+      }
     }
 
     // ── volt: the dash also comes out on its own — through a slow startup (seen with the
@@ -393,7 +537,25 @@ export class CpuPlayer {
       if (me.s1Cd === 0 && me.cost <= 11 && me.hp > 520 && (lying ? this.rng.chance(0.25) : calm && this.rng.chance(0.015))) return IN_S1;
     }
     // ── sketch: lay ink while circling (keep 2 cost for the flick); the strafing does the drawing
-    if (c.moves[M_S1].ink && me.inkT === 0 && me.cost >= c.moves[M_S1].cost + c.moves[M_S2].cost && dist > 2.4 && dist < 6.5 && seen.st !== ST_ATTACK && this.rng.chance(0.02)) return IN_S1;
+    const ink = c.moves[M_S1];
+    if (ink.ink && me.inkT === 0 && me.cost >= ink.cost + c.moves[M_S2].cost && dist > 2.4 && dist < 6.5 && seen.st !== ST_ATTACK && this.rng.chance(0.02)) {
+      this.inkHold = 14; // a hold: the trail
+      return IN_S1;
+    }
+    // …or a tap: a box of ink around them (then 1 → 2 → 3 throws them into it)
+    if (ink.inkBox && me.cost >= ink.inkBox.cost + COST_UNIT && dist > 1.8 && dist < 4 && op.st === ST_FREE && seen.st !== ST_ATTACK && this.rng.chance(0.012)) {
+      this.inkHold = 0;
+      return IN_S1;
+    }
+    // ── mirror: put the clone out from a distance (a tap: on the far side of them), and the out-of-range N1 + teleport
+    if (c.swapSlot >= 0) {
+      const cl = c.moves[M_S2];
+      if (me.cloneT === 0 && me.cost >= cl.cost && dist > 2.8 && seen.st !== ST_ATTACK && this.rng.chance(0.02)) return IN_S2;
+      if (me.cost >= c.moves[M_S1].cost && dist > myReach + 0.2 && dist < myReach + 1.3 && op.st === ST_FREE && op.guardF === 0 && seen.st !== ST_ATTACK && this.rng.chance(this.level.patient ? 0.012 : 0.025)) {
+        this.tpPlan = 1;
+        return IN_ATK | IN_STICK | toward;
+      }
+    }
     // ── blood, burning: guard break on a turtle (S1), the heavy blow (ATK held ≥12F: startup 30F from the press)
     if (c.drive && me.drive && dist < myReach + 0.6) {
       if (this.hexFrames > 12 && this.rng.chance(0.12)) return IN_S1 | IN_STICK | toward; // S1 = the guard break while burning
@@ -433,12 +595,16 @@ export class CpuPlayer {
         const pinned = this.inField(op, me) || this.wallBehind(op, (toward * 32) & 1023);
         const guarding = (op.st === ST_FREE && op.guardF > 0) || op.st === ST_BLOCKSTUN;
         const safe = pinned || op.steps === 0 || guarding || op.st === ST_HITSTUN || op.st === ST_STUN;
-        if (dist > 2.6 && op.st !== ST_DOWN && op.st !== ST_STEP && this.rng.chance(safe ? (guarding ? 0.18 : 0.1) : 0.05)) return IN_ATK | IN_STICK | toward;
+        // (HARD: hardly ever into a fresh opponent with steps — a stepped-into bullet jams the gun and eats a JA)
+        if (dist > 2.6 && op.st !== ST_DOWN && op.st !== ST_STEP && this.rng.chance(safe ? (guarding ? 0.18 : 0.1) : this.level.patient ? 0.006 : 0.05)) return IN_ATK | IN_STICK | toward;
       } else if (this.hexFrames > 6 && this.sim.char(1 - this.me).moves[M_S1].cs && op.cost >= COST_UNIT) {
         // a hexagon that may be a riposte stance: don't swing a circle into it — the gun's
         // diamonds can't be caught (back off, or switch to shooting)
         if (me.cost >= COST_UNIT && dist > 2.4 && this.rng.chance(0.15)) return IN_S1;
         if (dist < 3) return IN_STICK | ((away + this.strafe * 4 + 32) % 32);
+      } else if (me.cost >= COST_UNIT && this.level.patient && dist > 3 && op.st !== ST_ATTACK && this.rng.chance(0.03)) {
+        // patient: the gun is her range game — out of melee reach, switch to it
+        return IN_S1;
       } else if (me.cost >= COST_UNIT) {
         // into the gun: from afar, over a knocked-down opponent, or against a turtle
         // (no guard break of her own: guarded bullets chip the gauge instead)
@@ -486,6 +652,8 @@ export class CpuPlayer {
     }
     // zephyr heal when far
     if (c.def.id === 'zephyr' && dist > 6 && me.cost >= 3 * COST_UNIT && me.hp < c.hp * 0.8 && this.rng.chance(0.02)) return IN_S2;
+
+    if (this.level.patient && !me.shootMode) return this.patientNeutral(me, op, seen.st, seen.shape, dist, lastDist, toward, away, myReach, canStep);
 
     // standing guard for a moment (bait GC) — but don't burn the gauge
     if (this.holdGuard > 0) {

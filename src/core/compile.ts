@@ -111,6 +111,15 @@ export interface CMove {
   /** Ink trail (see MoveDef.ink; gap in milli-u). */
   ink: { at: number; draw: number; life: number; gap: number; dmg: number; bonus: number } | null;
   dirKnock: boolean;
+  /** Tap = ink square (see MoveDef.inkBox; half in milli-u, cost in quarters). */
+  inkBox: { hold: number; half: number; cost: number } | null;
+  /** Instant teleport distance (milli-u), 0 = none. */
+  teleport: number;
+  /** Instant-skill lock after it (frames). */
+  lock: number;
+  /** Clone (milli-u). */
+  clone: { at: number; frames: number; maxDist: number; mirror: number; dmgPct: number } | null;
+  swap: boolean;
   /** Starts the overdrive on this frame (0 = no). */
   driveOn: number;
   /** Walking speed (%) while this move is running: normals / GC / JA keep some (SYSTEM.attackWalkPct), others 0. */
@@ -140,6 +149,11 @@ export interface CChar {
   drive: { drainFrames: number; minCost: number; power: number; walk: number; reach: number; holdAt: number; holdMove: number; s1Move: number; exhaustFrames: number; noWalkFrames: number; exhaustPower: number } | null;
   /** S2 from neutral / a step starts this slot (-1 = S2 itself). */
   s2Neutral: number;
+  /** v1.9 スケッチ: normals draw ink; enclosed heal. */
+  inkSwing: boolean;
+  inkHeal: { every: number; hp: number; ray: number } | null;
+  /** ミラー: the swap move's slot (-1 = no clone). */
+  swapSlot: number;
   /** A non-shooter's projectile move (its bullets' spec), -1 = none. */
   projSlot: number;
   moves: CMove[];
@@ -240,6 +254,11 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     wallOnGuard: !!m.wallOnGuard,
     ink: m.ink ? { ...m.ink, gap: u(m.ink.gap) } : null,
     dirKnock: !!m.dirKnock,
+    inkBox: m.inkBox ? { hold: m.inkBox.hold, half: u(m.inkBox.half), cost: Math.round(m.inkBox.cost * COST_UNIT) } : null,
+    teleport: m.teleport ? u(m.teleport.dist) : 0,
+    lock: m.lock ?? SYSTEM.instantLock,
+    clone: m.clone ? { at: m.clone.at, frames: m.clone.frames, maxDist: u(m.clone.maxDist), mirror: u(m.clone.mirror), dmgPct: m.clone.dmgPct } : null,
+    swap: !!m.swap,
     channel: m.channel ? { ...m.channel } : null,
     driveOn: m.driveOn ?? 0,
     walkPct: m.channel ? m.channel.walkPct : m.kind === 'normal' || m.kind === 'gc' || m.kind === 'ja' ? SYSTEM.attackWalkPct : 0,
@@ -320,6 +339,9 @@ export function compileCharacter(def: CharacterDef, idx: number): CChar {
         }
       : null,
     s2Neutral: def.s2Neutral ? slotIds[def.s2Neutral] : -1,
+    inkSwing: !!def.inkSwing,
+    inkHeal: def.inkHeal ? { every: def.inkHeal.every, hp: def.inkHeal.hp, ray: u(def.inkHeal.ray) } : null,
+    swapSlot: def.cloneSwap ? slotIds[def.cloneSwap] : -1,
     projSlot: moves.findIndex((m) => !!m.proj),
     moves,
   };

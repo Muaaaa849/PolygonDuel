@@ -8,7 +8,7 @@ import { M_N1, M_N2, M_S1, M_S2, COST_UNIT } from '../src/core/compile';
 import { u } from '../src/core/fixed';
 import { SYSTEM } from '../src/data/system';
 import { EV_INK, EV_TRAIL, EV_WALL, EV_KNOCKDOWN } from '../src/core/events';
-import { ST_FREE, ST_HITSTUN, TRAIL_FIGHTER, TRAIL_STRIDE, cloneState, hashState } from '../src/core/state';
+import { ST_FREE, ST_HITSTUN, TRAIL_FIGHTER, TRAIL_STRIDE, INK_LIFE, INK_PENUP, cloneState, hashState } from '../src/core/state';
 
 const K = getChar(charIndex('sketch'));
 const q = (units: number) => units * COST_UNIT;
@@ -19,7 +19,7 @@ const later = (sc: Scenario, fn: (k: number) => number): Bot => {
   return (_m, _o, _s, t) => fn(t - t0);
 };
 /** Paint ink for fighter `who` by hand: a stroke through the given points (life frames left). */
-function paint(sc: Scenario, who: number, pts: [number, number][], life = 480): void {
+function paint(sc: Scenario, who: number, pts: [number, number][], life = 600): void {
   const t = sc.s.trail;
   const base = who * TRAIL_FIGHTER;
   const head = sc.s.f[who].trHead;
@@ -27,15 +27,17 @@ function paint(sc: Scenario, who: number, pts: [number, number][], life = 480): 
     const at = base + ((head + k) % (TRAIL_FIGHTER / TRAIL_STRIDE)) * TRAIL_STRIDE;
     t[at] = x;
     t[at + 1] = y;
-    t[at + 2] = (life << 1) | (k === 0 ? 1 : 0);
+    t[at + 2] = (life << INK_LIFE) | (k === 0 ? INK_PENUP : 0);
   });
   sc.s.f[who].trHead = (head + pts.length) % (TRAIL_FIGHTER / TRAIL_STRIDE);
 }
 const inkOf = (sc: Scenario, who = 0) => {
   const segs: number[][] = [];
-  sc.sim.forEachInk(who, (x0, y0, x1, y1, life, slot) => segs.push([x0, y0, x1, y1, life, slot]));
+  sc.sim.forEachInk(who, (x0, y0, x1, y1, life, slot, safe) => segs.push([x0, y0, x1, y1, life, slot, safe ? 1 : 0]));
   return segs;
 };
+/** Holds S1 for `n` frames from now (a hold ≥ 10F = the trail; shorter = the tap's square). */
+const holdS1 = (sc: Scenario, n: number): Bot => later(sc, (k) => (k < n ? IN_S1 : 0));
 /** A bot with the stick held toward `dir` the whole time. */
 const withStick = (bot: Bot, dir: number): Bot => (m, o, s, t) => bot(m, o, s, t) | stick(dir);
 /** The defender stands (guarding: input 0). */
@@ -46,23 +48,53 @@ const open: Bot = (me) => (me.statHitsTaken > 0 ? 0 : stick(16));
 const openR: Bot = (me) => (me.statHitsTaken > 0 ? 0 : stick(0));
 
 describe('スケッチ', () => {
-  it('modest normals (Blaze frames), S1 cost 1, S2 cost 2', () => {
+  it('modest normals (Blaze frames), S1 cost 1 (hold) / 1.5 (tap), S2 cost 2', () => {
     const blaze = getChar(charIndex('blaze'));
     for (const m of [M_N1, M_N2]) {
       expect(K.moves[m].S).toBe(blaze.moves[m].S);
       expect(K.moves[m].dmg).toBeLessThan(blaze.moves[m].dmg);
     }
     expect(K.moves[M_S1].cost).toBe(q(1));
+    expect(K.moves[M_S1].inkBox!.cost).toBe(q(1.5));
     expect(K.moves[M_S2].cost).toBe(q(2));
   });
 
-  describe('S1 インクトレイル', () => {
-    it('after its 6th frame, for 5 s, a walk leaves ink every 0.8u; standing still leaves none', () => {
+  describe('S1 インク（タップ＝四角、長押し＝軌跡）', () => {
+    it('a tap draws a closed square of ink around the opponent (cost 1.5), one side between the two', () => {
+      const sc = new Scenario('sketch', 'bastion', 4);
+      sc.s.f[0].cost = q(2);
+      sc.run(30, holdS1(sc, 3), stand);
+      expect(sc.s.f[0].cost).toBe(q(0.5));
+      expect(sc.events(EV_INK, 0).map((e) => e.a)).toEqual([2]);
+      const segs = inkOf(sc);
+      expect(segs.length).toBe(4);
+      const o = sc.s.f[1];
+      for (const [x0, y0, x1, y1, , , safe] of segs) {
+        expect(safe).toBe(0);
+        // every corner ≈ 1.5·√2 from the opponent
+        for (const [x, y] of [[x0, y0], [x1, y1]]) expect(Math.abs(Math.hypot(x - o.x, y - o.y) - 2121)).toBeLessThan(40);
+      }
+      // the side facing her is vertical (she is straight to the left) and 1.5u in front of the target
+      expect(segs.some(([x0, , x1]) => Math.abs(x0 - (o.x - 1500)) < 30 && Math.abs(x1 - (o.x - 1500)) < 30)).toBe(true);
+      // the move winds down quickly after the tap
+      expect(sc.s.f[0].st).toBe(ST_FREE);
+    });
+
+    it('a tap without 1.5 cost does nothing (the press is not paid)', () => {
+      const sc = new Scenario('sketch', 'bastion', 4);
+      sc.s.f[0].cost = q(1.25);
+      sc.run(30, holdS1(sc, 3), stand);
+      expect(sc.s.f[0].cost).toBe(q(1.25));
+      expect(inkOf(sc).length).toBe(0);
+    });
+
+    it('a hold (≥10F) starts the trail (cost 1): for 5 s a walk leaves ink every 0.8u; standing still leaves none', () => {
       const sc = new Scenario('sketch', 'bastion', 8);
       sc.s.f[0].cost = q(2);
-      sc.run(2, (_m, _o, _s, t) => (t === 0 ? IN_S1 : 0), stand);
+      sc.run(14, holdS1(sc, 14), stand);
       expect(sc.s.f[0].cost).toBe(q(1)); // paid 1
-      sc.run(40, () => 0, stand); // standing (the move's own 22F, then idle)
+      expect(sc.events(EV_INK, 0).map((e) => e.a)).toEqual([1]);
+      sc.run(40, () => 0, stand); // standing
       expect(inkOf(sc).length).toBe(0);
       const x0 = sc.s.f[0].x;
       sc.run(60, () => stick(8), stand); // 60F straight down
@@ -72,14 +104,14 @@ describe('スケッチ', () => {
       expect(segs.length).toBeGreaterThanOrEqual(Math.floor(walked / 0.8) - 2);
       expect(segs.length).toBeLessThanOrEqual(Math.ceil(walked / 0.8) + 1);
       for (const [ax, , bx] of segs) expect(Math.abs(ax - x0) + Math.abs(bx - x0)).toBeLessThan(200);
-      expect(sc.events(EV_INK, 0).map((e) => e.a)).toEqual([1]);
     });
 
-    it('draws for 300F, then the pen lifts; it cannot be restarted while drawing; the ink fades after 480F', () => {
+    it('draws for 300F, then the pen lifts; the trail cannot be restarted while drawing (a tap still makes a square); the ink lasts 600F', () => {
       const sc = new Scenario('sketch', 'bastion', 8);
       sc.s.f[0].cost = q(4);
-      sc.run(20, (_m, _o, _s, t) => (t % 2 === 0 ? IN_S1 : 0), stand);
-      expect(sc.s.f[0].cost).toBe(q(3)); // the second press did nothing
+      sc.run(14, holdS1(sc, 14), stand);
+      sc.run(30, holdS1(sc, 14), stand); // a second hold while drawing: nothing
+      expect(sc.s.f[0].cost).toBe(q(3));
       sc.run(330, later(sc, (k) => (k % 120 < 60 ? stick(0) : stick(16))), stand); // pace back and forth the whole time
       expect(sc.events(EV_INK, 0).map((e) => e.a)).toEqual([1, 0]);
       const dur = sc.events(EV_INK, 0)[1].lf - sc.events(EV_INK, 0)[0].lf;
@@ -89,8 +121,16 @@ describe('スケッチ', () => {
       expect(n).toBeGreaterThan(5);
       sc.run(200, later(sc, (k) => (k % 120 < 60 ? stick(0) : stick(16))), stand); // more walking: no new ink
       expect(inkOf(sc).length).toBeLessThanOrEqual(n);
-      sc.run(400, () => 0, stand);
-      expect(inkOf(sc).length).toBe(0); // 480F after it was laid
+      expect(inkOf(sc).length).toBeGreaterThan(0); // (v1.9: 10 s — the first points are ~530F old)
+      sc.run(520, () => 0, stand); // (the guard breaks of the idle bastion stop the clock now and then)
+      expect(inkOf(sc).length).toBe(0); // 600F after it was laid
+      // while drawing, a tap still draws the square
+      const sq = new Scenario('sketch', 'bastion', 4);
+      sq.s.f[0].cost = q(4);
+      sq.run(20, holdS1(sq, 14), stand);
+      sq.run(30, holdS1(sq, 3), stand);
+      expect(sq.events(EV_INK, 0).map((e) => e.a)).toEqual([1, 2]);
+      expect(sq.s.f[0].cost).toBe(q(1.5));
     });
 
     it('both fighters walk straight through the ink (nothing blocks)', () => {
@@ -106,9 +146,10 @@ describe('スケッチ', () => {
     it('a knocked-back opponent crossing the ink is slammed like a wall — harder (45–90 vs 30–60) — and the ink is used up', () => {
       const sc = new Scenario('sketch', 'bastion', 1.4);
       const vx = sc.s.f[1].x;
-      // a wall of ink 1.2u behind the target (the knockback is 1.9u)
+      // a wall of ink 1.2u behind the target (the knockback is 2.2u)
       paint(sc, 0, [[vx + 1200, cy - 2500], [vx + 1200, cy], [vx + 1200, cy + 2500]]);
-      const before = inkOf(sc).length;
+      const painted = () => inkOf(sc).filter(([x0, , x1]) => x0 === vx + 1200 && x1 === vx + 1200).length;
+      const before = painted();
       sc.s.f[0].cost = q(4);
       // AA then S2 with the stick right at the moment it lands
       sc.run(200, withStick(sequence('AA2'), 0), open);
@@ -116,7 +157,7 @@ describe('スケッチ', () => {
       expect(t.length).toBe(1);
       expect(t[0].a).toBeGreaterThanOrEqual(45 * 0.9);
       expect(t[0].a).toBeLessThanOrEqual(90);
-      expect(inkOf(sc).length).toBe(before - 1); // one piece of ink used up (the one it crossed)
+      expect(painted()).toBe(before - 1); // one piece of ink used up (the one it crossed)
       expect(sc.events(EV_WALL, 1).length).toBe(0);
     });
 
@@ -170,12 +211,72 @@ describe('スケッチ', () => {
     it('is part of the snapshot: a copy hashes the same, and a new round clears the ink', () => {
       const sc = new Scenario('sketch', 'bastion', 8);
       sc.s.f[0].cost = q(4);
-      sc.run(80, later(sc, (k) => (k < 2 ? IN_S1 : stick(8))), stand);
+      sc.run(90, later(sc, (k) => (k < 14 ? IN_S1 : stick(8))), stand);
       expect(inkOf(sc).length).toBeGreaterThan(3);
       expect(hashState(cloneState(sc.s))).toBe(hashState(sc.s));
       sc.sim.startRound(false);
       expect(inkOf(sc).length).toBe(0);
       expect(sc.s.f[0].inkT).toBe(0);
+    });
+  });
+
+  describe('v1.9 通常攻撃のインク・閉じたインクで回復', () => {
+    it('a swing leaves ink along the blade tip, safe during the exchange, live once it is over', () => {
+      const sc = new Scenario('sketch', 'bastion', 6);
+      sc.run(30, sequence('A'), stand);
+      const during = inkOf(sc);
+      expect(during.length).toBeGreaterThanOrEqual(2);
+      // (whiffed swing still running: safe)
+      expect(during.every((g) => g[6] === 1)).toBe(true);
+      const me = sc.s.f[0];
+      for (const [x0, y0] of during) expect(Math.abs(Math.hypot(x0 - me.x, y0 - me.y) - K.moves[M_N1].reach)).toBeLessThan(450);
+      sc.run(40, () => 0, stand);
+      expect(inkOf(sc).every((g) => g[6] === 0)).toBe(true);
+    });
+
+    it('a combo never slams into its own swing ink (1→2→3 throws through the arcs: no ink impact)', () => {
+      const sc = new Scenario('sketch', 'bastion', 1.6);
+      sc.run(260, sequence('AAA'), open);
+      expect(sc.hits(0).length).toBe(3);
+      expect(sc.events(EV_TRAIL, 1).length).toBe(0);
+      expect(inkOf(sc).length).toBeGreaterThan(4);
+    });
+
+    it('swing ink from an earlier exchange is a wall for the next combo', () => {
+      const sc = new Scenario('sketch', 'bastion', 1.6);
+      sc.s.f[1].x += 2500; // out of reach: the whiffed N1 just draws its arc ahead
+      sc.run(60, sequence('A'), stand);
+      expect(inkOf(sc).every((g) => g[6] === 0)).toBe(true);
+      // now the target stands 0.9u inside the arc, and N1→N2→N3 throws it 1.9u out through it
+      sc.s.f[1].x = sc.s.f[0].x + 1500;
+      sc.s.f[1].y = sc.s.f[0].y;
+      sc.run(260, sequence('AAA'), open);
+      expect(sc.events(EV_TRAIL, 1).length).toBe(1);
+    });
+
+    it('inside a closed loop of her ink she heals slowly (1 HP / 10F); outside nothing', () => {
+      const box = (sc: Scenario, x: number) =>
+        paint(sc, 0, [[x - 1200, cy - 1200], [x + 1200, cy - 1200], [x + 1200, cy + 1200], [x - 1200, cy + 1200], [x - 1200, cy - 1200]]);
+      const inside = new Scenario('sketch', 'bastion', 8);
+      inside.s.f[0].hp = 500;
+      box(inside, inside.s.f[0].x);
+      inside.run(100, () => 0, stand);
+      expect(inside.s.f[0].hp).toBeGreaterThanOrEqual(509);
+      expect(inside.s.f[0].hp).toBeLessThanOrEqual(511);
+      expect(inside.s.f[0].inkIn).toBe(1);
+      const open3 = new Scenario('sketch', 'bastion', 8);
+      open3.s.f[0].hp = 500;
+      // a U shape: one side open
+      const x = open3.s.f[0].x;
+      paint(open3, 0, [[x - 1200, cy - 1200], [x + 1200, cy - 1200], [x + 1200, cy + 1200], [x - 1200, cy + 1200]]);
+      open3.run(100, () => 0, stand);
+      expect(open3.s.f[0].hp).toBe(500);
+      // the spin of N3 draws a full circle around her: she heals inside it
+      const spin = new Scenario('sketch', 'bastion', 1.6);
+      spin.s.f[0].hp = 500;
+      spin.run(260, sequence('AAA'), open);
+      expect(spin.hits(0).length).toBe(3);
+      expect(spin.s.f[0].hp).toBeGreaterThan(505);
     });
   });
 
@@ -192,13 +293,13 @@ describe('スケッチ', () => {
       return { sc, dx: (sc.s.f[1].x - v0.x) / 1000, dy: (sc.s.f[1].y - v0.y) / 1000 };
     };
 
-    it('knocks the target 1.9u toward the stick, whichever way the piece faces', () => {
+    it('knocks the target 2.2u toward the stick, whichever way the piece faces', () => {
       for (const [dir, ex, ey] of [[0, 1, 0], [8, 0, 1], [24, 0, -1], [4, 0.71, 0.71], [28, 0.71, -0.71]] as const) {
         const { sc, dx, dy } = hitWith(dir);
         expect(sc.hits(0).length).toBe(1);
         // (the piece faces the target — to the right — in every case)
-        expect(Math.abs(dx - ex * 1.9)).toBeLessThan(0.4);
-        expect(Math.abs(dy - ey * 1.9)).toBeLessThan(0.4);
+        expect(Math.abs(dx - ex * 2.2)).toBeLessThan(0.4);
+        expect(Math.abs(dy - ey * 2.2)).toBeLessThan(0.4);
       }
     });
 
@@ -236,8 +337,8 @@ describe('スケッチ', () => {
       expect(sc.s.f[1].y).toBeGreaterThan(y0 + 1000);
     });
 
-    it('is a stronger knock than N3\'s launch (1.6u), without a knockdown', () => {
-      expect(K.moves[M_S2].knockback).toBeGreaterThan(u(1.6));
+    it('is a stronger knock than N3\'s launch (1.9u), without a knockdown', () => {
+      expect(K.moves[M_S2].knockback).toBeGreaterThan(K.moves[2].launch);
       const { sc } = hitWith(0);
       expect(sc.events(EV_KNOCKDOWN, 1).length).toBe(0);
       expect(sc.s.f[1].st === ST_HITSTUN || sc.s.f[1].st === ST_FREE).toBe(true);

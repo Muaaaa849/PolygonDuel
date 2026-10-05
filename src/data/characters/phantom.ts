@@ -47,7 +47,7 @@ export const phantom: CharacterDef = {
     {
       id: 'ghost', name: 'ゴースト', kind: 'skill', shape: 'circle',
       desc: '幻影を放つ。離れていれば幻影がステップで迫り、近ければ幻影が斬りかかる。その間（約0.5秒）本体は相手に見えず自由に動ける。幻影に攻撃させるとコスト1が戻る',
-      cost: 2, S: 1, A: 0, T: 10, reach: 0, lunge: 0,
+      cost: 1.5, S: 1, A: 0, T: 10, reach: 0, lunge: 0,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 0,
       ghost: { approach: 18, stopDist: 1.5, frames: 30 },
       cancelFrom: ['n1', 'neutral'],
@@ -64,7 +64,7 @@ export const phantom: CharacterDef = {
   combos: [
     { route: '1→2→3', cost: 0, note: '基本。火力は低め' },
     { route: 'S2(クラッシュ)→1→2→3', cost: 2, note: '幻影でガードさせてから崩す' },
-    { route: 'S1(幻影)→S2', cost: 4, note: '幻影の斬りかかりにガードした相手へ' },
+    { route: 'S1(幻影)→S2', cost: 3.5, note: '幻影の斬りかかりにガードした相手へ' },
     { route: 'JA→2→3', cost: 0, note: 'ジャスト回避から' },
   ],
   tips: [

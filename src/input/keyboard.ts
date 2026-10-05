@@ -2,10 +2,11 @@
 import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, IN_GUARD, quantizeDir } from '../core/input';
 import { settings } from '../app/settings';
 
-export type KeyAction = 'up' | 'down' | 'left' | 'right' | 'atk' | 's1' | 's2' | 'step' | 'guard';
-export const KEY_ACTIONS: KeyAction[] = ['up', 'down', 'left', 'right', 'atk', 's1', 's2', 'step', 'guard'];
+export type KeyAction = 'up' | 'down' | 'left' | 'right' | 'atk' | 's1' | 's2' | 'step' | 'guard' | 'cancel';
+export const KEY_ACTIONS: KeyAction[] = ['up', 'down', 'left', 'right', 'atk', 's1', 's2', 'step', 'guard', 'cancel'];
 export const KEY_ACTION_LABELS: Record<KeyAction, string> = {
   up: '上', down: '下', left: '左', right: '右', atk: '攻撃', s1: 'スキル1', s2: 'スキル2', step: 'ステップ', guard: 'ガード（手動の時）',
+  cancel: 'スキルのキャンセル（長押し中）',
 };
 
 /** Codes per action: KeyboardEvent.code, or 'Mouse0' / 'Mouse1' / 'Mouse2' for mouse buttons. */
@@ -23,17 +24,19 @@ export const KEYS_SOLO: KeyMap = {
   s1: ['KeyK', 'Mouse2'],
   s2: ['KeyL', 'KeyE'],
   step: ['Space', 'ShiftLeft'],
-  guard: ['KeyU', 'KeyQ'],
+  guard: ['KeyU'],
+  cancel: ['KeyQ'],
 };
 
 export const KEYS_P1: KeyMap = {
   up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'],
-  atk: ['KeyF'], s1: ['KeyG'], s2: ['KeyH'], step: ['ShiftLeft', 'Space'], guard: ['KeyT'],
+  atk: ['KeyF'], s1: ['KeyG'], s2: ['KeyH'], step: ['ShiftLeft', 'Space'], guard: ['KeyT'], cancel: ['KeyQ'],
 };
 
 export const KEYS_P2: KeyMap = {
   up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'],
   atk: ['Comma', 'Numpad1'], s1: ['Period', 'Numpad2'], s2: ['Slash', 'Numpad3'], step: ['ShiftRight', 'Numpad0'], guard: ['KeyM', 'Numpad4'],
+  cancel: ['Semicolon', 'Numpad5'],
 };
 
 export const DEFAULT_KEYS: Record<KeySet, KeyMap> = { solo: KEYS_SOLO, p1: KEYS_P1, p2: KEYS_P2 };
@@ -43,6 +46,8 @@ export function keysFor(set: KeySet): KeyMap {
   const own = settings.keys?.[set];
   const out = {} as KeyMap;
   for (const a of KEY_ACTIONS) out[a] = (own?.[a] ?? DEFAULT_KEYS[set][a]).slice(0, 2);
+  // (settings saved before the cancel key existed kept Q on the guard: the cancel key wins it back)
+  if (!own?.cancel) for (const a of KEY_ACTIONS) if (a !== 'cancel') out[a] = out[a].filter((c) => !out.cancel.includes(c));
   return out;
 }
 
@@ -103,6 +108,16 @@ function install(): void {
 export class KeyboardInput {
   used = false;
   private map: KeyMap;
+  /**
+   * Skills that would aim (a fresh aimable skill: set by the battle screen) wait for the key's RELEASE, like a held touch
+   * button: while the key is down the range is shown and the cancel key drops it. Others fire on the press as before.
+   */
+  deferPolicy: (id: 's1' | 's2') => boolean = () => false;
+  /** The skill key being held (fires on release), or null. */
+  holding: 's1' | 's2' | null = null;
+  private wasDown = { s1: false, s2: false };
+  /** A canceled skill key stays dead until it is released. */
+  private dead = { s1: false, s2: false };
   constructor(set: KeySet, private pad: number | null = 0) {
     this.map = keysFor(set);
     install();
@@ -112,14 +127,49 @@ export class KeyboardInput {
     return codes.some((c) => down.has(c) || pressedSince.has(c));
   }
 
+  private isDown(codes: string[]): boolean {
+    return codes.some((c) => down.has(c));
+  }
+
+  /** A skill key: fires on press, or (deferred) on release unless the cancel key was pressed meanwhile. */
+  private skill(id: 's1' | 's2', bit: number): number {
+    const codes = this.map[id];
+    const pressed = codes.some((c) => pressedSince.has(c)) || (this.isDown(codes) && !this.wasDown[id]);
+    const isDown = this.isDown(codes);
+    this.wasDown[id] = isDown;
+    if (this.dead[id]) {
+      if (isDown) return 0;
+      this.dead[id] = false;
+    }
+    if (this.holding === id) {
+      if (this.any(this.map.cancel)) {
+        this.holding = null;
+        this.dead[id] = true;
+        return 0;
+      }
+      if (!isDown) {
+        this.holding = null;
+        return bit; // released: fires now
+      }
+      return 0;
+    }
+    if (pressed && !this.holding && this.deferPolicy(id)) {
+      // (pressed and released within the same tick: a tap, fire at once)
+      if (!isDown) return bit;
+      this.holding = id;
+      return 0;
+    }
+    return this.any(codes) ? bit : 0;
+  }
+
   poll(): number {
     const m = this.map;
     let x = (this.any(m.right) ? 1 : 0) - (this.any(m.left) ? 1 : 0);
     let y = (this.any(m.down) ? 1 : 0) - (this.any(m.up) ? 1 : 0);
     let w = 0;
     if (this.any(m.atk)) w |= IN_ATK;
-    if (this.any(m.s1)) w |= IN_S1;
-    if (this.any(m.s2)) w |= IN_S2;
+    w |= this.skill('s1', IN_S1);
+    w |= this.skill('s2', IN_S2);
     if (this.any(m.step)) w |= IN_STEP;
     if (this.any(m.guard)) w |= IN_GUARD;
     // gamepad

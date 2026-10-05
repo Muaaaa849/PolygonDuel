@@ -12,6 +12,7 @@ import {
   type SimEvent, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN,
   EV_STEP, EV_HEAL, EV_KO, EV_MOVE, EV_WALL, EV_BLINK, EV_GHOST, EV_GHOST_END, HF_COUNTER, HF_JA, HF_OTG,
   EV_SHOT, EV_MODE, EV_FIELD, EV_SHOCK, EV_JAM, EV_POWER, EV_PULL, EV_WAKE, EV_UP, EV_DRIVE, EV_CHARGE, EV_INK, EV_TRAIL, HF_SHOT, HF_PUNISH,
+  comboOf, EV_TELEPORT, EV_CLONE, EV_SWAP,
 } from '../core/events';
 import { Morph, SHAPE_RADII, toPoints } from './shapes';
 import { Vfx } from './vfx';
@@ -36,6 +37,11 @@ export interface ViewOptions {
   host?: Application;
   /** Extra camera zoom (small canvases like the move-sheet demo). */
   zoom?: number;
+  /**
+   * v1.9 (touch play, settings.selfCamera): when "you" (`local`) would sit low on the screen — under the controls and
+   * thumbs — the camera moves further and centres you, zooming out as needed to keep the opponent in view.
+   */
+  focusSelf?: boolean;
 }
 
 export type Quality = 'high' | 'mid' | 'low';
@@ -113,6 +119,8 @@ export class BattleView {
   private ghostOverlay = new Graphics();
   private ghostDrawn = false;
   private cam = { x: FW / 2, y: FHt / 2, zoom: 1 };
+  /** Self-focus weight (0 = the classic midpoint camera, 1 = centred on you), eased over time. */
+  private focusW = 0;
   private shake = 0;
   private shakeX = 0;
   private shakeY = 0;
@@ -163,9 +171,9 @@ export class BattleView {
     this.setQuality(settings.quality === 'auto' ? (touch ? 'mid' : 'high') : settings.quality);
   }
 
-  /** Fighter i (0/1), or the decoy of fighter i-2 (2/3; null when there is none). */
+  /** Fighter i (0/1), or the decoy / clone of fighter i-2 (2/3; null when there is none). */
   private fOf(i: number): FighterState | null {
-    return i < 2 ? this.sim.s.f[i] : this.sim.decoyOf(i - 2);
+    return i < 2 ? this.sim.s.f[i] : this.sim.decoyOf(i - 2) ?? this.sim.cloneOf(i - 2);
   }
 
   private fvOf(i: number): FighterView {
@@ -293,7 +301,7 @@ export class BattleView {
         this.vfx.spark(x, y, col, heavy ? 14 : 9, heavy ? 30 : 22, heavy ? 40 : 28, heavy ? 7 : 5);
         this.vfx.ring(x, y, 0xffffff, 10, heavy ? 120 : 70, heavy ? 16 : 11, heavy ? 8 : 5);
         this.vfx.text(String(e.a), x + (Math.random() - 0.5) * 30, y - 40, 0xffffff, heavy ? 38 : 30);
-        const combo = (e.b >> 8) + 1;
+        const combo = comboOf(e.b) + 1;
         if (e.b & HF_COUNTER) this.vfx.text('COUNTER', x, y - 90, 0xffd060, 30, 50, -0.7);
         else if (e.b & HF_JA && combo === 1 && !(e.b & HF_PUNISH)) this.vfx.text('JUST ATTACK', x, y - 90, 0x6ff3ff, 28, 50, -0.7);
         else if (e.b & HF_OTG) this.vfx.text('DOWN ATTACK', x, y - 90, col, 24, 44, -0.7);
@@ -649,7 +657,53 @@ export class BattleView {
           this.fx.spawn('ink_burst', { x: px, y: py, size: 3.4 * PX, alpha: 0.8 });
           this.vfx.ring(px, py, fv.color, 20, 120, 16, 4);
           this.vfx.text('INK', px, py - 90, fv.color, 30, 50, -0.5);
+        } else if (e.a === 2) {
+          // v1.9 the tap: a square of ink snaps shut around the opponent
+          this.fx.spawn('ink_burst', { x, y, size: 3.0 * PX, alpha: 0.6 });
+          this.vfx.ring(x, y, fv.color, 260, 150, 18, 5);
+          this.vfx.text('BOX', x, y - 110, fv.color, 30, 50, -0.5);
         } else this.vfx.ring(px, py, fv.color, 50, 90, 12, 3);
+        break;
+      }
+      case EV_TELEPORT: {
+        // ミラーステップ: a mirror-shard flash where she was, a thin light line, the flash where she is
+        const fv = this.fighters[e.who];
+        const ox = toPx(e.a);
+        const oy = toPx(e.b);
+        fv.ghosts.push({ x: ox, y: oy, rot: s.f[e.who].facing * ANG_TO_RAD, radii: Float32Array.from(fv.morph.r), life: 14 });
+        this.streaks.push({ x0: ox, y0: oy, x1: x, y1: y, life: 10, color: fv.color });
+        this.fx.spawn('blink_t', { x: ox, y: oy, size: 2.0 * PX, tint: 0xffffff, alpha: 0.55, speed: 1.5 });
+        this.fx.spawn('blink_t', { x, y, size: 2.4 * PX, tint: fv.color, speed: 1.3 });
+        this.vfx.glitter(x, y, fv.color, 8, 8, 22, 3);
+        this.chroma = Math.max(this.chroma, 0.3);
+        break;
+      }
+      case EV_CLONE: {
+        // ミラーイメージ: the copy steps out of a ring of light / fades away
+        const fv = this.fighters[e.who];
+        if (e.a === 1) {
+          this.fx.spawn('ghost_appear', { x, y, size: 2.6 * PX, tint: fv.color });
+          this.vfx.ring(x, y, fv.color, 10, 130, 16, 5);
+          this.vfx.glitter(x, y, 0xffffff, 12, 10, 30, 4);
+          this.vfx.text('MIRROR', x, y - 100, fv.color, 28, 50, -0.5);
+        } else {
+          this.fx.spawn('ghost_fade', { x, y, size: 2.4 * PX, alpha: 0.7 });
+          this.vfx.glitter(x, y, fv.color, 10, 8, 26, 3);
+        }
+        break;
+      }
+      case EV_SWAP: {
+        // swap: two light lines cross, both pieces flash
+        const fv = this.fighters[e.who];
+        const ox = toPx(e.a);
+        const oy = toPx(e.b);
+        this.streaks.push({ x0: ox, y0: oy, x1: x, y1: y, life: 12, color: fv.color });
+        this.streaks.push({ x0: x, y0: y, x1: ox, y1: oy, life: 12, color: 0xffffff });
+        this.fx.spawn('blink_t', { x, y, size: 2.8 * PX, tint: fv.color });
+        this.fx.spawn('blink_t', { x: ox, y: oy, size: 2.2 * PX, tint: 0xffffff, alpha: 0.6 });
+        this.vfx.text('SWAP', x, y - 96, fv.color, 28, 44, -0.6);
+        fv.flash = 3;
+        this.chroma = Math.max(this.chroma, 0.5);
         break;
       }
       case EV_TRAIL: {
@@ -883,8 +937,11 @@ export class BattleView {
     // illusion decoys: to the opponent they ARE the fighter; the owner sees a translucent ghost
     for (let i = 0; i < 2; i++) {
       const fv = this.fvOf(2 + i);
-      const d = this.sim.decoyOf(i);
-      fv.label.visible = !!d && !this.owns(i);
+      const decoy = this.sim.decoyOf(i);
+      // (ミラーの分身: everyone sees it for what it is — a translucent, shimmering copy)
+      const clone = decoy ? null : this.sim.cloneOf(i);
+      const d = decoy ?? clone;
+      fv.label.visible = !!decoy && !this.owns(i);
       if (!d) {
         fv.trail.length = 0;
         fv.ghosts.length = 0;
@@ -892,14 +949,15 @@ export class BattleView {
       }
       if (fv.label.parent !== this.labels) this.labels.addChild(fv.label);
       this.ghostDrawn = true;
-      this.ghostLayer.alpha = this.owns(i) ? 0.42 + 0.08 * Math.sin(this.t * 0.5) : 1;
+      this.ghostLayer.alpha = clone ? 0.5 + 0.1 * Math.sin(this.t * 0.2) : this.owns(i) ? 0.42 + 0.08 * Math.sin(this.t * 0.5) : 1;
+      if (clone) this.drawCloneMark(i, clone);
       const [g0, b0, o0] = [this.glow, this.bodies, this.overlay];
       [this.glow, this.bodies, this.overlay] = [this.ghostGlow, this.ghostBodies, this.ghostOverlay];
       this.drawTrail(2 + i, dtFrames, newFrame && !frozen);
       this.drawFighter(2 + i, dtFrames, frozen);
       [this.glow, this.bodies, this.overlay] = [g0, b0, o0];
       this.stateFx(2 + i, newFrame && !frozen);
-      if (this.owns(i) && this.opts.local !== -1) {
+      if (decoy && this.owns(i) && this.opts.local !== -1) {
         // owner: mark the real (invisible to the opponent) piece
         const f = this.sim.s.f[i];
         const r = 0.72 * PX + Math.sin(this.t * 0.3) * 4;
@@ -1165,8 +1223,50 @@ export class BattleView {
       zoom = 1 + Math.max(0, Math.min(1, (6 - dist) / 4)) * 0.4;
     }
     zoom = Math.max(minZoom, Math.min(zoom, maxZoomFor(1.6)));
+    const mx = (ax + bx) / 2;
+    const my = (ay + by) / 2;
+    // the view may reach past the walls by `edge` so a cornered fighter (and the pips under it) stays visible
+    const edge = 1.1 * PX;
+    const clampE = (c: number, half: number, size: number, e: number) =>
+      half * 2 >= size + e * 2 ? size / 2 : Math.max(half - e, Math.min(size + e - half, c));
+    // self focus: where would you be on the classic camera's screen? Low (or in a lower corner) → centre on you
+    let tx = mx;
+    let ty = my;
+    const loc = this.opts.local;
+    const me = this.opts.focusSelf && loc !== -1 ? s.f[loc] : null;
+    if (me) {
+      const sc0 = fit * zoom;
+      const hw0 = sw / 2 / sc0;
+      const hh0 = vh / 2 / sc0;
+      const cx0 = clampE(mx, hw0, FW, edge);
+      const cy0 = clampE(my, hh0, FHt, edge);
+      const ox = toPx(me.x);
+      const oy = toPx(me.y);
+      const fx = (ox - (cx0 - hw0)) / (2 * hw0);
+      const fy = (oy - (cy0 - hh0)) / (2 * hh0);
+      const ease = (v: number) => {
+        const c = Math.max(0, Math.min(1, v));
+        return c * c * (3 - 2 * c);
+      };
+      const low = ease((fy - 0.56) / 0.18);
+      const corner = ease((fy - 0.46) / 0.2) * ease((Math.abs(fx - 0.5) * 2 - 0.5) / 0.3);
+      const want = Math.max(low, corner);
+      this.focusW += (want - this.focusW) * (1 - Math.pow(want > this.focusW ? 0.9 : 0.95, dt));
+      if (this.focusW < 0.002) this.focusW = 0;
+      const w = this.focusW;
+      tx = mx + (ox - mx) * w;
+      ty = my + (oy - my) * w;
+      if (w > 0) {
+        // keep the opponent on screen around that centre: zoom out as far as needed
+        const o = s.f[loc === 0 ? 1 : 0];
+        const odx = Math.abs(toPx(o.x) - tx);
+        const ody = Math.abs(toPx(o.y) - ty);
+        const pad = 0.9 * PX;
+        zoom = Math.max(minZoom, Math.min(zoom, sw / (2 * (odx + pad) * fit), vh / (2 * (ody + pad) * fit)));
+      }
+    } else this.focusW = 0;
     if (!Number.isFinite(this.cam.zoom) || !Number.isFinite(this.cam.x) || !Number.isFinite(this.cam.y)) {
-      this.cam = { x: (ax + bx) / 2, y: (ay + by) / 2, zoom };
+      this.cam = { x: tx, y: ty, zoom };
     }
     // zoom out quickly (never lose a fighter), in gently
     const kz = 1 - Math.pow(zoom < this.cam.zoom ? 0.8 : 0.93, dt);
@@ -1176,10 +1276,10 @@ export class BattleView {
     const halfW = sw / 2 / scale;
     const halfH = vh / 2 / scale;
     const k = 1 - Math.pow(0.86, dt);
-    this.cam.x += ((ax + bx) / 2 - this.cam.x) * k;
-    this.cam.y += ((ay + by) / 2 - this.cam.y) * k;
-    // both fighters inside the view (0.9u padding), then the view inside the arena (+margin)
-    const pad = 0.9 * PX;
+    this.cam.x += (tx - this.cam.x) * k;
+    this.cam.y += (ty - this.cam.y) * k;
+    // both fighters inside the view (0.9u padding; less while centring on you), then the view inside the arena (+margin)
+    const pad = (0.9 - 0.5 * this.focusW) * PX;
     const keep = (c: number, lo: number, hi: number, half: number) => {
       const min = hi + pad - half;
       const max = lo - pad + half;
@@ -1187,12 +1287,10 @@ export class BattleView {
     };
     this.cam.x = keep(this.cam.x, Math.min(ax, bx), Math.max(ax, bx), halfW);
     this.cam.y = keep(this.cam.y, Math.min(ay, by), Math.max(ay, by), halfH);
-    // the view may reach past the walls by `edge` so a cornered fighter (and the pips under it) stays visible
-    const edge = 1.1 * PX;
-    const clampC = (c: number, half: number, size: number) =>
-      half * 2 >= size + edge * 2 ? size / 2 : Math.max(half - edge, Math.min(size + edge - half, c));
-    this.cam.x = clampC(this.cam.x, halfW, FW);
-    this.cam.y = clampC(this.cam.y, halfH, FHt);
+    // (self focus: the view may run past the walls far enough to centre you even against one)
+    const fw = this.focusW;
+    this.cam.x = clampE(this.cam.x, halfW, FW, edge + Math.max(0, halfW - edge) * fw);
+    this.cam.y = clampE(this.cam.y, halfH, FHt, edge + Math.max(0, halfH - edge) * fw);
     // shake
     if (this.shake > 0.3) {
       this.shakeX = (Math.random() - 0.5) * this.shake * 2;
@@ -1259,8 +1357,9 @@ export class BattleView {
       const col = this.fighters[i].color;
       const g = this.glow;
       const o = this.overlay;
-      this.sim.forEachInk(i, (x0, y0, x1, y1, life) => {
-        const k = Math.min(1, life / 60);
+      this.sim.forEachInk(i, (x0, y0, x1, y1, life, _slot, safe) => {
+        // (swing ink not live yet: drawn faint until the exchange is over)
+        const k = Math.min(1, life / 60) * (safe ? 0.4 : 1);
         const blink = life < 60 && !settings.reduceFlash && Math.floor(this.t / 4) % 2 === 0 ? 0.5 : 1;
         const ax = toPx(x0);
         const ay = toPx(y0);
@@ -1270,6 +1369,15 @@ export class BattleView {
         o.moveTo(ax, ay).lineTo(bx, by).stroke({ width: 5, color: mix(col, 0xbfd4ff, 0.35), alpha: 0.8 * k * blink, cap: 'round' });
         o.circle(bx, by, 4).fill({ color: 0xffffff, alpha: 0.7 * k * blink });
       });
+      if (f.inkIn && f.st !== ST_KO) {
+        // inside a closed loop of her ink: a soft green pulse, a few rising sparks (healing)
+        const cx = toPx(f.x);
+        const cy = toPx(f.y);
+        const p = 0.5 + 0.5 * Math.sin(this.t * 0.12);
+        g.circle(cx, cy, (0.75 + 0.1 * p) * PX).fill({ color: 0x7dffb0, alpha: 0.08 + 0.06 * p });
+        o.circle(cx, cy, (0.8 + 0.12 * p) * PX).stroke({ width: 2, color: 0x9dffc4, alpha: 0.35 + 0.25 * p });
+        if (Math.random() < 0.08) this.vfx.glitter(cx + (Math.random() - 0.5) * 60, cy + 20, 0x9dffc4, 2, 4, 24, 3);
+      }
       if (f.inkT > 0 && f.st !== ST_KO) {
         const ink = c.moves.find((m) => m.ink)!.ink!;
         const cx = toPx(f.x);
@@ -1308,6 +1416,31 @@ export class BattleView {
   }
 
   /** Overcharge (ヴォルト): while powered, jagged arcs crawl over a bright double halo (re-rolled each frame). */
+  /** ミラーの分身: a dashed ring with the time it has left, and a faint line to its owner (what a swap would trade). */
+  private drawCloneMark(i: number, c: FighterState): void {
+    const f = this.sim.s.f[i];
+    const col = this.fighters[i].color;
+    const o = this.overlay;
+    const cx = toPx(c.x);
+    const cy = toPx(c.y);
+    const R = 0.72 * PX;
+    const seg = 10;
+    for (let k = 0; k < seg; k += 2) {
+      const a0 = (k / seg) * Math.PI * 2 - this.t * 0.02;
+      o.moveTo(cx + Math.cos(a0) * R, cy + Math.sin(a0) * R).arc(cx, cy, R, a0, a0 + Math.PI / seg);
+    }
+    o.stroke({ width: 2, color: col, alpha: 0.6 });
+    const frac = Math.max(0, Math.min(1, f.cloneT / 1200));
+    const top = -Math.PI / 2;
+    o.moveTo(cx + Math.cos(top) * (R + 8), cy + Math.sin(top) * (R + 8)).arc(cx, cy, R + 8, top, top + Math.PI * 2 * frac).stroke({ width: 3, color: 0xffffff, alpha: 0.5 });
+    if (f.st !== ST_KO) {
+      const fx0 = toPx(f.x);
+      const fy0 = toPx(f.y);
+      const n = Math.max(2, Math.floor(Math.hypot(cx - fx0, cy - fy0) / 30));
+      for (let k = 1; k < n; k += 2) o.circle(fx0 + ((cx - fx0) * k) / n, fy0 + ((cy - fy0) * k) / n, 2).fill({ color: col, alpha: 0.25 });
+    }
+  }
+
   private drawPower(i: number): void {
     const f = this.sim.s.f[i];
     if (f.power <= 0) return;
@@ -1864,6 +1997,32 @@ export class BattleView {
       gl.circle(fx0, fy0, r).fill({ color: col, alpha: 0.1 * pulse });
       ov.moveTo(x, y).lineTo(fx0, fy0).stroke({ width: 2, color: col, alpha: 0.35 });
       inside = Math.hypot(ox0 - fx0, oy0 - fy0) <= r;
+    }
+    if (m.clone) {
+      // ミラーイメージ: where the clone will stand (auto = mirrored through the opponent, at most `mirror` from it)
+      let cx0: number;
+      let cy0: number;
+      if (a.auto) {
+        const d = Math.hypot(ox0 - x, oy0 - y) || 1;
+        const k = Math.min(d, toPx(m.clone.mirror)) / d;
+        cx0 = ox0 + (ox0 - x) * k;
+        cy0 = oy0 + (oy0 - y) * k;
+      } else {
+        const maxD = toPx(m.clone.maxDist);
+        cx0 = x + (c * maxD * pct) / 100;
+        cy0 = y + (sn * maxD * pct) / 100;
+      }
+      cx0 = Math.max(0.5 * PX, Math.min(FW - 0.5 * PX, cx0));
+      cy0 = Math.max(0.5 * PX, Math.min(FHt - 0.5 * PX, cy0));
+      const r = 0.55 * PX;
+      for (let k = 0; k < 16; k += 2) {
+        const a0 = (k / 16) * Math.PI * 2 - this.t * 0.03;
+        ov.moveTo(cx0 + Math.cos(a0) * r, cy0 + Math.sin(a0) * r).arc(cx0, cy0, r, a0, a0 + Math.PI / 8);
+      }
+      ov.stroke({ width: 3, color: col, alpha: 0.85 });
+      gl.circle(cx0, cy0, r).fill({ color: col, alpha: 0.12 * pulse });
+      ov.moveTo(x, y).lineTo(cx0, cy0).stroke({ width: 2, color: col, alpha: 0.3 });
+      return;
     }
     if (m.proj || m.field) {
       if (inside && !a.cancel && o.st !== ST_KO) {
