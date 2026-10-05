@@ -10,7 +10,7 @@
 import { h, shapeIcon } from '../app/ui';
 import { settings } from '../app/settings';
 import { placePx, defaultLayout } from './layout';
-import { AIM_DIRS, AIM_LEVELS, IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, IN_GUARD, aimBits, quantizeDir } from '../core/input';
+import { AIM_DIRS, AIM_FINE, AIM_LEVELS, IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, IN_GUARD, aimBits, quantizeDir } from '../core/input';
 import type { Shape } from '../data/types';
 
 const DEADZONE = 0.18;
@@ -334,7 +334,8 @@ export class TouchControls {
     if (!fire || a.cancel) return;
     this.latched |= BTN_BITS[a.id];
     // inside the inner ring: unaimed press → the sim auto-targets the opponent
-    if (!a.auto) this.latchedAim = aimBits(quantizeDir(a.x, a.y, AIM_DIRS), Math.round(a.frac * (AIM_LEVELS - 1)));
+    // (the 4 reach levels for lunges, and the fine distance for placements — fields, the clone)
+    if (!a.auto) this.latchedAim = aimBits(quantizeDir(a.x, a.y, AIM_DIRS), Math.round(a.frac * (AIM_LEVELS - 1)), Math.round(a.frac * (AIM_FINE - 1)));
   }
 
   /** Show the two rings once a hold lasts (called every frame by the battle loop). */

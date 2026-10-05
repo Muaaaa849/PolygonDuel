@@ -135,6 +135,20 @@ export function settingsScreen(onBack: () => void): Screen {
     }
   };
   drawG();
+  const keyAimSeg = h('div', { class: 'segmented' });
+  const drawKA = () => {
+    keyAimSeg.innerHTML = '';
+    for (const [g, label] of [['release', '離して発動'], ['toggle', '2回押しで発動']] as const) {
+      const b = h('button', { class: settings.keyAimMode === g ? 'on' : '' }, label);
+      b.onclick = () => {
+        sfx.ui();
+        saveSettings({ keyAimMode: g });
+        drawKA();
+      };
+      keyAimSeg.append(b);
+    }
+  };
+  drawKA();
   const dirSeg = h('div', { class: 'segmented' });
   const drawD = () => {
     dirSeg.innerHTML = '';
@@ -190,6 +204,7 @@ export function settingsScreen(onBack: () => void): Screen {
           h('div', { class: 't' }, h('b', null, 'キー設定'), h('small', null, 'キーボードとマウスのボタンを自由に割り当て（ひとり用・ローカル対戦の1P／2P）')),
           h('button', { class: 'btn small primary', onclick: () => { sfx.ui(); show(keybindScreen(() => show(settingsScreen(onBack)))); } }, '編集'),
         ),
+        h('div', { class: 'row-set' }, h('div', { class: 't' }, h('b', null, 'スキルの狙い方（キーボード）'), h('small', null, '狙えるスキル（範囲・置く場所があるもの）のキー。離して発動：押している間に狙い、離すと発動。2回押しで発動：1回押すと選択（範囲が出る）、もう一度押すと発動。どちらもキャンセルキー（既定Q）でやめられる')), keyAimSeg),
         toggle('mouseAim', 'マウスで狙う', 'PC（画面のボタンを出していない時）：攻撃・スキルはマウスカーソルの方向へ。オフ：「攻撃の向き」の設定に従う'),
         toggle('aimMode', 'ドラッグでエイム', '攻撃・スキルボタンを押したままドラッグで方向と距離を指定、離して発動。押している間はスティックの上に「キャンセル」が出る（位置はボタン配置で変更）。オフ：押した瞬間に発動'),
         toggle('dynamicCamera', 'ダイナミックカメラ', '近づくと寄って、形を大きく見せる'),

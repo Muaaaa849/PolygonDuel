@@ -14,15 +14,19 @@ export const IN_GUARD = 1 << 21;
 export const IN_AIM = 1 << 10;
 const AIM_DIR_SHIFT = 11; // 8 bits: 256 directions
 const AIM_LVL_SHIFT = 19; // 2 bits: reach level 0..3
+/** v1.9b: 5 bits (22-26) of fine distance 0..31 — where a placed thing (field, clone) goes, without the 4 levels' jumps. */
+const AIM_FINE_SHIFT = 22;
 export const AIM_DIRS = 256;
 export const AIM_LEVELS = 4;
+export const AIM_FINE = 32;
 
-/** Encode an aim (dir 0..255, level 0..3) into input bits. */
-export const aimBits = (dir: number, level: number): number =>
-  IN_AIM | ((dir & 255) << AIM_DIR_SHIFT) | ((level & 3) << AIM_LVL_SHIFT);
+/** Encode an aim (dir 0..255, level 0..3, fine distance 0..31 — default: the level's) into input bits. */
+export const aimBits = (dir: number, level: number, fine = Math.round(((level & 3) * (AIM_FINE - 1)) / 3)): number =>
+  IN_AIM | ((dir & 255) << AIM_DIR_SHIFT) | ((level & 3) << AIM_LVL_SHIFT) | ((fine & 31) << AIM_FINE_SHIFT);
 /** Aim angle in sim units (1024 / turn), or -1 when the word carries no aim. */
 export const aimAngle = (w: number): number => (w & IN_AIM ? ((w >> AIM_DIR_SHIFT) & 255) * (1024 / AIM_DIRS) : -1);
 export const aimLevel = (w: number): number => (w >> AIM_LVL_SHIFT) & 3;
+export const aimFine = (w: number): number => (w >> AIM_FINE_SHIFT) & 31;
 /** Lunge / dash distance (%) for a reach level: 40, 60, 80, 100. */
 export const aimLungePct = (level: number): number => 40 + level * 20;
 

@@ -350,11 +350,23 @@ describe('レイ: モード切替・ブラスト・フィールド', () => {
     const sc = new Scenario('ray', 'blaze', 2);
     sc.s.f[0].cost = 16;
     // aim straight left (away from the opponent) at full reach: bit10 aim, dir 512/4=128, level 3
-    const aimed = IN_S2 | (1 << 10) | (128 << 11) | (3 << 19);
+    const aimed = IN_S2 | (1 << 10) | (128 << 11) | (3 << 19) | (31 << 22); // (+ fine distance 31 = full)
     sc.run(30, (_m, _o, _s, t) => (t === 0 ? aimed : 0), guard);
     const fe = sc.events(EV_FIELD, 0)[0];
     expect(Math.abs(fe.y - sc.s.f[0].y)).toBeLessThan(u(0.05));
     expect(sc.s.f[0].x - fe.x).toBeGreaterThan(u(4.9));
+  });
+
+  it('v1.9b: an aimed placement takes the fine distance (32 steps), not the 4 reach levels', () => {
+    for (const fine of [0, 7, 16, 25]) {
+      const sc = new Scenario('ray', 'blaze', 2);
+      sc.s.f[0].cost = 16;
+      sc.s.f[0].x += u(4); // (room to the left)
+      const aimed = IN_S2 | (1 << 10) | (128 << 11) | (3 << 19) | (fine << 22);
+      sc.run(30, (_m, _o, _s, t) => (t === 0 ? aimed : 0), guard);
+      const fe = sc.events(EV_FIELD, 0)[0];
+      expect(Math.abs(sc.s.f[0].x - fe.x - Math.round((6000 * fine) / 31))).toBeLessThan(30);
+    }
   });
 });
 

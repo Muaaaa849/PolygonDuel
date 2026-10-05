@@ -217,9 +217,9 @@ export interface MoveDef {
   /**
    * Clone (ミラーのS2): placed on move frame `at` — aimed: `maxDist` × reach level away; a tap: on the far side of the
    * opponent (mirrored through it, at most `mirror` u from it). It lasts `frames`, copies every normal / GC / JA the
-   * owner starts (turned toward the opponent) for `dmgPct`% damage, gains no cost and can't be hit.
+   * owner starts (turned toward the opponent) for `dmgPct`% damage with `reachPct`% of the reach, gains no cost and can't be hit.
    */
-  clone?: { at: number; frames: number; maxDist: number; mirror: number; dmgPct: number };
+  clone?: { at: number; frames: number; maxDist: number; mirror: number; dmgPct: number; reachPct: number };
   /** Instant swap with the clone (ミラー: S2 while the clone is out). Not out of a guarded attack / guard stun. */
   swap?: boolean;
   /** The knockback goes in the direction the attacker is holding on the stick when it lands (not where it faces). */

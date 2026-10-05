@@ -16,7 +16,7 @@ import {
   MH_NONE, MH_HIT, MH_BLOCK, MH_SPENT,
   PH_INTRO, PH_FIGHT, PH_END, PH_MATCH_OVER,
 } from './state';
-import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, IN_GUARD, aimAngle, aimLevel, aimLungePct, dirAngle } from './input';
+import { IN_ATK, IN_S1, IN_S2, IN_STEP, IN_STICK, IN_GUARD, aimAngle, aimLevel, aimFine, aimLungePct, dirAngle } from './input';
 import {
   type SimEvent,
   EV_MOVE, EV_HIT, EV_BLOCK, EV_CRUSH, EV_GUARD_BREAK, EV_GB_OPEN, EV_JUST, EV_RIPOSTE, EV_KNOCKDOWN, EV_STEP,
@@ -151,7 +151,7 @@ export class Sim {
         chainResetUsed: 0, otgUsed: 0, comboHits: 0, comboFrames: 0, comboDmg: 0, downAge: 0,
         kbDist: 0, kbAngle: 0, limited: 0, buff: 0, healUses: 0, csHit: 0,
         lastDir: i === 0 ? 0 : 16,
-        aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, lungePct: 100, wallHits: 0, momStep: 0, momDir: 0,
+        aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, aimFine: 0, lungePct: 100, wallHits: 0, momStep: 0, momDir: 0,
         ghostT: 0, ghostMode: 0, shootMode: 0, justNoMul: 0, wallGuard: 0, fieldT: 0, power: 0, instLock: 0, pullUsed: 0, wakeBoost: 0, stepPct: 100,
         drive: 0, driveTick: 0, exhaust: 0, noWalk: 0, s1Cd: 0, inkT: 0, atkHold: 0, trHead: 0, trBrk: 0, inkIn: 0,
         cloneT: 0, cloneX: 0, cloneY: 0, cloneFace: 0, cloneMove: -1, cloneSf: 0, cloneHit: 0,
@@ -252,7 +252,7 @@ export class Sim {
     const B = SYSTEM.buffer + 1; // decremented once before use this frame
     // an aimed press carries its direction + reach level with the buffered press
     const ang = aimAngle(w);
-    const aim = ang >= 0 ? 1 + ang + aimLevel(w) * ANG : 0;
+    const aim = ang >= 0 ? 1 + ang + aimLevel(w) * ANG + aimFine(w) * 4 * ANG : 0;
     if (pressed & IN_ATK) {
       f.bufAtk = B;
       f.aimAtk = aim;
@@ -922,7 +922,10 @@ export class Sim {
   /** A move's reach for this fighter (the overdrive lengthens every move). */
   reachOf(f: FighterState, m: CMove): number {
     const dr = COMPILED[f.char].drive;
-    return dr && f.drive ? idiv(m.reach * (100 + dr.reach), 100) : m.reach;
+    const r = dr && f.drive ? idiv(m.reach * (100 + dr.reach), 100) : m.reach;
+    // (a clone — cloneOf marks it with cloneT = -1 — swings with a shorter reach)
+    if (f.cloneT < 0) return idiv(r * COMPILED[f.char].moves[M_S2].clone!.reachPct, 100);
+    return r;
   }
 
   private healSpec(f: FighterState) {
@@ -1045,7 +1048,8 @@ export class Sim {
     } else if (aim && (!chained || m.kind === KIND_SKILL)) {
       f.facing = (aim - 1) & (ANG - 1);
       f.aimed = 1;
-      f.lungePct = aimLungePct((aim - 1) >> 10);
+      f.lungePct = aimLungePct(((aim - 1) >> 10) & 3);
+      f.aimFine = (aim - 1) >> 12;
     } else if (!chained) f.facing = w & IN_STICK && !f.faceFoe ? dirAngle(w) : this.angleTo(i);
     this.emit(EV_MOVE, i, mi, 0, f.x, f.y);
     // (ミラー: the clone swings along — the same normal / GC / JA, turned toward the opponent)
@@ -1232,7 +1236,7 @@ export class Sim {
     let x: number;
     let y: number;
     if (f.aimed) {
-      const dist = idiv(C.maxDist * f.lungePct, 100);
+      const dist = idiv(C.maxDist * f.aimFine, 31);
       x = f.x + offX(f.facing, dist);
       y = f.y + offY(f.facing, dist);
     } else {
@@ -1312,7 +1316,7 @@ export class Sim {
       guardF: 0,
       kbDist: 0,
       ghostT: 0,
-      cloneT: 0,
+      cloneT: -1, // (marks the clone: reachOf shortens its swings)
       inkT: 0,
     };
   }
@@ -1605,7 +1609,7 @@ export class Sim {
     let x: number;
     let y: number;
     if (f.aimed) {
-      const dist = idiv(F.maxDist * f.lungePct, 100);
+      const dist = idiv(F.maxDist * f.aimFine, 31);
       x = f.x + offX(f.facing, dist);
       y = f.y + offY(f.facing, dist);
     } else {

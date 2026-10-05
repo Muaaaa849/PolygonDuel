@@ -140,7 +140,7 @@ describe('ミラー', () => {
       sc.run(40, (_m, _o, _s, t) => (t === 0 ? IN_S2 : 0), opBot, () => sc.s.f[0].cloneT > 0 && sc.s.f[0].st === ST_FREE);
     };
 
-    it('a tap puts the clone on the far side of the opponent (mirrored, ≤2.5u from it); cost 2.5; 20 s', () => {
+    it('a tap puts the clone on the far side of the opponent (mirrored, ≤2.5u from it); cost 2.5; 15 s', () => {
       const sc = new Scenario('mirror', 'bastion', 3);
       withClone(sc);
       const f = sc.s.f[0];
@@ -149,7 +149,7 @@ describe('ミラー', () => {
       expect(f.cloneX - o.x).toBe(2500);
       expect(f.cloneY).toBe(o.y);
       expect(f.cost).toBe(q(1.5));
-      sc.run(1250, shuffle, shuffle);
+      sc.run(930, shuffle, shuffle);
       expect(sc.events(EV_CLONE, 0).map((e) => e.a)).toEqual([1, 0]);
       expect(sc.s.f[0].cloneT).toBe(0);
     });
@@ -157,7 +157,7 @@ describe('ミラー', () => {
     it('an aimed press puts it where it was aimed (full reach = 6u)', () => {
       const sc = new Scenario('mirror', 'bastion', 3);
       sc.s.f[0].cost = q(4);
-      const aimUp = IN_S2 | (1 << 10) | (192 << 11) | (3 << 19); // aim 270° (up), level 3
+      const aimUp = IN_S2 | (1 << 10) | (192 << 11) | (3 << 19) | (31 << 22); // aim 270° (up), level 3, fine distance 31
       sc.s.f[0].y = u(SYSTEM.field.h) - u(1);
       sc.run(30, (_m, _o, _s, t) => (t === 0 ? aimUp : 0), guard);
       expect(sc.s.f[0].y - sc.s.f[0].cloneY).toBeGreaterThan(5900);
@@ -167,8 +167,9 @@ describe('ミラー', () => {
     it('the clone swings along with every normal (turned to the opponent), 75% damage, no cost for the owner', () => {
       const sc = new Scenario('mirror', 'bastion', 3);
       withClone(sc, shuffle);
-      // the real one is out of reach: only the clone (2.5u on the other side) can land
+      // the real one is out of reach: only the clone (moved 1.4u from the target: its reach is half) can land
       sc.s.f[0].x = sc.s.f[1].x - u(5);
+      sc.s.f[0].cloneX = sc.s.f[1].x + u(1.4);
       const cost = sc.s.f[0].cost;
       sc.run(40, later(sc, (k) => (k < 2 ? IN_ATK : 0)), shuffle, () => sc.hits(0).length > 0);
       const h = sc.hits(0);
@@ -178,10 +179,22 @@ describe('ミラー', () => {
       expect(sc.s.f[0].cost).toBe(cost);
     });
 
+    it('the clone swings with half the reach (v1.9b): 2.4u away it misses what the real one would hit', () => {
+      const sc = new Scenario('mirror', 'bastion', 3);
+      withClone(sc, shuffle);
+      sc.s.f[0].x = sc.s.f[1].x - u(6);
+      sc.s.f[0].cloneX = sc.s.f[1].x + u(2.4);
+      sc.s.f[0].cloneY = sc.s.f[1].y;
+      sc.run(40, later(sc, (k) => (k < 2 ? IN_ATK : 0)), guard);
+      expect(sc.hits(0).length + sc.blocks(0).length).toBe(0);
+      expect(M.moves[M_S2].clone!.reachPct).toBe(50);
+    });
+
     it('a swing only the clone landed still chains: 1 → 2 → 3 from the clone alone is a combo', () => {
       const sc = new Scenario('mirror', 'bastion', 3);
       withClone(sc, shuffle);
       sc.s.f[0].x = sc.s.f[1].x - u(5);
+      sc.s.f[0].cloneX = sc.s.f[1].x + u(1.4);
       sc.run(260, (_m, _o, _s, t) => (t % 2 ? IN_ATK : 0), (me) => (me.statHitsTaken > 0 ? 0 : shuffle(me, me, sc.s, sc.t)));
       const h = sc.hits(0);
       expect(h.length).toBe(3);

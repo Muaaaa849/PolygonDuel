@@ -131,21 +131,33 @@ export class KeyboardInput {
     return codes.some((c) => down.has(c));
   }
 
-  /** A skill key: fires on press, or (deferred) on release unless the cancel key was pressed meanwhile. */
+  /**
+   * A skill key: fires on press, or (deferred) — settings.keyAimMode 'release': on release; 'toggle': a press selects it,
+   * the next press of the same key fires (another skill key switches the selection). The cancel key drops it.
+   */
   private skill(id: 's1' | 's2', bit: number): number {
     const codes = this.map[id];
-    const pressed = codes.some((c) => pressedSince.has(c)) || (this.isDown(codes) && !this.wasDown[id]);
     const isDown = this.isDown(codes);
+    const pressed = codes.some((c) => pressedSince.has(c)) || (isDown && !this.wasDown[id]);
     this.wasDown[id] = isDown;
+    const toggle = settings.keyAimMode === 'toggle';
     if (this.dead[id]) {
-      if (isDown) return 0;
-      this.dead[id] = false;
+      // (a canceled / fired / selecting key stays quiet until it is let go)
+      if (isDown) {
+        if (!(toggle && this.holding === id && pressed)) return 0;
+      } else this.dead[id] = false;
     }
     if (this.holding === id) {
       if (this.any(this.map.cancel)) {
         this.holding = null;
-        this.dead[id] = true;
+        this.dead[id] = isDown;
         return 0;
+      }
+      if (toggle) {
+        if (!pressed) return 0;
+        this.holding = null;
+        this.dead[id] = isDown;
+        return bit; // the second press fires
       }
       if (!isDown) {
         this.holding = null;
@@ -153,13 +165,23 @@ export class KeyboardInput {
       }
       return 0;
     }
-    if (pressed && !this.holding && this.deferPolicy(id)) {
+    if (pressed && (!this.holding || toggle) && this.deferPolicy(id)) {
+      if (toggle) {
+        this.holding = id;
+        this.dead[id] = isDown;
+        return 0;
+      }
       // (pressed and released within the same tick: a tap, fire at once)
       if (!isDown) return bit;
       this.holding = id;
       return 0;
     }
     return this.any(codes) ? bit : 0;
+  }
+
+  /** Drops a toggled selection that can no longer fire (the battle screen calls it when the skill isn't available). */
+  clearHold(): void {
+    this.holding = null;
   }
 
   poll(): number {

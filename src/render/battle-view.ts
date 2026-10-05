@@ -138,6 +138,8 @@ export class BattleView {
   topInset = 58;
   /** Touch aim in progress (drawn as a highlighted range from the fighter). */
   aim: { who: number; slot: number; x: number; y: number; frac: number; auto: boolean; cancel: boolean } | null = null;
+  /** Where the last clone placement preview was drawn (u) — for checks. */
+  aimPlace: { x: number; y: number } | null = null;
   private t = 0;
   private lastFrame = -1;
 
@@ -203,6 +205,11 @@ export class BattleView {
     const f = this.sim.s.f[i];
     const p = this.world.toGlobal({ x: toPx(f.x), y: toPx(f.y) });
     return { x: p.x, y: p.y };
+  }
+
+  /** World units (u) per canvas css px at the current camera zoom (mouse placement distances). */
+  unitsPerPx(): number {
+    return 1 / (this.world.scale.x * PX);
   }
 
   colorOf(i: number): number {
@@ -1430,7 +1437,8 @@ export class BattleView {
       o.moveTo(cx + Math.cos(a0) * R, cy + Math.sin(a0) * R).arc(cx, cy, R, a0, a0 + Math.PI / seg);
     }
     o.stroke({ width: 2, color: col, alpha: 0.6 });
-    const frac = Math.max(0, Math.min(1, f.cloneT / 1200));
+    const life = this.sim.char(i).moves.find((m) => m.clone)?.clone?.frames ?? 900;
+    const frac = Math.max(0, Math.min(1, f.cloneT / life));
     const top = -Math.PI / 2;
     o.moveTo(cx + Math.cos(top) * (R + 8), cy + Math.sin(top) * (R + 8)).arc(cx, cy, R + 8, top, top + Math.PI * 2 * frac).stroke({ width: 3, color: 0xffffff, alpha: 0.5 });
     if (f.st !== ST_KO) {
@@ -1945,6 +1953,8 @@ export class BattleView {
       ? Math.atan2(o.y - f.y, o.x - f.x)
       : (Math.round((Math.atan2(a.y, a.x) / (Math.PI * 2)) * 256) / 256) * Math.PI * 2;
     const pct = a.auto ? 100 : 40 + Math.round(a.frac * 3) * 20;
+    // placements (fields, the clone) use the fine distance: 32 steps, what the sim will get
+    const place = a.auto ? 1 : Math.round(a.frac * 31) / 31;
     const c = Math.cos(q);
     const sn = Math.sin(q);
     const x = toPx(f.x);
@@ -1985,8 +1995,8 @@ export class BattleView {
         fx0 = x + (ox0 - x) * k;
         fy0 = y + (oy0 - y) * k;
       } else {
-        fx0 = x + (c * maxD * pct) / 100;
-        fy0 = y + (sn * maxD * pct) / 100;
+        fx0 = x + c * maxD * place;
+        fy0 = y + sn * maxD * place;
       }
       const r = toPx(m.field.radius);
       for (let k = 0; k < 24; k += 2) {
@@ -2009,11 +2019,12 @@ export class BattleView {
         cy0 = oy0 + (oy0 - y) * k;
       } else {
         const maxD = toPx(m.clone.maxDist);
-        cx0 = x + (c * maxD * pct) / 100;
-        cy0 = y + (sn * maxD * pct) / 100;
+        cx0 = x + c * maxD * place;
+        cy0 = y + sn * maxD * place;
       }
       cx0 = Math.max(0.5 * PX, Math.min(FW - 0.5 * PX, cx0));
       cy0 = Math.max(0.5 * PX, Math.min(FHt - 0.5 * PX, cy0));
+      this.aimPlace = { x: cx0 / PX, y: cy0 / PX };
       const r = 0.55 * PX;
       for (let k = 0; k < 16; k += 2) {
         const a0 = (k / 16) * Math.PI * 2 - this.t * 0.03;

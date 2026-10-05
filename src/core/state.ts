@@ -93,12 +93,14 @@ export interface FighterState {
   prevIn: number;
   /** Last stick direction (for STEP default). */
   lastDir: number;
-  /** Aim attached to the buffered ATK / S1 / S2 press: 0 = none, else 1 + angle + level*1024. */
+  /** Aim attached to the buffered ATK / S1 / S2 press: 0 = none, else 1 + angle + level*1024 + fine*4096. */
   aimAtk: number;
   aimS1: number;
   aimS2: number;
   /** Current move was aimed (no homing). */
   aimed: number;
+  /** Fine aimed distance of the current move, 0..31 (placements: fields, the clone). */
+  aimFine: number;
   /** Wall impacts taken during the current combo. */
   wallHits: number;
   /** Illusion (ghost) decoy: frames since start (0 = none), mode (1 step-in, 2 fake swing),
@@ -235,7 +237,7 @@ export function newFighter(): FighterState {
     bufAtk: 0, bufS1: 0, bufS2: 0, bufStep: 0, gcQueued: 0, noGc: 0, justWin: 0, jaChain: 0,
     chainResetUsed: 0, otgUsed: 0, comboHits: 0, comboFrames: 0, comboDmg: 0, downAge: 0, kbDist: 0, kbAngle: 0,
     limited: 0, buff: 0, healUses: 0, csHit: 0, prevIn: 0, lastDir: 0,
-    aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, wallHits: 0, lungePct: 100, momStep: 0, momDir: 0,
+    aimAtk: 0, aimS1: 0, aimS2: 0, aimed: 0, aimFine: 0, wallHits: 0, lungePct: 100, momStep: 0, momDir: 0,
     shootMode: 0, justNoMul: 0, wallGuard: 0, manualGuard: 0, faceFoe: 0, power: 0, instLock: 0, pullUsed: 0, wakeBoost: 0, stepPct: 100,
     drive: 0, driveTick: 0, exhaust: 0, noWalk: 0, s1Cd: 0, inkT: 0, atkHold: 0, trHead: 0, trBrk: 0, inkIn: 0,
     cloneT: 0, cloneX: 0, cloneY: 0, cloneFace: 0, cloneMove: -1, cloneSf: 0, cloneHit: 0,

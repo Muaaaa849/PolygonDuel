@@ -9,9 +9,9 @@ import type { CharacterDef } from '../types';
 //     standing, a step, or ANY moment of an attack (the swing goes on from the new spot, turned to the opponent).
 //     As many in a row as the cost allows (10F apart). Out of range N1 → teleport in → it lands; or pass through
 //     a cornered opponent and send them into the wall.
-//  S2 ミラーイメージ (pentagon, cost 2.5): a clone (20 s). A tap puts it on the far side of the opponent (mirrored
+//  S2 ミラーイメージ (pentagon, cost 2.5): a clone (15 s, v1.9b). A tap puts it on the far side of the opponent (mirrored
 //     through them); dragging aims it (up to 6u). Every normal / GC / JA the real one starts, the clone starts too, turned
-//     toward the opponent, for 75% damage (no cost gained; it can't be hit). Hits from both on the same frame both count.
+//     toward the opponent, for 75% damage with half the reach (no cost gained; it can't be hit). Hits from both on the same frame both count.
 //     With the clone out S2 is the SWAP (instant, cost 1): the two trade places and the current attack's recovery is gone
 //     — 1 → 2 → swap → 1 → 2 → 3 (from whichever of the two landed). Not after a guarded attack and not in guard stun.
 export const mirror: CharacterDef = {
@@ -61,10 +61,10 @@ export const mirror: CharacterDef = {
     },
     {
       id: 'mirrorClone', name: 'ミラーイメージ', kind: 'skill', shape: 'pentagon',
-      desc: '分身を作る（20秒）。タップで相手の向こう側、長押しでドラッグした場所に。本体が攻撃すると分身も相手へ向いて同じ攻撃を振る（威力0.75倍・コストは溜まらない・分身は攻撃を受けない）。分身がいる間のS2は「入れ替え」（コスト1）：場所を入れ替え、今の攻撃の硬直も消える。ガードされた攻撃からは使えない',
+      desc: '分身を作る（15秒）。タップで相手の向こう側、長押しでドラッグした場所に。本体が攻撃すると分身も相手へ向いて同じ攻撃を振る（威力0.75倍・リーチ0.5倍・コストは溜まらない・分身は攻撃を受けない）。分身がいる間のS2は「入れ替え」（コスト1）：場所を入れ替え、今の攻撃の硬直も消える。ガードされた攻撃からは使えない',
       cost: 2.5, S: 12, A: 0, T: 26, reach: 0, lunge: 0,
       dmg: 0, hitstun: 0, blockstun: 0, hitstop: 0,
-      clone: { at: 12, frames: 1200, maxDist: 6, mirror: 2.5, dmgPct: 75 },
+      clone: { at: 12, frames: 900, maxDist: 6, mirror: 2.5, dmgPct: 75, reachPct: 50 },
       cancelFrom: ['neutral', 'step'],
     },
   ],

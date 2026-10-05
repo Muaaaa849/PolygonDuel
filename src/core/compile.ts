@@ -118,7 +118,7 @@ export interface CMove {
   /** Instant-skill lock after it (frames). */
   lock: number;
   /** Clone (milli-u). */
-  clone: { at: number; frames: number; maxDist: number; mirror: number; dmgPct: number } | null;
+  clone: { at: number; frames: number; maxDist: number; mirror: number; dmgPct: number; reachPct: number } | null;
   swap: boolean;
   /** Starts the overdrive on this frame (0 = no). */
   driveOn: number;
@@ -257,7 +257,7 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     inkBox: m.inkBox ? { hold: m.inkBox.hold, half: u(m.inkBox.half), cost: Math.round(m.inkBox.cost * COST_UNIT) } : null,
     teleport: m.teleport ? u(m.teleport.dist) : 0,
     lock: m.lock ?? SYSTEM.instantLock,
-    clone: m.clone ? { at: m.clone.at, frames: m.clone.frames, maxDist: u(m.clone.maxDist), mirror: u(m.clone.mirror), dmgPct: m.clone.dmgPct } : null,
+    clone: m.clone ? { at: m.clone.at, frames: m.clone.frames, maxDist: u(m.clone.maxDist), mirror: u(m.clone.mirror), dmgPct: m.clone.dmgPct, reachPct: m.clone.reachPct } : null,
     swap: !!m.swap,
     channel: m.channel ? { ...m.channel } : null,
     driveOn: m.driveOn ?? 0,

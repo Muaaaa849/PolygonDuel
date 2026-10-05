@@ -14,7 +14,7 @@ import { BattleView } from '../../render/battle-view';
 import { app, recoverRenderer, setAmbient } from '../../render/pixi-app';
 import { TouchControls } from '../../input/touch';
 import { KeyboardInput, keysFor, keyLabel } from '../../input/keyboard';
-import { IN_ATK, IN_S1, IN_S2, IN_AIM, aimBits, quantizeDir, AIM_DIRS } from '../../core/input';
+import { IN_ATK, IN_S1, IN_S2, IN_AIM, aimBits, quantizeDir, AIM_DIRS, AIM_FINE } from '../../core/input';
 import { CpuPlayer, CPU_LEVELS, Dummy, DUMMY_MODES, type DummyMode } from '../../ai/cpu';
 import { sfx, vibrate } from '../../audio/sfx';
 import { bgm } from '../../audio/bgm';
@@ -175,7 +175,9 @@ export function battleScreen(cfg: BattleConfig): Screen {
       return !m.instant && (m.hasHitbox || !!m.proj || !!m.field || !!m.clone) && !m.autoAim && !m.radial;
     };
   }
-  const cancelHint = h('div', { class: 'key-cancel-hint' }, h('b', null, keysFor(cfg.mode === 'local' ? 'p1' : 'solo').cancel.map(keyLabel).join('/') || '—'), '離すと発動・キャンセル');
+  const cancelHint = h('div', { class: 'key-cancel-hint' },
+    h('b', null, keysFor(cfg.mode === 'local' ? 'p1' : 'solo').cancel.map(keyLabel).join('/') || '—'),
+    settings.keyAimMode === 'toggle' ? 'キャンセル（もう一度押すと発動）' : 'キャンセル（離すと発動）');
   // PC: no on-screen controls; a legend of the keys instead, and (optionally) aim with the mouse
   const touchShown = showTouchControls();
   if (!touchShown) {
@@ -192,6 +194,13 @@ export function battleScreen(cfg: BattleConfig): Screen {
   };
   if (mouseAim) window.addEventListener('mousemove', onMouseMove);
   let prevLocal = 0;
+  /** Mouse: how far toward its maximum a placement (field / clone) of this button goes for a cursor offset (css px); 1 otherwise. */
+  const placeFrac = (id: string, dx: number, dy: number): number => {
+    const m = sim.char(cfg.local).moves[slotFor(id)];
+    const max = m.clone?.maxDist ?? m.field?.maxDist ?? 0;
+    if (!max) return 1;
+    return Math.max(0, Math.min(1, (Math.hypot(dx, dy) * view.unitsPerPx() * 1000) / max));
+  };
   const localInput = () => {
     let w = touch.poll() | kb.poll();
     // mouse aim: a fresh ATK / S1 / S2 press carries the direction to the cursor (full reach).
@@ -203,7 +212,9 @@ export function battleScreen(cfg: BattleConfig): Screen {
       const r = app.canvas.getBoundingClientRect();
       const dx = mouse.x - r.left - p.x;
       const dy = mouse.y - r.top - p.y;
-      if (dx * dx + dy * dy > 16 * 16) w |= aimBits(quantizeDir(dx, dy, AIM_DIRS), 3);
+      // (a placement — field, clone — goes exactly to the cursor: the fine distance)
+      const id = fresh & IN_S2 ? 's2' : fresh & IN_S1 ? 's1' : 'atk';
+      if (dx * dx + dy * dy > 16 * 16) w |= aimBits(quantizeDir(dx, dy, AIM_DIRS), 3, Math.round(placeFrac(id, dx, dy) * (AIM_FINE - 1)));
     }
     return w;
   };
@@ -768,7 +779,7 @@ export function battleScreen(cfg: BattleConfig): Screen {
       const dx = mouse.x - r.left - p.x;
       const dy = mouse.y - r.top - p.y;
       const len = Math.hypot(dx, dy);
-      if (len > 16) return { slot, x: dx / len, y: dy / len, frac: 1, auto: false, cancel: false, who: cfg.local };
+      if (len > 16) return { slot, x: dx / len, y: dy / len, frac: placeFrac(kb.holding, dx, dy), auto: false, cancel: false, who: cfg.local };
     }
     return { slot, x: 1, y: 0, frac: 1, auto: true, cancel: false, who: cfg.local };
   }

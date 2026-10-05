@@ -39,6 +39,11 @@ export interface Settings {
   touchControls: 'auto' | 'show' | 'hide';
   /** PC: attacks and skills go toward the mouse cursor (off: at the opponent). */
   mouseAim: boolean;
+  /**
+   * v1.9b PC: an aimable skill key — 'release' = hold to see the range, fires on release; 'toggle' = a press selects it
+   * (the range shows), a second press fires. The cancel key drops it either way.
+   */
+  keyAimMode: 'release' | 'toggle';
 }
 
 const DEFAULTS: Settings = {
@@ -63,6 +68,7 @@ const DEFAULTS: Settings = {
   keys: null,
   touchControls: 'auto',
   mouseAim: true,
+  keyAimMode: 'release',
 };
 
 const KEY = 'polygon-duel.settings.v1';
@@ -101,7 +107,7 @@ export function onSettings(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
-const EXPORT_KEYS: (keyof Settings)[] = ['volume', 'bgmVolume', 'haptics', 'lefty', 'buttonScale', 'quality', 'reduceFlash', 'dynamicCamera', 'selfCamera', 'aimMode', 'guardMode', 'attackDir', 'showBrief', 'layout', 'keys', 'touchControls', 'mouseAim'];
+const EXPORT_KEYS: (keyof Settings)[] = ['volume', 'bgmVolume', 'haptics', 'lefty', 'buttonScale', 'quality', 'reduceFlash', 'dynamicCamera', 'selfCamera', 'aimMode', 'guardMode', 'attackDir', 'showBrief', 'layout', 'keys', 'touchControls', 'mouseAim', 'keyAimMode'];
 
 /** Settings as a portable JSON file (controls layout included). */
 export function exportSettings(): string {
@@ -137,6 +143,10 @@ export function importSettings(text: string): void {
     }
     if (k === 'attackDir') {
       if (v === 'foe' || v === 'stick') patch.attackDir = v;
+      continue;
+    }
+    if (k === 'keyAimMode') {
+      if (v === 'release' || v === 'toggle') patch.keyAimMode = v;
       continue;
     }
     if (k === 'guardMode') {
