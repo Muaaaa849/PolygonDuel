@@ -147,7 +147,7 @@ export class Sim {
         guardF: 0, guardQ: c.guardMaxQ, guardIdle: 0,
         cost: SYSTEM.cost.start * COST_UNIT, comboGain: 0, hurtGain: 0,
         steps: c.stepStock, stepTimer: 0, moveDir: 0, stepChain: 0,
-        bufAtk: 0, bufS1: 0, bufS2: 0, bufStep: 0, gcQueued: 0, noGc: 0, justWin: 0, jaChain: 0,
+        bufAtk: 0, bufS1: 0, bufS2: 0, bufStep: 0, gcQueued: 0, gcBlockFrame: 0, noGc: 0, justWin: 0, jaChain: 0,
         chainResetUsed: 0, otgUsed: 0, comboHits: 0, comboFrames: 0, comboDmg: 0, downAge: 0,
         kbDist: 0, kbAngle: 0, limited: 0, buff: 0, healUses: 0, csHit: 0,
         lastDir: i === 0 ? 0 : 16,
@@ -256,7 +256,9 @@ export class Sim {
     if (pressed & IN_ATK) {
       f.bufAtk = B;
       f.aimAtk = aim;
-      if (f.st === ST_BLOCKSTUN && !f.noGc) f.gcQueued = 1;
+      if (f.st === ST_BLOCKSTUN && !f.noGc && !f.gcQueued) {
+        f.gcQueued = this.s.frame - f.gcBlockFrame <= SYSTEM.gc.fastWindow ? 2 : 1;
+      }
     }
     if (pressed & IN_S1) {
       f.bufS1 = B;
@@ -290,7 +292,7 @@ export class Sim {
     this.tryInstant(i);
     if (f.cloneT > 0) this.cloneTick(i);
     f.sf++;
-    if (f.st !== ST_ATTACK) f.momStep = 0;
+    if (f.st !== ST_ATTACK && f.st !== ST_BLOCKSTUN && !(f.st === ST_FREE && f.guardF > 0)) f.momStep = 0;
     if (f.st !== ST_BLOCKSTUN) f.wallGuard = 0;
 
     this.slide(f);
@@ -298,6 +300,8 @@ export class Sim {
     switch (f.st) {
       case ST_FREE:
         this.freeLogic(i, w);
+        if (f.st === ST_FREE && f.guardF > 0) this.carry(f);
+        else if (f.st === ST_FREE) f.momStep = 0;
         break;
       case ST_ATTACK: {
         const m = this.moveOf(f)!;
@@ -324,11 +328,14 @@ export class Sim {
         break;
       }
       case ST_BLOCKSTUN:
+        this.carry(f);
         if (f.sf > f.len) {
           if (f.gcQueued) {
+            const slot = f.gcQueued === 2 ? COMPILED[f.char].fastGc : M_GC;
             f.gcQueued = 0;
+            f.bufAtk = f.aimAtk = 0;
             f.statGc++;
-            this.startMove(i, M_GC, w);
+            this.startMove(i, slot, w);
           } else {
             f.st = ST_FREE;
             f.sf = 1;
@@ -383,10 +390,10 @@ export class Sim {
     f.guardF = 0;
   }
 
-  /** Step momentum: an attack started out of a step keeps travelling like the step would have. */
+  /** Remaining step travel carried into attacks or a sliding guard (including blockstun). */
   private carry(f: FighterState): void {
     if (f.momStep <= 0) return;
-    if (f.momStep > SYSTEM.step.moveFrames || f.moveHit !== MH_NONE) {
+    if (f.momStep > SYSTEM.step.moveFrames || (f.st === ST_ATTACK && f.moveHit !== MH_NONE)) {
       f.momStep = 0;
       return;
     }
@@ -985,6 +992,19 @@ export class Sim {
         return;
       }
     }
+    const guardIn = f.manualGuard ? (w & IN_GUARD) !== 0 : (w & IN_STICK) === 0;
+    if (f.sf >= SYSTEM.step.guardCancelFrom && guardIn) {
+      this.stepMove(f);
+      const next = f.sf + 1;
+      const dir = f.moveDir;
+      this.toFree(f);
+      f.guardF = 1;
+      f.facing = this.angleTo(i);
+      this.emit(EV_GUARD, i);
+      f.momStep = next;
+      f.momDir = dir;
+      return;
+    }
     this.stepMove(f);
   }
 
@@ -1348,6 +1368,8 @@ export class Sim {
         f.cloneHit = MH_BLOCK;
         const left = d.st === ST_BLOCKSTUN ? d.len - d.sf + 1 : 0;
         d.st = ST_BLOCKSTUN;
+        d.gcBlockFrame = s.frame;
+        d.gcQueued = 0;
         d.sf = 1;
         d.len = Math.max(left, m.blockstun);
         if (m.kind === KIND_GC) d.noGc = 1;
@@ -1496,6 +1518,7 @@ export class Sim {
     if (this.isGuarding(o)) {
       const left = o.st === ST_BLOCKSTUN ? o.len - o.sf + 1 : 0;
       o.st = ST_BLOCKSTUN;
+      o.gcBlockFrame = s.frame;
       o.sf = 1;
       o.len = Math.max(left, p.blockstun);
       o.gcQueued = 0;
@@ -1546,6 +1569,7 @@ export class Sim {
     if (this.isGuarding(o)) {
       const left = o.st === ST_BLOCKSTUN ? o.len - o.sf + 1 : 0;
       o.st = ST_BLOCKSTUN;
+      o.gcBlockFrame = s.frame;
       o.sf = 1;
       o.len = Math.max(left, p.blockstun);
       o.gcQueued = 0;
@@ -1984,11 +2008,12 @@ export class Sim {
         a.moveHit = MH_BLOCK;
         a.moveHitAt = a.sf;
         d.st = ST_BLOCKSTUN;
+        d.gcBlockFrame = s.frame;
+        d.gcQueued = 0;
         d.sf = 1;
         // a dash keeps its advantage wherever on its active frames it was guarded
         d.len = m.dash ? Math.max(1, m.T + 1 + m.dash.advBlock - a.sf) : m.blockstun;
         d.noGc = m.kind === KIND_GC ? 1 : 0;
-        d.gcQueued = 0;
         d.move = -1;
         if (d.guardF < SYSTEM.guard.startup) d.guardF = SYSTEM.guard.startup;
         d.kbDist = m.pushback;

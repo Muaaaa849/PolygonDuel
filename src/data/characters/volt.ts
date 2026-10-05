@@ -55,10 +55,10 @@ export const volt: CharacterDef = {
   skills: [
     {
       id: 'dashThrust', name: 'ダッシュスラスト', kind: 'skill', shape: 'circle',
-      desc: '突進（単体でも、ステップ中からでも）。相手を突き抜けて背後へ（ヒット+3F・ガードされても+2F）。当たったら連打で次の突進が繋がる（コストの続く限り）。出始めと突進中に攻撃が触れると必ず負け、×1.5で食らう',
+      desc: '突進（単体でも、ステップ中からでも）。相手を突き抜けて背後へ（ヒット+3F・ガードされても+7F）。ガード後の最速1段目は速いガード反撃にも勝つ。当たったら連打で次の突進が繋がる（コストの続く限り）。出始めと突進中に攻撃が触れると必ず負け、×1.5で食らう',
       cost: 1, S: 6, A: 8, T: 25, reach: 1, lunge: 0,
       dmg: 44, hitstun: 18, blockstun: 16, hitstop: 6,
-      dash: { dist: 3.2, advHit: 3, advBlock: 2 },
+      dash: { dist: 3.2, advHit: 3, advBlock: 7 },
       knockback: 0.6, pushback: 0,
       // hit → S1 again on frames 14–21: the next dash turns back and is guaranteed (a skill-only combo)
       cancelAny: [14, 21], cancelFrom: ['step', 'neutral', 'dashThrust'], cancelHitOnly: true,

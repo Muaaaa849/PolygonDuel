@@ -31,7 +31,7 @@ const LESSONS: Lesson[] = [
     shape: 'circle',
     steps: [
       { text: '相手が「円」になったら、指を離してガード', sub: '円は一瞬で当たる。近づかれたら止まって待つのも手（ただしガードは約1.5秒しかもたない）', goal: 2 },
-      { text: 'ガードした直後に攻撃ボタン → ガード反撃（GC）', sub: 'ガード硬直中に押しておけば最速で出ます', goal: 1 },
+      { text: 'ガードした直後に攻撃ボタン → ガード反撃（GC）', sub: '素早く押すと速い反撃。近距離なら1段止めにも確定します', goal: 1 },
     ],
   },
   {
@@ -190,7 +190,7 @@ export function createTutorial(onFinish: () => void): TutorialHooks {
       if (done || !sim) return;
       const f = sim.s.f;
       if (lesson === 1 && step === 0 && e.type === EV_BLOCK && e.who === 1) progress();
-      if (lesson === 1 && step === 1 && e.type === EV_HIT && e.who === 0 && f[0].move === M_GC) progress();
+      if (lesson === 1 && step === 1 && e.type === EV_HIT && e.who === 0 && (f[0].move === M_GC || f[0].move === sim.char(0).fastGc)) progress();
       if (lesson === 1 && step === 0 && e.type === EV_HIT && e.who === 1) api.banner('止まってガード！', '円を見たら指を離す');
       if (lesson === 2) {
         if (e.type === EV_MOVE && e.who === 1 && e.a === M_S2) {

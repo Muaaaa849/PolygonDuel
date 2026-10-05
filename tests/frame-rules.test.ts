@@ -13,9 +13,9 @@ const IDS = CHARACTERS.map((c) => c.id);
 
 /** Dummy that walks into the attacker until hit once, then guards forever (training "ヒット後ガード"). */
 const hitThenGuard: Bot = (me) => (me.statHitsTaken > 0 ? 0 : stick(16));
-/** Guards; mashes attack only while in blockstun after `n` blocks → GC. */
+/** Guards; waits past the early deadline, then mashes in blockstun after `n` blocks → normal GC. */
 const gcAfterBlocks = (n: number): Bot => (me, _o, _s, t) =>
-  me.st === ST_BLOCKSTUN && me.statBlocks >= n ? (t % 2 === 0 ? IN_ATK : 0) : 0;
+  me.st === ST_BLOCKSTUN && me.statBlocks >= n && _s.frame - me.gcBlockFrame >= 10 ? (t % 2 === 0 ? IN_ATK : 0) : 0;
 
 describe.each(IDS)('%s — normal chain rules', (id) => {
   const c = getChar(IDS.indexOf(id));
@@ -75,7 +75,7 @@ describe.each(IDS)('%s — normal chain rules', (id) => {
     expect(sc.hits(0).length).toBe(0);
   });
 
-  it('C5: stopping after a blocked N1 is safe — the attacker blocks the GC', () => {
+  it('C5: stopping after a blocked N1 is safe against a late GC', () => {
     const sc = new Scenario(id, 'bastion', 1.6).run(200, sequence('A', 0), gcAfterBlocks(1));
     expect(sc.blocks(0).length).toBe(1);
     expect(sc.hits(1).length).toBe(0);

@@ -143,6 +143,7 @@ describe('レイ: 弾', () => {
 
   it('a step still recovering (after its travel) is hit normally', () => {
     const sc = shooting('blaze', 7);
+    sc.s.f[1].manualGuard = 1; // no GUARD: do not cancel the step into auto-guard
     let stepped = false;
     const dodger: Bot = () => {
       // step early, away along the line: the bullet catches up in the recovery frames
@@ -232,7 +233,7 @@ describe('レイ: 弾', () => {
 
   it('step → shot is allowed (without momentum)', () => {
     const sc = shooting('blaze', 5);
-    sc.run(40, (me, _o, _s, t) => (t === 0 ? stick(8) | IN_STEP : me.st === ST_STEP && me.sf === 4 ? IN_ATK : 0), guard);
+    sc.run(40, (me, _o, _s, t) => (t === 0 ? stick(8) | IN_STEP : me.st === ST_STEP ? stick(8) | (me.sf === 4 ? IN_ATK : 0) : 0), guard);
     expect(sc.events(EV_SHOT, 0).length).toBe(1);
   });
 });
@@ -275,7 +276,7 @@ describe('レイ: モード切替・ブラスト・フィールド', () => {
     // GC out of a guard is the melee GC
     const sc2 = shooting('blaze', 1.6);
     sc2.run(80, (me) => (me.st === ST_BLOCKSTUN ? IN_ATK : 0), (_m, _o, _s, t) => (t === 0 ? IN_ATK : 0));
-    expect(sc2.moves(0).some((e) => e.a === M_GC)).toBe(true);
+    expect(sc2.moves(0).some((e) => e.a === ray.fastGc)).toBe(true);
   });
 
   it('R6: 1→2→blast is guaranteed (like C2), knocks down far and switches to shooting mode', () => {
@@ -375,6 +376,7 @@ function dashBot(stepAt: number, then?: Bot): Bot {
   return (me, op, s, t) => {
     if (t === stepAt) return stick(0) | IN_STEP;
     if (me.st === ST_STEP && me.sf === 3 && t < stepAt + 10) return IN_S1 | stick(0);
+    if (me.st === ST_STEP) return stick(0); // keep stepping rather than auto-guard
     return then ? then(me, op, s, t) : 0;
   };
 }
@@ -406,7 +408,7 @@ describe('ヴォルト', () => {
     expect(sc.s.f[0].steps).toBe(3);
   });
 
-  it('R9: a guarded dash passes behind at +2; a hit is +3 and no combo', () => {
+  it('R9: a guarded dash passes behind at +7; a hit is +3 and no combo', () => {
     const sc = new Scenario('volt', 'blaze', 4).run(80, dashBot(0), guard);
     expect(sc.blocks(0).length).toBe(1);
     expect(sc.s.f[0].x).toBeGreaterThan(sc.s.f[1].x); // behind
@@ -441,12 +443,21 @@ describe('ヴォルト', () => {
     expect(volt.moves[M_S2].S).toBeGreaterThanOrEqual(21); // R12
   });
 
-  it('R11: guarded dash → N1 beats the fastest GC', () => {
+  it('R11: guarded dash → N1 beats a late normal GC', () => {
     const n1: Bot = (me) => (me.move === M_S1 && me.sf === 22 ? IN_ATK : 0);
-    const sc = new Scenario('volt', 'blaze', 4).run(120, dashBot(0, n1), gcBot);
+    const sc = new Scenario('volt', 'blaze', 4).run(120, dashBot(0, n1), (me, _o, s) =>
+      me.st === ST_BLOCKSTUN && s.frame - me.gcBlockFrame >= 10 ? IN_ATK : 0);
     const vh = sc.hits(0);
     expect(vh.length).toBe(1);
     expect(sc.moves(0).some((e) => e.a === M_N1)).toBe(true);
+    expect(sc.hits(1).length).toBe(0);
+  });
+
+  it('R11: guarded dash → N1 beats an early fast GC', () => {
+    const n1: Bot = (me) => (me.move === M_S1 && me.sf === 22 ? IN_ATK : 0);
+    const sc = new Scenario('volt', 'blaze', 4).run(120, dashBot(0, n1), gcBot);
+    expect(sc.moves(1).some(e => e.a === getChar(charIndex('blaze')).fastGc)).toBe(true);
+    expect(sc.hits(0).length).toBe(1);
     expect(sc.hits(1).length).toBe(0);
   });
 
@@ -585,7 +596,7 @@ describe('ヴォルト', () => {
       expect(a.hits(0).map((e) => e.a)).toEqual([50]);
       // mid-step: the step keeps going
       const b = new Scenario('volt', 'blaze', 6);
-      b.run(20, (me, _o, _s, t) => (t === 0 ? IN_STEP | stick(8) : me.st === ST_STEP && me.sf === 4 ? IN_S2 : 0), guard);
+      b.run(20, (me, _o, _s, t) => (t === 0 ? IN_STEP | stick(8) : me.st === ST_STEP ? stick(8) | (me.sf === 4 ? IN_S2 : 0) : 0), guard);
       expect(b.s.f[0].power).toBe(25);
       expect(b.events(EV_STEP, 0).length).toBe(1);
       // in guard stun

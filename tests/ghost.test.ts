@@ -11,6 +11,19 @@ import { charIndex } from '../src/data/characters';
 const idle: Bot = () => stick(8) & 0; // stands (guards)
 
 describe('ghost (illusion)', () => {
+  it('S1 is affordable with exactly one cost, but not less', () => {
+    const exact = new Scenario('phantom', 'blaze', 5);
+    exact.s.f[0].cost = COST_UNIT;
+    exact.tick(() => IN_S1, idle);
+    expect(exact.events(EV_GHOST, 0).length).toBe(1);
+    expect(exact.s.f[0].cost).toBe(0);
+    const short = new Scenario('phantom', 'blaze', 5);
+    short.s.f[0].cost = COST_UNIT - 1;
+    short.run(8, () => IN_S1, idle);
+    expect(short.events(EV_GHOST, 0).length).toBe(0);
+    expect(short.s.f[0].cost).toBe(COST_UNIT - 1);
+  });
+
   it('out of range: the decoy steps in toward the opponent while the real one stays', () => {
     const sc = new Scenario('phantom', 'blaze', 5);
     const x0 = sc.s.f[0].x;
@@ -36,8 +49,8 @@ describe('ghost (illusion)', () => {
     // ~0.5s later it is gone (timed out), no damage dealt
     expect(sc.events(EV_GHOST_END, 0)[0].a).toBe(0);
     expect(sc.s.f[1].hp).toBe(900);
-    // v1.9: the illusion costs 1.5 (2 at the start → 0.5 left)
-    expect(sc.s.f[0].cost).toBe(COST_UNIT / 2);
+    // the illusion costs 1 (2 at the start → 1 left)
+    expect(sc.s.f[0].cost).toBe(COST_UNIT);
   });
 
   it('in range: the decoy swings N1, passes through without damage, then dissolves', () => {
@@ -80,8 +93,8 @@ describe('ghost (illusion)', () => {
     const end = sc.events(EV_GHOST_END, 0)[0];
     expect(end.a).toBe(2);
     expect(sc.hits(1).length).toBe(0);
-    // baited: 1.0 of the cost comes back (2 − 1.5 + 1)
-    expect(sc.s.f[0].cost).toBe(COST_UNIT * 1.5);
+    // baited: 1.0 of the cost comes back (2 − 1 + 1)
+    expect(sc.s.f[0].cost).toBe(COST_UNIT * 2);
   });
 
   it('bait → guard → soul ripper crush (the intended combo, cost 4)', () => {

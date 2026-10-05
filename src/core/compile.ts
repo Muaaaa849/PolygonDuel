@@ -157,6 +157,8 @@ export interface CChar {
   /** A non-shooter's projectile move (its bullets' spec), -1 = none. */
   projSlot: number;
   moves: CMove[];
+  /** Fast guard counter appended after extras, preserving existing move slot identities. */
+  fastGc: number;
 }
 
 const win = (w?: Window): CWindow | null => (w ? { a: w[0], b: w[1] } : null);
@@ -189,7 +191,7 @@ function compileMove(idx: number, m: MoveDef, slotIds: Record<string, number>): 
     else if (src in slotIds) {
       cancelFrom |= 1 << slotIds[src];
       // GC and JA behave as a 1st hit for cancel purposes
-      if (src === 'n1') cancelFrom |= (1 << M_GC) | (1 << M_JA);
+      if (src === 'n1') cancelFrom |= (1 << M_GC) | (1 << M_JA) | (1 << slotIds.gcFast);
     }
   }
   return {
@@ -275,6 +277,8 @@ export function compileCharacter(def: CharacterDef, idx: number): CChar {
   slotIds[def.skills[1].id] = M_S2;
   const extras = def.extraMoves ?? [];
   extras.forEach((m, k) => (slotIds[m.id] = M_EX + k));
+  const fastGc = M_EX + extras.length;
+  slotIds.gcFast = fastGc;
   const n1 = def.normals.n1;
   const g = SYSTEM.gc;
   const j = SYSTEM.just;
@@ -312,10 +316,12 @@ export function compileCharacter(def: CharacterDef, idx: number): CChar {
   const src: MoveDef[] = [
     withSweep(n1, first), withSweep(def.normals.n2, second), withSweep(def.normals.n3, spin),
     withSweep(gcDef, first), withSweep(jaDef, first), def.skills[0], def.skills[1], strikeDef, ...extras,
+    withSweep({ ...gcDef, id: 'gcFast', name: '速いガード反撃', S: g.fastS }, first),
   ];
   const moves = src.map((m, i) => compileMove(i, m, slotIds));
   return {
     idx,
+    fastGc,
     def,
     hp: def.hp,
     walk: Math.round((def.walk * U) / SYSTEM.fps),

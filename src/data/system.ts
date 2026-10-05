@@ -59,6 +59,9 @@ export const SYSTEM = {
 
   gc: {
     S: 14,
+    /** New ATK within 10 real ticks of blocking (including hitstop) earns the fast GC. */
+    fastS: 10,
+    fastWindow: 10,
     A: 3,
     T: 38,
     dmgMul: 0.8,
@@ -88,6 +91,8 @@ export const SYSTEM = {
      * keeping the step's remaining travel as momentum: step-in attacks close distance fast.
      */
     attackCancelFrom: 3,
+    /** Guard may cancel after the two just-dodge frames, retaining remaining travel. */
+    guardCancelFrom: 3,
     /** Just-dodge frames (hit on these step frames = just). */
     justFrames: 2,
   },
