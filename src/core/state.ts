@@ -191,6 +191,8 @@ export interface FighterState {
 
 export interface GameState {
   frame: number;
+  /** Negotiated online input delay (0 offline), shared by both peers and snapshotted. */
+  gcInputDelay: number;
   phase: number;
   phaseF: number;
   /** Round timer in ticks. */
@@ -254,7 +256,7 @@ export function newFighter(): FighterState {
 
 export function newGameState(): GameState {
   return {
-    frame: 0, phase: 0, phaseF: 0, timer: 0, round: 0, hitstop: 0, freeze: 0, slow: 0, slowWho: 0, winsA: 0, winsB: 0,
+    frame: 0, gcInputDelay: 0, phase: 0, phaseF: 0, timer: 0, round: 0, hitstop: 0, freeze: 0, slow: 0, slowWho: 0, winsA: 0, winsB: 0,
     roundWinner: -1, matchWinner: -1, trainingRefill: 0, noTimer: 0, seed: 0,
     f: [newFighter(), newFighter()],
     trail: new Int32Array(2 * TRAIL_FIGHTER),

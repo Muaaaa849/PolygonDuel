@@ -53,6 +53,16 @@ describe.each(CHARACTERS)('$id — early guard counter', (attacker) => {
     const late = new Scenario(attacker.id, 'bastion', 1.6).run(100, sequence('A', 0), counterAfter(11));
     expect(early.moves(1)[0].lf).toBe(late.moves(1)[0].lf);
   });
+
+  it('preserves the punish for every defender with 1–3F of negotiated input delay', () => {
+    for (const inputDelay of [1, 2, 3]) for (const defender of CHARACTERS) {
+      const sc = new Scenario(attacker.id, defender.id, 1.6, { inputDelay });
+      sc.run(130, sequence('A', 0), counterAfter(SYSTEM.gc.fastWindow + inputDelay));
+      expect(sc.moves(1)[0].a, defender.id).toBe(sc.sim.char(1).fastGc);
+      expect(sc.hits(1).length, defender.id).toBe(1);
+      expect(sc.blocks(1).length, defender.id).toBe(0);
+    }
+  });
 });
 
 it('later mashing cannot downgrade an already reserved fast counter', () => {

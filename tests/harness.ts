@@ -1,5 +1,5 @@
 // Scenario harness: drives the real Sim with scripted "bots" and records what happened.
-import { Sim } from '../src/core/sim';
+import { Sim, type SimOptions } from '../src/core/sim';
 import { charIndex } from '../src/data/characters';
 import { u } from '../src/core/fixed';
 import { SYSTEM } from '../src/data/system';
@@ -24,7 +24,7 @@ export class Scenario {
   /** Logical frame each fighter last became free (st FREE after not being free). */
   freeAt: [number[], number[]] = [[], []];
 
-  constructor(a: string, b: string, dist = 2, opts: { training?: boolean } = {}) {
+  constructor(a: string, b: string, dist = 2, opts: SimOptions = {}) {
     this.sim = new Sim(charIndex(a), charIndex(b), opts);
     this.sim.skipIntro();
     const s = this.sim.s;
