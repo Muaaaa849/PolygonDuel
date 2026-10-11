@@ -73,6 +73,8 @@ const INK_JUMP2 = u(3) * u(3);
 const FIELD_OF = COMPILED.map((c) => c.moves.find((m) => m.field)?.field ?? null);
 
 export interface SimOptions {
+  /** Match-wide negotiated input delay; restores the offline guard-counter press window. */
+  inputDelay?: number;
   /** Training: no timer, refill HP after combos, no KO. */
   training?: boolean;
 }
@@ -98,6 +100,7 @@ export class Sim {
   constructor(charA: number, charB: number, opts: SimOptions = {}) {
     this.training = !!opts.training;
     this.s = newGameState();
+    this.s.gcInputDelay = Math.max(0, Math.min(3, opts.inputDelay ?? 0)) | 0;
     this.s.f[0].char = charA;
     this.s.f[1].char = charB;
     this.s.noTimer = this.training ? 1 : 0;
@@ -257,7 +260,10 @@ export class Sim {
       f.bufAtk = B;
       f.aimAtk = aim;
       if (f.st === ST_BLOCKSTUN && !f.noGc && !f.gcQueued) {
-        f.gcQueued = this.s.frame - f.gcBlockFrame <= SYSTEM.gc.fastWindow ? 2 : 1;
+        // Judge when the press was sampled, not when the delayed input reached the sim.
+        // A press from before / on contact must not become a GC just because it was delayed.
+        const pressAge = this.s.frame - f.gcBlockFrame - this.s.gcInputDelay;
+        if (pressAge > 0) f.gcQueued = pressAge <= SYSTEM.gc.fastWindow ? 2 : 1;
       }
     }
     if (pressed & IN_S1) {

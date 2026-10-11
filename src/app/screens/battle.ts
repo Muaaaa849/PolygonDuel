@@ -73,7 +73,7 @@ export function myControlModes(tutorial = false): number {
 
 export function battleScreen(cfg: BattleConfig): Screen {
   const training = cfg.mode === 'training' || cfg.mode === 'tutorial';
-  const sim = new Sim(cfg.chars[0], cfg.chars[1], { training });
+  const sim = new Sim(cfg.chars[0], cfg.chars[1], { training, inputDelay: cfg.online?.inputDelay });
   if (training) sim.skipIntro();
   // control settings: this device's player(s) use the settings (the tutorial teaches the auto guard);
   // the CPU / dummy keeps auto guard and stick-direction attacks
@@ -678,11 +678,18 @@ export function battleScreen(cfg: BattleConfig): Screen {
     return delayQueue.length > simDelay ? delayQueue.shift()! : 0;
   }
 
+  // Poll only after the session accepts a tick. Touch taps and keyboard presses remain
+  // latched across network stalls / time-sync skips, even if released before resuming.
+  function readOnline(): number {
+    const w = readLocal();
+    KeyboardInput.endTick();
+    return w;
+  }
+
   function tick(): void {
     const s = sim.s;
     if (session) {
-      session.tick(readLocal());
-      KeyboardInput.endTick();
+      session.tick(readOnline);
       return;
     }
     let a: number;

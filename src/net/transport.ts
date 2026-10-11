@@ -1,7 +1,12 @@
 // WebRTC P2P link (plan §9). Two negotiated DataChannels:
 //  - "game": unordered, no retransmits → input packets (never wait for a lost packet)
-//  - "ctrl": reliable, ordered → lobby messages, pings, rematch
+//  - "ctrl": reliable, ordered → lobby messages, rematch
 import { decodeSignal, encodeSignal } from './qr-signaling';
+
+const PKT_PING = 2;
+const PKT_PONG = 3;
+/** A few input packets at most: queued obsolete packets must not build up latency. */
+export const MAX_GAME_BUFFERED_BYTES = 512;
 
 export type PathKind = 'direct' | 'stun' | 'relay' | 'unknown';
 
@@ -30,6 +35,8 @@ export class PeerLink {
   /** Trickle ICE (link rooms): each local candidate as it is found, null at the end. */
   onLocalCandidate?: (c: RTCIceCandidateInit | null) => void;
   rttMs = 0;
+  /** Backpressure drops (inputs are sent again in the next redundant packet). */
+  congestionDrops = 0;
   private pendingRemote: RTCIceCandidateInit[] = [];
   private opened = 0;
   private closed = false;
@@ -37,6 +44,8 @@ export class PeerLink {
   private pingSeq = 0;
   private pings = new Map<number, number>();
   private rttSamples: number[] = [];
+  private pingBuf = new Uint8Array(5);
+  private pingView = new DataView(this.pingBuf.buffer);
 
   constructor(extraIce: RTCIceServer[] = []) {
     this.pc = new RTCPeerConnection({ iceServers: [...ICE_SERVERS, ...extraIce], bundlePolicy: 'max-bundle' });
@@ -50,7 +59,17 @@ export class PeerLink {
       };
       ch.onclose = () => this.handleClose('channel closed');
     }
-    this.game.onmessage = (e) => this.onGame?.(new Uint8Array(e.data as ArrayBuffer));
+    this.game.onmessage = (e) => {
+      const data = new Uint8Array(e.data as ArrayBuffer);
+      if (data.length === 5 && (data[0] === PKT_PING || data[0] === PKT_PONG)) {
+        if (data[0] === PKT_PING) {
+          data[0] = PKT_PONG;
+          this.sendGame(data);
+        } else this.handlePong(new DataView(data.buffer).getUint32(1, true));
+        return;
+      }
+      this.onGame?.(data);
+    };
     this.ctrl.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data as string) as CtrlMessage;
@@ -177,14 +196,20 @@ export class PeerLink {
     return this.game.readyState === 'open' && this.ctrl.readyState === 'open';
   }
 
-  sendGame(data: Uint8Array): void {
+  sendGame(data: Uint8Array): boolean {
     if (this.game.readyState === 'open') {
+      if (this.game.bufferedAmount + data.byteLength > MAX_GAME_BUFFERED_BYTES) {
+        this.congestionDrops++;
+        return false;
+      }
       try {
         this.game.send(data as Uint8Array<ArrayBuffer>);
+        return true;
       } catch {
         /* buffer full / closing: drop like a lost packet */
       }
     }
+    return false;
   }
 
   sendCtrl(msg: CtrlMessage): void {
@@ -195,7 +220,11 @@ export class PeerLink {
     const id = ++this.pingSeq;
     this.pings.set(id, performance.now());
     if (this.pings.size > 20) this.pings.delete(this.pings.keys().next().value!);
-    this.sendCtrl({ t: 'ping', id });
+    // Measure the same unordered/unreliable path as gameplay. Reliable ctrl pings
+    // can wait for retransmissions and incorrectly inflate the fixed input delay.
+    this.pingView.setUint8(0, PKT_PING);
+    this.pingView.setUint32(1, id, true);
+    if (!this.sendGame(this.pingBuf)) this.pings.delete(id);
   }
 
   private handlePong(id: number): void {

@@ -105,9 +105,10 @@ export class RollbackSession {
 
   /**
    * Advance one tick with the current local input. Returns false if we had to
-   * stall (waiting for the peer or slowing down for time sync).
+   * stall (waiting for the peer or slowing down for time sync). A polling callback is
+   * invoked only on accepted ticks, after rollback, so latched UI presses are not lost.
    */
-  tick(localInput: number): boolean {
+  tick(localInput: number | (() => number)): boolean {
     this.applyRollback();
 
     // stall if we'd predict too far ahead
@@ -129,10 +130,11 @@ export class RollbackSession {
     }
 
     // queue local input
+    const input = typeof localInput === 'function' ? localInput() : localInput;
     const target = this.frame + this.inputDelay;
     while (this.localHead < target) {
       this.localHead++;
-      this.localIn[this.localHead % RING] = localInput;
+      this.localIn[this.localHead % RING] = input;
     }
 
     this.advance(false);
@@ -142,7 +144,7 @@ export class RollbackSession {
   }
 
   private remoteFor(f: number): number {
-    if (f <= this.remoteConfirmed) return this.remoteIn[f % RING];
+    if (f <= this.remoteConfirmed || this.remoteHave[f % RING]) return this.remoteIn[f % RING];
     return this.remoteConfirmed >= 0 ? this.remoteIn[this.remoteConfirmed % RING] : 0;
   }
 
@@ -180,7 +182,7 @@ export class RollbackSession {
 
   /** Called with every datagram from the peer. */
   receive(data: Uint8Array): void {
-    if (data.length < 1 || data[0] !== PKT_INPUT) return;
+    if (data.length < 15 || data[0] !== PKT_INPUT) return;
     const v = new DataView(data.buffer, data.byteOffset, data.byteLength);
     let o = 1;
     const ack = v.getInt32(o, true); o += 4;
@@ -188,6 +190,7 @@ export class RollbackSession {
     const adv = v.getInt8(o); o += 1;
     const first = v.getInt32(o, true); o += 4;
     const count = v.getUint8(o); o += 1;
+    if (count > MAX_SEND || data.length < o + count * 4 || first < 0) return;
     if (ack > this.peerAck) this.peerAck = ack;
     if (remoteFrame > this.remoteFrameSeen) {
       this.remoteFrameSeen = remoteFrame;
@@ -203,6 +206,10 @@ export class RollbackSession {
         this.remoteIn[idx] = w;
       }
       this.remoteHave[idx] = 1;
+      // Use received inputs immediately, even if an earlier packet is still missing.
+      if (f < this.frame && this.usedRemote[idx] !== w) {
+        if (this.rollbackFrom < 0 || f < this.rollbackFrom) this.rollbackFrom = f;
+      }
     }
     // advance the contiguous pointer and detect mispredictions
     while (this.remoteHave[(this.remoteConfirmed + 1) % RING] && this.remoteConfirmed + 1 <= this.localHead + RING / 2) {
